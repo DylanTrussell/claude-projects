@@ -1,0 +1,24 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+page.on('console', m => console.log('[console]', m.text()));
+await page.goto('http://localhost:8787/?dev=1', { waitUntil: 'load' });
+await page.waitForTimeout(1500);
+const res = await page.evaluate(async () => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  console.log('ctx created', !!ctx);
+  const bus = ctx.createDynamicsCompressor();
+  console.log('bus created', !!bus, bus.constructor.name);
+  bus.threshold.value = -18;
+  console.log('threshold set');
+  const g = ctx.createGain();
+  console.log('gain created', !!g);
+  g.gain.value = 1;
+  console.log('gain value set');
+  g.connect(bus).connect(ctx.destination);
+  console.log('connected ok');
+  return 'done';
+});
+console.log(res);
+await browser.close();

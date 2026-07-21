@@ -1,0 +1,34 @@
+id,role,type,description,size/ratio,style line ref,source
+hero_us,player hero 1 base sprite (also anim source + video ref),sprite,muscular american soldier cat with red bandana carrying gatling gun,1:1 1k -> 128px,STYLE FORMULA v1,generate
+hero_vc,player hero 2 base sprite (also anim source + video ref),sprite,lean vietnamese guerrilla cat in conical hat with rifle,1:1 1k -> 128px,STYLE FORMULA v1,generate
+grunt_us,phase-1 enemy walker/shooter,sprite,american army grunt cat in helmet with rifle,1:1 1k -> 128px,STYLE FORMULA v1,generate
+grunt_vc,phase-1 enemy tunnel ambusher,sprite,vietnamese guerrilla grunt cat with rifle and satchel,1:1 1k -> 128px,STYLE FORMULA v1,generate
+alien_trooper,phase-2 enemy walker/shooter,sprite,steampunk alien mouse trooper with brass ray gun and tail,1:1 1k -> 128px,STYLE FORMULA v1,generate
+ufo_small,phase-2 flying enemy with tractor beam,sprite,small riveted steampunk flying saucer with glowing lens underneath,1:1 1k -> 160px,STYLE FORMULA v1,generate
+boss_mothership,final boss,sprite,huge riveted steampunk alien mothership studded with cheese wedges and death ray cannon,1:1 1k -> 560px,STYLE FORMULA v1,generate
+heli_us,phase-1 strafing hazard + finale evac,sprite,american attack helicopter with door gunner cat,1:1 1k -> 300px,STYLE FORMULA v1,generate
+bg_jungle,scrolling background phase 1,background,war-torn vietnam jungle riverbank with distant smoke columns and rice paddies,16:9 1280x720,STYLE FORMULA v1,generate
+bg_invasion,scrolling background phase 2 + boss,background,burning jungle under sickly green alien sky with silhouetted flying saucers,16:9 1280x720,STYLE FORMULA v1,generate
+logo,title logo,ui,APOCALYPSE MEOW stencil military title logo with claw slashes and small cheese wedge accent,1:1 1k,STYLE FORMULA v1,generate
+tile_ground,tiling jungle ground strip,tile,muddy jungle dirt with sparse grass sandbag debris and spent shells,1:1 -> 256px seamless,STYLE FORMULA v1,generate
+sheet_hero_us_run,hero 1 run cycle spritesheet,2d-animation,hero_us full run cycle in place,10 frames ~128px cells fps10 loop,STYLE FORMULA v1,generate
+sheet_hero_vc_run,hero 2 run cycle spritesheet,2d-animation,hero_vc full run cycle in place,10 frames ~128px cells fps10 loop,STYLE FORMULA v1,generate
+sheet_alien_walk,most-seen enemy walk cycle spritesheet,2d-animation,alien_trooper full walk cycle in place,8 frames ~128px cells fps10 loop,STYLE FORMULA v1,generate
+music_valkyries,phase-1 level music loop (own arrangement of public-domain Ride of the Valkyries),audio-music,galloping heroic orchestral war anthem echoing Ride of the Valkyries rising brass motif,30s loop,-,generate
+music_invasion,phase-2 + boss music loop,audio-music,driving eerie orchestral battle track with theremin wail over war drums,30s loop,-,generate
+sfx_shot,player gunfire,audio-sfx,single sharp arcade rifle gunshot,1s,-,generate
+sfx_explosion,grenade/vehicle/boss explosion,audio-sfx,deep punchy explosion with debris,2s,-,generate
+sfx_laser,alien weapon fire,audio-sfx,zappy sci-fi laser blast,1s,-,generate
+sfx_meow,hit/rescue feedback,audio-sfx,short indignant cat meow yowl,1s,-,generate
+sfx_ufo,ufo ambient hum,audio-sfx,wobbling low sci-fi saucer hum,5s loop,-,generate
+vid_intro,intro cinematic before title,video,jungle war between cat armies interrupted by arriving alien saucers,16:9 10s gemini_omni,STYLE FORMULA v1,generate
+vid_title,looping title screen backdrop,video,slow smoky jungle battlefield vista with hovering saucers,16:9 8s gemini_omni loop,STYLE FORMULA v1,generate
+vid_truce,mid-game truce cutscene,video,american cat and vietnamese cat shake paws as alien beam strikes behind them,16:9 8s gemini_omni,STYLE FORMULA v1,generate
+vid_trailer,standalone shareable promo trailer,video,fast montage of cat soldiers battling alien mice with title reveal,16:9 10s gemini_omni,STYLE FORMULA v1,generate
+thumb,deploy thumbnail / OG image,ui,apocalypse meow key art both hero cats back to back under alien invasion sky,16:9 1k,STYLE FORMULA v1,generate
+favicon,deploy favicon,ui,angry cat soldier head in helmet icon,1:1 1k,STYLE FORMULA v1,generate
+fx_muzzle,muzzle flash + bullets + tracers,procedural,canvas-drawn flashes and tracer rounds in formula palette,code,STYLE FORMULA v1,procedural
+fx_explosion,explosion animation frames,procedural,canvas-drawn orange fireball and smoke puffs in formula palette,code,STYLE FORMULA v1,procedural
+prop_traps,punji spike pit + disturbed earth tell + tunnel mouth,procedural,canvas-drawn bamboo spikes dirt mound and dark tunnel arch in formula palette,code,STYLE FORMULA v1,procedural
+prop_pickups,gatling drop tuna-can health grenade box cheese lure,procedural,canvas-drawn pickup icons flagged cheese-yellow per formula,code,STYLE FORMULA v1,procedural
+ui_hud,hearts lives ammo score fonts buttons touch controls,procedural,canvas/DOM HUD in formula palette,code,STYLE FORMULA v1,procedural

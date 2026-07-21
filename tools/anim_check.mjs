@@ -1,0 +1,22 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM });
+const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+const errs = [];
+page.on('pageerror', e => errs.push(String(e)));
+await page.goto('http://localhost:8787/?room=animcheck&dev=1');
+await new Promise(r => setTimeout(r, 2500));
+try { if (await page.isVisible('#intro')) await page.click('#btn-skip'); } catch(_){}
+await page.click('#btn-start');
+await new Promise(r => setTimeout(r, 600));
+await page.click('#btn-go');
+await new Promise(r => setTimeout(r, 1200));
+await page.keyboard.down('KeyD');
+await new Promise(r => setTimeout(r, 1400));
+await page.screenshot({ path: '/home/claude/apocalypse-meow/work/anim_run.png' });
+await page.keyboard.up('KeyD');
+await page.keyboard.down('KeyJ');
+await new Promise(r => setTimeout(r, 500));
+await page.screenshot({ path: '/home/claude/apocalypse-meow/work/anim_fire.png' });
+await page.keyboard.up('KeyJ');
+console.log('pageerrors:', errs);
+await browser.close();

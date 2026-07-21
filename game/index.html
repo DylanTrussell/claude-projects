@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>APOCALYPSE MEOW</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b0d09;font-family:'Courier New',monospace;color:#f3e9c8}
+  canvas{display:block;position:fixed;inset:0}
+  .overlay{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:10;overflow:auto;padding:10px;box-sizing:border-box}
+  .panel{background:rgba(16,18,12,0.88);border:3px solid #26231c;outline:2px solid #4c5d2a;padding:22px 30px;max-width:640px;width:min(92vw,640px);box-shadow:0 0 60px rgba(0,0,0,.7);max-height:92vh;overflow:auto}
+  h1{font-size:34px;margin:0;color:#FFC93C;text-shadow:3px 3px 0 #26231c;letter-spacing:2px;text-align:center}
+  h2{font-size:18px;margin:12px 0 6px;color:#8CFF3B}
+  .dim{color:rgba(243,233,200,.6);font-size:13px}
+  button{font-family:inherit;font-weight:bold;font-size:16px;padding:12px 22px;background:#4c5d2a;color:#f3e9c8;border:3px solid #26231c;cursor:pointer;text-transform:uppercase;letter-spacing:1px}
+  button:hover{background:#5d7133}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:#c8372d;font-size:20px;padding:14px 34px}
+  button.primary:hover{background:#e04a3f}
+  .heroes{display:flex;gap:12px;margin:8px 0}
+  .hero{flex:1;border:3px solid #26231c;background:#1c2113;padding:12px;cursor:pointer}
+  .hero.sel{border-color:#FFC93C;background:#2a3018;outline:2px solid #FFC93C}
+  .hero b{color:#FFC93C}
+  .seats{display:flex;gap:10px;margin:8px 0}
+  .seat{flex:1;border:2px solid #26231c;background:#161a10;padding:10px;font-size:14px}
+  .seat.me{border-color:#8CFF3B}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .optrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0}
+  .optrow button{padding:6px 14px;font-size:13px}
+  video.bgvid{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1;filter:brightness(.55)}
+  #cutscene{background:#000}
+  #cutscene video{max-width:100%;max-height:82vh}
+  .vsub{position:absolute;left:8%;right:8%;bottom:8%;text-align:center;font-weight:bold;
+    font-size:clamp(16px,2.6vw,30px);color:#fff;line-height:1.35;pointer-events:none;
+    text-shadow:0 2px 3px #000,0 0 12px rgba(0,0,0,.9),2px 2px 0 #000;letter-spacing:.5px}
+  #loading{display:flex;background:#0b0d09}
+  #loadwrap{width:min(70vw,420px);height:18px;border:3px solid #26231c;background:#161a10}
+  #loadbar{height:100%;width:0%;background:#FFC93C}
+  #t-logo{display:none;max-width:min(80vw,560px);max-height:48vh;width:auto;height:auto;image-rendering:pixelated}
+  @media (max-height:500px){ .overlay{gap:8px} #t-logo{max-height:42vh} button.primary{padding:8px 22px;font-size:16px} }
+  #touch{display:none;position:fixed;inset:auto 0 0 0;z-index:20;justify-content:space-between;padding:0 14px 14px;pointer-events:none}
+  #touch .tgroup{display:flex;gap:10px;pointer-events:auto}
+  #touch button{width:74px;height:74px;border-radius:50%;font-size:20px;opacity:.75;touch-action:none}
+  #touch .small{width:60px;height:60px;font-size:13px}
+  #skipwrap{position:absolute;bottom:26px;right:26px}
+  #hudbtns{display:none;position:fixed;top:10px;right:10px;z-index:25;gap:8px}
+  #hudbtns button{width:42px;height:42px;padding:0;border-radius:50%;font-size:17px;opacity:.85;line-height:1}
+  #hudbtns button:hover{opacity:1}
+  .optrow input[type=range]{width:150px;accent-color:#8CFF3B}
+  .optrow .vlabel{flex:1;text-align:left}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="overlay" id="loading">
+  <h1>APOCALYPSE MEOW</h1>
+  <div id="loadwrap"><div id="loadbar"></div></div>
+  <div class="dim" id="loadmsg">loading the war…</div>
+</div>
+
+<div class="overlay" id="intro">
+  <video id="introvid" playsinline></video>
+  <div class="vsub" id="introsub"></div>
+  <button class="primary" id="btn-begin" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)"></button>
+  <div id="skipwrap"><button id="btn-skip"></button></div>
+</div>
+
+<div class="overlay" id="screen-title">
+  <video class="bgvid" id="titlevid" loop muted playsinline></video>
+  <img id="t-logo" alt="">
+  <h1 id="t-title"></h1>
+  <div class="dim" id="t-sub"></div>
+  <button class="primary" id="btn-start"></button>
+</div>
+
+<div class="overlay" id="screen-lobby">
+  <div class="panel">
+    <h1 id="l-title" style="font-size:24px"></h1>
+    <div class="dim" id="l-brief" style="margin:8px 0 4px;line-height:1.5"></div>
+    <h2 id="t-controls"></h2>
+    <div class="dim" id="c1"></div>
+    <div class="dim" id="c2"></div>
+    <div class="dim" id="c3"></div>
+    <div class="dim" id="c4"></div>
+    <h2 id="t-opts"></h2>
+    <div class="optrow"><span id="o-shake"></span><button id="opt-shake"><span id="opt-shake-v"></span></button></div>
+    <div class="optrow"><span id="o-flash"></span><button id="opt-flash"><span id="opt-flash-v"></span></button></div>
+    <div class="optrow"><span id="o-text"></span><button id="opt-text"><span id="opt-text-v"></span></button></div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="btn-go"></button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="screen-tally">
+  <div class="panel" style="text-align:center">
+    <h1 id="t-result"></h1>
+    <div id="t-stats" style="font-size:20px;line-height:1.8;margin:14px 0"></div>
+    <button class="primary" id="btn-again"></button>
+  </div>
+</div>
+
+<div class="overlay" id="cutscene">
+  <video id="cutvid" playsinline></video>
+  <div class="vsub" id="cutsub"></div>
+  <div id="skipwrap2" style="position:absolute;bottom:26px;right:26px"><button id="btn-skip2"></button></div>
+</div>
+
+<div id="touch">
+  <div class="tgroup">
+    <button id="tL">◀</button><button id="tR">▶</button><button id="tU" class="small">▲🎯</button><button id="tD" class="small">▼</button>
+  </div>
+  <div class="tgroup">
+    <button id="tC" class="small">🧀</button>
+    <button id="tG" class="small">💣</button>
+    <button id="tJ">▲</button>
+    <button id="tF">🔥</button>
+  </div>
+</div>
+
+<div id="hudbtns">
+  <button id="btn-music-toggle" title="Music on/off">🔊</button>
+  <button id="btn-pause" title="Pause">⏸</button>
+</div>
+
+<div class="overlay" id="screen-pause">
+  <div class="panel" style="text-align:center">
+    <h1 id="p-title" style="font-size:26px"></h1>
+    <div class="optrow"><span class="vlabel" id="p-music"></span><input type="range" id="p-music-slider" min="0" max="100" step="1"></div>
+    <div class="optrow"><span class="vlabel" id="p-sfx"></span><input type="range" id="p-sfx-slider" min="0" max="100" step="1"></div>
+    <div class="optrow" style="justify-content:center"><button id="p-music-toggle"><span id="p-music-toggle-v"></span></button></div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="btn-resume"></button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
