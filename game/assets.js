@@ -84,13 +84,19 @@ export const audio = {
     s.connect(g).connect(this.masterSfxGain);
     s.start();
   },
+  // v12 (Dylan: "bring up the sound a little bit on the song 'alien rat patrol'
+  // for that scene"). Per-track trim on top of CFG.gainMusic — Dylan's own
+  // tracks were mastered at different levels, so a single global music gain
+  // makes some scenes sit noticeably quieter than others. Only deviations from
+  // 1.0 need an entry here.
+  trim: { music_ratpatrol: 1.45 },
   music(name) {
     if (!this.ctx || !SND[name]) return;
     this.stopMusic();
     const s = this.ctx.createBufferSource();
     s.buffer = SND[name]; s.loop = true;
     const g = this.ctx.createGain();
-    g.gain.value = CFG.gainMusic;
+    g.gain.value = CFG.gainMusic * (this.trim[name] || 1);
     s.connect(g).connect(this.masterMusicGain);
     s.start();
     this.musicSrc = s; this.musicGain = g;
@@ -223,6 +229,54 @@ export function drawSheet(ctx, id, frame, x, y, w, h, flip) {
   else ctx.drawImage(s.img, sx, sy, s.cw, s.ch, x, y, w, h);
   ctx.restore();
   return true;
+}
+
+// ---------- v12 hit flash (Metal Slug damage feedback) ----------
+// Dylan, twice, the second time noting it had been ignored: "when shooting an
+// enemy ship it should light up and change colors like in metal slug to show
+// that its being hit and taking damage". Enemies previously gave zero feedback
+// between spawn and death, so a 5-HP saucer looked identical to an untouched
+// one and you couldn't tell whether you were hitting it at all.
+//
+// Canvas has no cheap per-sprite tint, so build a silhouette once per
+// (image, colour) and cache it: draw the sprite into an offscreen canvas, then
+// fill with 'source-atop' so only the opaque pixels take the colour. Blitting
+// that over the sprite at partial alpha gives the classic white/red blowout
+// without touching the surrounding scene. Cached, so it costs one extra
+// drawImage per flashing enemy per frame and nothing when nothing is hit.
+const tintCache = new Map();
+function tinted(im, color) {
+  const key = (im.currentSrc || im.src) + '|' + color;
+  let c = tintCache.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = im.naturalWidth || im.width; c.height = im.naturalHeight || im.height;
+    const g = c.getContext('2d');
+    g.drawImage(im, 0, 0);
+    g.globalCompositeOperation = 'source-atop';
+    g.fillStyle = color;
+    g.fillRect(0, 0, c.width, c.height);
+    tintCache.set(key, c);
+  }
+  return c;
+}
+
+// amt: 0..1 flash strength. Ramps white -> red as the enemy nears death so
+// damage state reads at a glance, not just "something happened".
+export function drawImgHit(ctx, im, x, y, w, h, amt, hpFrac) {
+  if (!im) return;
+  ctx.drawImage(im, x, y, w, h);
+  if (amt <= 0) return;
+  // Threshold is 0.5, not 0.34, deliberately: the toughest enemy currently in a
+  // rail section has hpMax 2, so a 0.34 cutoff made the red "nearly dead" state
+  // mathematically unreachable (1/2 = 0.5 > 0.34) and the feature would have
+  // shipped as white-only. At 0.5 a 2-HP enemy flashes white on the first hit
+  // and red on its last. Raise enemy HP and this scales on its own.
+  const color = hpFrac != null && hpFrac <= 0.5 ? '#ff5a3c' : '#ffffff';
+  ctx.save();
+  ctx.globalAlpha = Math.min(0.92, amt);
+  ctx.drawImage(tinted(im, color), x, y, w, h);
+  ctx.restore();
 }
 
 export function drawImg(ctx, id, x, y, w, h, flip) {

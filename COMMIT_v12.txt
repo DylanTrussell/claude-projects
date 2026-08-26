@@ -1,0 +1,87 @@
+v12: mobile controls, rail/tunnel art fixes, hit flash, SFX pass
+
+MOBILE (Dylan: "add a 'shoot' button on mobile version bc right now there
+isn't one"). There was one -- #tF has been bound to C.FIRE all along. The two
+.tgroup rows are 298px each, so justify-content:space-between laid 624px of
+buttons across a 390px iPhone viewport: grenade x=382, jump x=452, FIRE x=536,
+i.e. 146px past the right edge. Mobile had no fire and no jump at all, not
+just a confusing icon. 2x2 grid per cluster under 820px -> all eight fit in
+268px, every right edge <= 381 on a 390px viewport, jump+fire on the lower row
+where the thumbs rest. tJ/tF relabelled JUMP/FIRE. #touch hidden during films
+(it floated over the video at z-index 20, with JUMP directly under SKIP).
+
+CUTSCENES WIDESCREEN ON MOBILE: video + subtitle now share a .cutwrap so the
+portrait rotation moves both. Portrait coverage 26% -> 95.8% of screen;
+landscape 54.5% -> 81.1%.
+
+SKYRAIDER FLIES FORWARD: skyraider.png is drawn nose-LEFT while the code
+assumed a right-facing plane -- the procedural prop-blur ellipse at +pw/2 was
+painting a spinning disc onto the TAIL FIN (Dylan's "propellor on the back"),
+and the muzzle burst fired at x=330, right of centre, while shots carry
+vx:+1050. Mirrored the sprite draw. Also corrects pitch: with left-facing art,
+tilt=-0.09 on W was dropping the nose instead of raising it.
+
+DOOR GUN (Dylan: "its like a giant cat on top of the heli, it should just be
+one of the cats sticking out the side"). huey_gunner was drawn at gh2=190 over
+a helicopter drawn at hh=150 -- a gunner taller than his own aircraft. And
+huey_doorgun.png ALREADY contains a straw-hat VC gunner standing in the open
+side door, so v11.2 had layered a second, larger, differently-designed cat on
+top of him. Overlay deleted; the baked-in gunner's weapon now has a real
+tapered barrel pivoting on the same measured muzzle anchor (gx=277 =
+140 + 0.783*175.8, which is why the old procedural line used it too).
+
+ENEMY HIT FLASH (asked for twice, previously ignored): enemies blow out white
+on hit and red at <=50% health, via a cached source-atop silhouette in
+assets.js. Threshold is 50% not 33% deliberately -- rail enemies cap at
+hpMax 2, so a 33% cutoff made the red state mathematically unreachable and it
+would have shipped as white-only.
+KNOWN LIMITATION: rail rats are hp:1 and die on the first bullet, so the flash
+cannot show on the most common enemy in the section. Raising rail enemy HP is
+a prerequisite for this feature reading in play -- see design/expansion-scope.md.
+
+TUNNEL EXIT: removed the two fps_claws sprites bobbing up on a 420ms cycle
+(Dylan: "get rid of the animation of the cat arms floating up just fade to
+white and then from white back into the other scene"). fps.js now fades up to
+white on the way out and render.js fades back down on the overworld side, so
+the two halves join into one continuous move.
+
+CUTSCENE VIDEO URLS: VIDEO_URLS was exported from chunks.js and imported by
+NOBODY -- playCutscene hardcoded './assets/video/...'. Production served the
+bundled original (md5 1de9cc99) while v11.2's meow splice sat unused on the
+CDN (0d0ced0c). That round verified the CDN asset had changed, not which URL
+the running game requests. Now wired, confirmed by watching the actual network
+request fire. tools/v12_path_audit.mjs exists to catch this class of bug: it
+loads the game, logs every URL fetched, and diffs against what chunks.js
+declares.
+
+SHOTGUN ART: regenerated idle + reload using fps_pistol as the style
+reference. The v11.2 set was three different art styles at once (flat pixel
+pistol, photoreal painterly shotgun, thick-ink comic reload) and the reload
+frame showed three sleeved forearms and three paws. Backgrounds keyed by
+border flood-fill -- both generations returned alpha extrema (255,255), i.e.
+painted-in fake transparency -- re-verified at (0,255), and the reload
+pixel-diffed against the idle (mean 40.2) to prove it is not a silent no-op.
+
+AUDIO: all 17 SFX mastered to a -3.0 dBFS ceiling with DC offset stripped. The
+shipped set measured -12.2 to -32.3 dBFS RMS (a 20 dB spread) with 9 of 17
+peaking hotter than the -3 dBFS ear-safety limit and ~9% DC offset on
+sfx_meow/sfx_purr (a click on every trigger). 11 regenerated on Higgsfield to
+one consistent brief. Three first attempts were unusable and invisible without
+measuring: raygun returned -63 dBFS (noise floor), shotgun -26 dBFS, explosion
+with its transient at 1.8s of a 2.0s clip. tools/sfx_master.py does the
+trimming and levelling; its one-shot cut is restricted to fresh generations
+after it ate sfx_screech (2.02s -> 0.09s) and sfx_gore. The regenerated
+screech was discarded -- only 160ms of real content -- and the re-mastered
+original kept. music_ratpatrol +45% via a per-track trim in assets.js.
+
+Verified: simtest RESULT VICTORY; 17/17 SFX decode through the Web Audio API;
+desktop unchanged (no rotation, touch pad display:none, zero console errors);
+FIRE tapped with real touch events spawns tracers on canvas (pixel-diff);
+production md5-matches local on all seven modules and all 17 audio files.
+
+NOT verified: the new tunnel shotgun sprites were confirmed by URL and by
+chunks.js reference but never seen rendering -- the sandbox browser began
+getting ERR_CONNECTION_RESET on CloudFront (curl returned 200 throughout).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LJ3WXW3NmbJSh5fQT5C42N

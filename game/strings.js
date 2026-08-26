@@ -106,7 +106,7 @@ export const STR = {
   chancellorDown: "CHANCELLOR GRIMTAIL DOWN",
   tapToStart: "TAP OR PRESS ANY KEY",
   skip: "SKIP ▶",
-  watchIntro: "▶ ROLL FILM",
+  watchIntro: "▶ PLAY", // v12 (Dylan: "get rid of roll film as well and just make it PLAY")
 };
 
 // Runtime cutscene subtitles — NOT baked into the video. Edit freely:

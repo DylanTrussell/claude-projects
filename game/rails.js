@@ -3,7 +3,7 @@
 //  Skyraider — you pilot an A-1 over the treeline and napalm it end to end.
 // Same modal pattern as the Tunnel: step(bits,dt,p) / render(ctx,now) / done.
 import { CFG, C, PAL, W, H } from './config.js';
-import { IMG } from './assets.js';
+import { IMG, drawImgHit } from './assets.js';
 import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burst, replaces the flat circle every rail gun used to draw
 
 const GY = 640; // rail ground line
@@ -124,9 +124,9 @@ export class DoorGun extends RailBase {
       this.spawnT = 620 + Math.random() * 620;
       const r = Math.random();
       if (r < 0.5) { // squad of 3 running rats, each takes potshots at the heli
-        for (let i = 0; i < 3; i++) this.foes.push({ k: 'rat', x: W + 80 + i * 70, y: GY, hp: 1, cd: 500 + Math.random() * 700 });
-      } else if (r < 0.8) this.foes.push({ k: 'hover', x: W + 90, y: 220 + Math.random() * 260, hp: 2, ph: Math.random() * 6, cd: 700 + Math.random() * 500 });
-      else this.foes.push({ k: 'nest', x: W + 90, y: GY, hp: 3, cd: 700 });
+        for (let i = 0; i < 3; i++) this.foes.push({ k: 'rat', x: W + 80 + i * 70, y: GY, hp: 1, hpMax: 1, flash: 0, cd: 500 + Math.random() * 700 });
+      } else if (r < 0.8) this.foes.push({ k: 'hover', x: W + 90, y: 220 + Math.random() * 260, hp: 2, hpMax: 2, flash: 0, ph: Math.random() * 6, cd: 700 + Math.random() * 500 });
+      else this.foes.push({ k: 'nest', x: W + 90, y: GY, hp: 3, hpMax: 3, flash: 0, cd: 700 });
     }
 
     // door gun: J — stream of tracers, angle now swept by aimA (v11).
@@ -149,6 +149,7 @@ export class DoorGun extends RailBase {
 
     // foes
     for (const f of this.foes) {
+      if (f.flash > 0) f.flash -= dt; // v12: decay the hit flash
       if (f.k === 'rat') {
         f.x -= 210 * dts; f.cd -= dt;
         // v11.2: ground rats now shoot small-arms fire up at the heli instead
@@ -179,7 +180,7 @@ export class DoorGun extends RailBase {
       if (f.k === 'hover' && aabb(f.x, f.y, 220, this.hy + 30, 70)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
       for (const s of this.shots) {
         if (s.t > 0 && aabb(s.x, s.y, f.x, f.y - (f.k === 'rat' ? 30 : 10), 46)) {
-          f.hp--; s.t = 0;
+          f.hp--; s.t = 0; f.flash = 150; // v12: Metal Slug hit flash
           if (f.hp <= 0) { this.kills++; this.boom(f.x, f.y - 20, f.k !== 'rat'); this.ev({ e: 'fpsKill' }); }
         }
       }
@@ -208,7 +209,7 @@ export class DoorGun extends RailBase {
       if (img) {
         const h2 = f.k === 'hover' ? 64 : 84;
         const w2 = h2 * (img.width / img.height);
-        ctx.drawImage(img, f.x - w2 / 2, f.y - h2, w2, h2);
+        drawImgHit(ctx, img, f.x - w2 / 2, f.y - h2, w2, h2, (f.flash || 0) / 150, f.hpMax ? f.hp / f.hpMax : 1);
       }
       if (f.k === 'nest') { ctx.fillStyle = PAL.teal; ctx.fillRect(f.x - 26, f.y - 26, 52, 26); }
     }
@@ -248,28 +249,47 @@ export class DoorGun extends RailBase {
       // the aimA sweep (not the full 0.598rad base angle) is applied as
       // rotation — rotating by the full `ang` here would double up the tilt
       // and make the gunner spin further than the barrel actually sweeps.
+      // v12 (Dylan: "fix the helicopter shooting scene its like a giant cat on
+      // top of the heli, it should just be one of the cats sticking out the
+      // side"). He was right, and the cause was scale: huey_gunner.png was
+      // drawn at gh2=190 on top of a helicopter drawn at hh=150 -- a gunner
+      // taller than his own aircraft, anchored high and behind it, reading as
+      // a giant cat riding the rotor.
+      //
+      // The deeper problem is that the overlay was never needed. huey_doorgun.png
+      // ALREADY has a door gunner painted into it: a VC cat in a conical straw
+      // hat standing in the open side door with the gun pointed right -- exactly
+      // "one of the cats sticking out the side". v11.2 layered a second, larger,
+      // differently-designed cat (orange, red headband) on top of him. So the
+      // fix is to delete the overlay and articulate the gun the baked-in gunner
+      // is already holding.
+      //
+      // gx/gy2 is the muzzle of that baked-in gun, not an arbitrary point: the
+      // helicopter draws from x=140 at width 175.8, and the gun muzzle sits at
+      // u=0.783 of the sprite -> 140 + 0.783*175.8 = 277.6, and v=0.693 of
+      // height 150 = 104 ~= 107. That is why the old procedural line and the
+      // shot origin both used it. We pivot the barrel about the same anchor so
+      // it stays welded to the gunner's paws at every aim angle.
       const gx = 277, gy2 = this.hy + 107 + bobY;
       const ang = 0.598 + this.aimA;
-      const gunnerImg = IMG.huey_gunner;
-      if (gunnerImg) {
-        const gh2 = 190, gw2 = gh2 * (gunnerImg.width / gunnerImg.height);
-        const pivU = 0.513, pivV = 0.99; // normalized pintle-post position baked into the sprite
-        ctx.save();
-        ctx.translate(gx, gy2);
-        ctx.rotate(this.aimA);
-        ctx.drawImage(gunnerImg, -gw2 * pivU, -gh2 * pivV, gw2, gh2);
-        ctx.restore();
-        if (this.fireT > 0) { // muzzle tip baked into the sprite, rotated the same way
-          const tipU = 0.997, tipV = 0.866;
-          const lx = gw2 * (tipU - pivU), ly = gh2 * (tipV - pivV);
-          const cA = Math.cos(this.aimA), sA = Math.sin(this.aimA);
-          drawMuzzleBurst(ctx, gx + lx * cA - ly * sA, gy2 + lx * sA + ly * cA, ang, this.fireT / 70);
-        }
-      } else { // defensive fallback if the sprite ever fails to load
-        ctx.strokeStyle = '#2a2a24'; ctx.lineWidth = 6;
-        ctx.beginPath(); ctx.moveTo(gx - Math.cos(ang) * 10, gy2 - Math.sin(ang) * 10);
-        ctx.lineTo(gx + Math.cos(ang) * 34, gy2 + Math.sin(ang) * 34); ctx.stroke();
-        if (this.fireT > 0) drawMuzzleBurst(ctx, gx + Math.cos(ang) * 34, gy2 + Math.sin(ang) * 34, ang, this.fireT / 70);
+      // A real tapered barrel with a highlight and a flash hider, not the flat
+      // "random black line" Dylan called out in v11.2 -- but sized to the gun
+      // the gunner is holding rather than replacing him with a second cat.
+      const cA = Math.cos(ang), sA = Math.sin(ang);
+      ctx.save();
+      ctx.translate(gx, gy2);
+      ctx.rotate(ang);
+      ctx.fillStyle = '#3a3a32';                       // barrel body
+      ctx.fillRect(-12, -4, 46, 8);
+      ctx.fillStyle = '#55554a';                       // top highlight
+      ctx.fillRect(-12, -4, 46, 2);
+      ctx.fillStyle = '#26231c';                       // flash hider
+      ctx.fillRect(30, -5.5, 8, 11);
+      ctx.fillStyle = '#2f2f28';                       // receiver stub back toward his paws
+      ctx.fillRect(-18, -6, 10, 12);
+      ctx.restore();
+      if (this.fireT > 0) {
+        drawMuzzleBurst(ctx, gx + cA * 40, gy2 + sA * 40, ang, this.fireT / 70);
       }
     }
     this.drawBooms(ctx);
@@ -312,9 +332,9 @@ export class Skyraider extends RailBase {
     if (this.spawnT <= 0) {
       this.spawnT = 500 + Math.random() * 600;
       const r = Math.random();
-      if (r < 0.55) { for (let i = 0; i < 3; i++) this.foes.push({ k: 'rat', x: W + 90 + i * 60, y: GY, hp: 1, cd: 400 + Math.random() * 700 }); }
+      if (r < 0.55) { for (let i = 0; i < 3; i++) this.foes.push({ k: 'rat', x: W + 90 + i * 60, y: GY, hp: 1, hpMax: 1, flash: 0, cd: 400 + Math.random() * 700 }); }
       else if (r < 0.8) this.foes.push({ k: 'burst', x: W + 60, y: this.py + (Math.random() - 0.5) * 200, t: 0, hp: 99 });
-      else this.foes.push({ k: 'ufo', x: W + 100, y: 120 + Math.random() * 240, hp: 2, ph: 0, cd: 600 + Math.random() * 500 });
+      else this.foes.push({ k: 'ufo', x: W + 100, y: 120 + Math.random() * 240, hp: 2, hpMax: 2, flash: 0, ph: 0, cd: 600 + Math.random() * 500 });
     }
 
     // guns
@@ -356,6 +376,7 @@ export class Skyraider extends RailBase {
     this.fires = this.fires.filter(fr => fr.t < 2800);
 
     for (const f of this.foes) {
+      if (f.flash > 0) f.flash -= dt; // v12: decay the hit flash
       if (f.k === 'rat') {
         f.x -= (120 + this.spd * 0.35) * dts; f.cd -= dt;
         // v11.2: ground troops now take real potshots at the plane, using the
@@ -380,7 +401,7 @@ export class Skyraider extends RailBase {
       }
       for (const s of this.shots) {
         if (s.t > 0 && f.k !== 'burst' && aabb(s.x, s.y, f.x, f.y - (f.k === 'rat' ? 30 : 0), 48)) {
-          f.hp--; s.t = 0;
+          f.hp--; s.t = 0; f.flash = 150; // v12: Metal Slug hit flash
           if (f.hp <= 0) { this.kills++; this.boom(f.x, f.y - 16, f.k === 'ufo'); this.ev({ e: 'fpsKill' }); }
         }
       }
@@ -424,7 +445,7 @@ export class Skyraider extends RailBase {
       if (img) {
         const h2 = f.k === 'ufo' ? 70 : 84;
         const w2 = h2 * (img.width / img.height);
-        ctx.drawImage(img, f.x - w2 / 2, f.y - h2, w2, h2);
+        drawImgHit(ctx, img, f.x - w2 / 2, f.y - h2, w2, h2, (f.flash || 0) / 150, f.hpMax ? f.hp / f.hpMax : 1);
       }
     }
     // v11.2: enemy anti-air fire from rats/saucers (was never drawn before —
@@ -466,7 +487,20 @@ export class Skyraider extends RailBase {
       ctx.save();
       ctx.translate(260, this.py + Math.sin(now / 260) * 5);
       ctx.rotate(tilt);
+      // v12 (Dylan: "the airplane needs to be mirror flipped or something
+      // because it's flying backwards and even has a propellor on the back").
+      // skyraider.png is drawn nose-LEFT, but everything around it assumes a
+      // right-facing plane: the prop-blur ellipse below is painted at +pw/2
+      // (which was landing on the TAIL FIN -- that's the "propellor on the
+      // back"), the muzzle burst fires at x=330 to the right of centre, the
+      // gun shots carry vx:+1050, and every foe closes with x -= spd. Mirror
+      // the sprite so the real propeller, the blur disc and the guns agree.
+      // This also corrects the pitch: with the art facing left, tilt=-0.09 on
+      // W was dropping the nose instead of raising it.
+      ctx.save();
+      ctx.scale(-1, 1);
       ctx.drawImage(pl, -pw / 2, -ph / 2, pw, ph);
+      ctx.restore();
       // prop blur disc at the nose
       ctx.fillStyle = `rgba(230,230,220,${0.25 + 0.2 * Math.sin(now / 16)})`;
       ctx.beginPath(); ctx.ellipse(pw / 2 - 6, 0, 10, ph * 0.42, 0, 0, 7); ctx.fill();

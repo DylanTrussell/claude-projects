@@ -718,24 +718,22 @@ export class Tunnel {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.sc, 0, 0, RW, RH, 0, 0, W, H);
 
-    // ---- crawl-out overlay ----
+    // ---- tunnel exit: straight fade to white ----
+    // v12 (Dylan: "inside the tunnel when you leave, get rid of the animation
+    // of the cat arms floating up just fade to white and then from white back
+    // into the other scene where he comes out of the tunnel"). The old exit
+    // alternated two fps_claws sprites at W*0.18 and W*0.6, sliding each up
+    // 130px on a 420ms cycle, to fake a climb — it read as two disembodied
+    // paws bobbing in mid-air. Removed entirely; the white-out now carries the
+    // transition on its own, and main.js fades back IN from white on the far
+    // side so the cut reads as one continuous move out of the tunnel.
     if (this.crawl > 0) {
       const k = Math.min(1, this.crawl / 1900);
-      // camera tilts up into the light
-      ctx.fillStyle = `rgba(255,248,225,${(k * k).toFixed(3)})`;
+      // ease-in so the light builds slowly then takes the screen quickly
+      const a = Math.min(1, Math.pow(k, 1.6) * 1.12);
+      ctx.fillStyle = `rgba(255,250,238,${a.toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
-      const claw = IMG.fps_claws;
-      if (claw && k < 0.92) {
-        const ph = (this.crawl / 420) | 0;
-        const up = (this.crawl % 420) / 420;
-        const ca = claw.width / claw.height;
-        const chh = 300;
-        ctx.save(); ctx.globalAlpha = 1 - k * 0.6;
-        if (ph % 2 === 0) ctx.drawImage(claw, W * 0.18, H - chh - up * 130, chh * ca, chh);
-        else ctx.drawImage(claw, W * 0.6, H - chh - up * 130, chh * ca, chh);
-        ctx.restore();
-      }
-      return; // no viewmodel/hud during the crawl
+      return; // no viewmodel/hud during the exit
     }
 
     // ---- screen blood splats ----

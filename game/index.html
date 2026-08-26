@@ -29,7 +29,11 @@
   .optrow button{padding:6px 14px;font-size:13px}
   video.bgvid{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1;filter:brightness(.55)}
   #cutscene{background:#000}
-  #cutscene video{max-width:100%;max-height:82vh}
+  /* v12: video + subtitle share one wrapper so portrait rotation moves both
+     together. Previously .vsub was positioned against the whole overlay, so
+     rotating the video alone would have left subtitles behind. */
+  .cutwrap{position:relative;display:flex;align-items:center;justify-content:center;max-width:100%;max-height:82vh}
+  .cutwrap video{display:block;max-width:100%;max-height:82vh}
   .vsub{position:absolute;left:8%;right:8%;bottom:8%;text-align:center;font-weight:bold;
     font-size:clamp(16px,2.6vw,30px);color:#fff;line-height:1.35;pointer-events:none;
     text-shadow:0 2px 3px #000,0 0 12px rgba(0,0,0,.9),2px 2px 0 #000;letter-spacing:.5px}
@@ -48,6 +52,51 @@
   #hudbtns button:hover{opacity:1}
   .optrow input[type=range]{width:150px;accent-color:#8CFF3B}
   .optrow .vlabel{flex:1;text-align:left}
+
+  /* ---------- v12 MOBILE ----------
+     Dylan (v11.2 playtest): "add a 'shoot' button on mobile version bc right
+     now there isn't one" + "make all the cut scenes play wide screen on mobile".
+
+     The shoot button already existed (#tF, bound to C.FIRE in main.js) — it was
+     just rendered off the side of the screen. Measured on an emulated iPhone 13
+     (390px CSS wide): the two .tgroup rows are 298px each, so 596px + 28px
+     padding = 624px of buttons crammed into a 390px viewport with
+     justify-content:space-between. Everything from #tG (x=382) rightward fell
+     off the edge — including jump (x=452) and FIRE (x=536, i.e. 146px past the
+     right edge). Mobile has effectively had no fire and no jump, not just a
+     confusing icon. Fix is a 2x2 grid per cluster so all eight controls fit in
+     268px, well inside a 360px phone, with jump+fire on the lower row where the
+     thumbs already rest. */
+  @media (max-width: 820px){
+    #touch{padding:0 10px 12px;align-items:flex-end}
+    #touch .tgroup{display:grid;grid-template-columns:repeat(2,auto);gap:8px}
+    #touch button,#touch .small{width:clamp(52px,15vw,68px);height:clamp(52px,15vw,68px);font-size:15px}
+    #touch .small{font-size:13px}
+    #touch button.txt{font-size:clamp(11px,3vw,14px);letter-spacing:0}
+  }
+  /* Cutscenes: a 16:9 film letterboxed into a portrait phone wastes most of the
+     screen (measured ~219px of video in an 844px-tall viewport). Rotate the
+     wrapper so the film uses the phone's LONG axis — the player turns the handset
+     like any other fullscreen video. Sized so the rotated box never overflows:
+     after rotate(90deg) the element's width maps to screen height and its height
+     maps to screen width, so width<=100vh and (16:9) width<=100vw*16/9. */
+  @media (max-aspect-ratio: 1/1) and (pointer: coarse){
+    #intro,#cutscene{overflow:hidden}
+    .cutwrap{
+      position:absolute;left:50%;top:50%;
+      width:min(100vh,177.78vw);height:min(56.25vh,100vw);
+      max-width:none;max-height:none;
+      transform:translate(-50%,-50%) rotate(90deg);transform-origin:center center;
+    }
+    .cutwrap video{width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
+    .cutwrap .vsub{font-size:clamp(15px,2.4vh,28px)}
+  }
+  /* Turning the handset makes the page landscape, which drops the rotation
+     above and shows the film the normal way up — so landscape needs the full
+     height, not the 82vh desktop allowance (that left ~45% of the screen dead). */
+  @media (min-aspect-ratio: 1/1) and (pointer: coarse){
+    .cutwrap,.cutwrap video{max-height:100vh}
+  }
 </style>
 </head>
 <body>
@@ -60,8 +109,10 @@
 </div>
 
 <div class="overlay" id="intro">
-  <video id="introvid" playsinline></video>
-  <div class="vsub" id="introsub"></div>
+  <div class="cutwrap">
+    <video id="introvid" playsinline></video>
+    <div class="vsub" id="introsub"></div>
+  </div>
   <button class="primary" id="btn-begin" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)"></button>
   <div id="skipwrap"><button id="btn-skip"></button></div>
 </div>
@@ -102,8 +153,10 @@
 </div>
 
 <div class="overlay" id="cutscene">
-  <video id="cutvid" playsinline></video>
-  <div class="vsub" id="cutsub"></div>
+  <div class="cutwrap">
+    <video id="cutvid" playsinline></video>
+    <div class="vsub" id="cutsub"></div>
+  </div>
   <div id="skipwrap2" style="position:absolute;bottom:26px;right:26px"><button id="btn-skip2"></button></div>
 </div>
 
@@ -114,8 +167,11 @@
   <div class="tgroup">
     <button id="tC" class="small">🧀</button>
     <button id="tG" class="small">💣</button>
-    <button id="tJ">▲</button>
-    <button id="tF">🔥</button>
+    <!-- v12: was "▲" and "🔥". Dylan read the flame as a weapon icon rather
+         than the fire control and reported the shoot button as missing, so
+         these now say what they do. -->
+    <button id="tJ" class="txt">JUMP</button>
+    <button id="tF" class="txt">FIRE</button>
   </div>
 </div>
 

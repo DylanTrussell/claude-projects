@@ -18,6 +18,12 @@ export const FX = {
   // from TUNNEL_TRANS_MS. See drawPlayerEnt()'s use of these and main.js's
   // handleEvents()/tunnel-done block, which drive them.
   tunnelFallT: 0, tunnelPopT: 0,
+  // v12 (Dylan: "just fade to white and then from white back into the other
+  // scene where he comes out of the tunnel"). fps.js fades the tunnel view UP
+  // to white on its way out; this is the matching fade DOWN from white on the
+  // overworld side, so the two halves read as one continuous transition
+  // instead of a hard cut at the mode switch.
+  whiteT: 0, whiteT0: 1,
 };
 export const TUNNEL_TRANS_MS = 480;
 for (let i = 0; i < CFG.particlePool; i++) FX.parts.push({ on: 0, x: 0, y: 0, vx: 0, vy: 0, t: 0, T: 1, kind: 0, r: 4, col: '' });
@@ -117,6 +123,7 @@ export function fxUpdate(dt) {
   FX.booms = FX.booms.filter(b => !SHEET.sheet_explosion || b.t < SHEET.sheet_explosion.frames * (1000 / SHEET.sheet_explosion.fps));
   FX.tunnelFallT = Math.max(0, FX.tunnelFallT - dt);
   FX.tunnelPopT = Math.max(0, FX.tunnelPopT - dt);
+  FX.whiteT = Math.max(0, FX.whiteT - dt);
 }
 
 // ---------- world drawing ----------
@@ -820,6 +827,13 @@ export function render(ctx, view, t, myPid, dbg) {
   if (FX.green > 0) { // THE flash — washes the world out into the cutscene
     const k2 = FX.green > 700 ? (1100 - FX.green) / 400 : FX.green / 700;
     ctx.fillStyle = `rgba(124,255,77,${Math.min(1, k2).toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  // v12: fade down from white as the hero emerges from the tunnel. Drawn above
+  // the world but below the HUD, so the player sees the scene resolve out of
+  // the light rather than the HUD punching through a white screen.
+  if (FX.whiteT > 0) {
+    ctx.fillStyle = `rgba(255,250,238,${(FX.whiteT / FX.whiteT0).toFixed(3)})`;
     ctx.fillRect(0, 0, W, H);
   }
 

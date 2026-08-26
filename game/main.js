@@ -18,6 +18,7 @@ import { loadAll, audio, IMG, ensureChunk, prefetchChunk } from './assets.js';
 import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish } from './sim.js';
 import { render, fxEvent, fxUpdate, FX, drawRotor, TUNNEL_TRANS_MS } from './render.js';
 import { Tunnel } from './fps.js';
+import { VIDEO_URLS } from './chunks.js';
 import { DoorGun, Skyraider } from './rails.js';
 // v11: wiring in content that's existed complete on disk since v8/v9 but was
 // never reachable — see the changelog for why (short version: boat.js and
@@ -161,11 +162,31 @@ function endGame(won) {
   show('screen-tally');
 }
 
+// v12: the touch pad sits at z-index 20 and the cutscene overlay at 10, so on a
+// phone the movement/fire buttons floated on top of the film — and the JUMP
+// button landed directly under the SKIP button, making SKIP hard to hit. Films
+// take no gameplay input, so park the pad for the duration. visibility (not
+// display) so the coarse-pointer check in the boot block stays authoritative.
+function touchPad(show) {
+  const t = $('touch');
+  if (t) t.style.visibility = show ? '' : 'hidden';
+}
+
 function playCutscene(which, then) {
   const vid = $('cutvid');
   cutsceneActive = true;
+  touchPad(false);
   $('cutscene').style.display = 'flex';
-  vid.src = './assets/video/' + (which === 'truce' ? 'truce' : which === 'victory' ? 'victory' : 'intro') + '.mp4';
+  // v12: VIDEO_URLS was exported from chunks.js and imported by NOBODY -- the
+  // only import anywhere was `{ CHUNKS }` in assets.js -- so this line always
+  // played the bundled copy and the CDN entries were dead code. That is why
+  // v11.2's meow splice never reached the player: it edited the CDN truce.mp4
+  // (md5 0d0ced0c...) while production kept serving the bundled original
+  // (1de9cc99...), and the round "verified" by curling the CDN asset rather
+  // than by checking which URL the game actually requests. Confirmed with a
+  // network audit (tools/v12_path_audit.mjs) that logs every URL the running
+  // game fetches and diffs it against what chunks.js declares.
+  vid.src = VIDEO_URLS[which] || './assets/video/intro.mp4';
   vid.currentTime = 0;
   attachSubs(vid, $('cutsub'), SUBS[which]);
   vid.play().catch(() => {});
@@ -173,6 +194,7 @@ function playCutscene(which, then) {
     if (!cutsceneActive) return;
     cutsceneActive = false;
     $('cutscene').style.display = 'none';
+    touchPad(true);
     vid.pause();
     if (then) then();
   };
@@ -272,8 +294,8 @@ $('btn-start').addEventListener('click', () => {
 $('btn-go').addEventListener('click', () => startGame());
 $('btn-again').addEventListener('click', () => startGame());
 // no start screen: the film cuts straight to the chopper coming down in gameplay
-$('btn-skip').addEventListener('click', () => { $('intro').style.display = 'none'; $('introvid').pause(); startGame(); });
-$('introvid').addEventListener('ended', () => { $('intro').style.display = 'none'; startGame(); });
+$('btn-skip').addEventListener('click', () => { $('intro').style.display = 'none'; touchPad(true); $('introvid').pause(); startGame(); });
+$('introvid').addEventListener('ended', () => { $('intro').style.display = 'none'; touchPad(true); startGame(); });
 
 function showTitle() {
   mode = 'title';
@@ -374,6 +396,11 @@ function frame(now) {
           // frame) while the animation plays; loadingChunk briefly freezes
           // the sim the same way a CDN chunk fetch does.
           FX.tunnelPopT = TUNNEL_TRANS_MS;
+          // v12: fps.js has just faded the tunnel view up to solid white; come
+          // back down out of it here so the two halves join into one move.
+          // Longer than TUNNEL_TRANS_MS so the light lingers a beat after the
+          // pop-out animation starts, which is what sells it as emerging.
+          FX.whiteT0 = 900; FX.whiteT = 900;
           loadingChunk = true;
           lastView = serialize(g);
           lastView.secX = g.cam + W / 2;
@@ -565,13 +592,14 @@ if (dev) {
   iv.src = './assets/video/intro.mp4';
   attachSubs(iv, $('introsub'), SUBS.intro);
   $('intro').style.display = 'flex';
+  touchPad(false); // v12: opening film owns the screen — no floating d-pad over it
   // Chrome blocks un-muted autoplay on a fresh visit — never silently skip the
   // opening film. If play() is rejected, gate on one tap (which also unlocks audio).
   iv.play().catch(() => {
     $('btn-begin').style.display = 'block';
     $('btn-begin').addEventListener('click', () => {
       $('btn-begin').style.display = 'none';
-      iv.play().catch(() => { $('intro').style.display = 'none'; showTitle(); });
+      iv.play().catch(() => { $('intro').style.display = 'none'; touchPad(true); showTitle(); });
     });
   });
   // (start screen removed — title video no longer loaded)
