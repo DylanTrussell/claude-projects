@@ -16,6 +16,15 @@ const CDN = 'https://d2ol7oe51mr4n9.cloudfront.net/user_326nzvdI1NU8OaRgxKtyLxSy
 const HF = 'https://d8j0ntlcm91z4.cloudfront.net/user_326nzvdI1NU8OaRgxKtyLxSyQWq/';
 
 export const CHUNKS = {
+  // v13: weapon overlays load at boot with the rest of the base art -- they are
+  // needed topside, long before any tunnel chunk is fetched.
+  weapons: {
+    images: {
+      wep_gatling: CDN + '4f16866a-f82c-42e4-91f0-cbc1685ce2d8.png',
+      wep_flame: CDN + 'ed9518af-ee49-46c6-94af-71c7e427b09d.png',
+      wep_raygun: CDN + '49f24919-1e51-4828-b0ea-5a5dc3ccfc29.png',
+    },
+  },
   tunnel: {
     images: {
       // v10.2 (Dylan, furious: "the gun is pointing at me like im committing
@@ -81,9 +90,25 @@ export const CHUNKS = {
       // clearly gripping the pump, the other tucked mostly behind the wood
       // stock. Background-removed and alpha-extrema verified (0,255) before
       // shipping, not just eyeballed.
-      fps_shotgun: HF + 'hf_20260720_215608_942f5bc5-9b22-4fca-aed5-b279887c206a.png',
+      // v12 (Dylan: "the pistol looks good in the tunnel, but the shotgun is a
+      // different style and needs to match the pistol, its too real looking so
+      // make the style of the cat arms and gun sprite the same, also when you
+      // reload the shotgun it looks like 3 arms instead of two so fix that").
+      // Both confirmed by pulling the deployed pixels: the v11.2 shotgun was a
+      // photoreal painterly render (real wood grain, fabric weave, soft
+      // gradients, no outline) next to a flat chunky pixel-art pistol, and the
+      // reload frame was a THIRD style again -- thick-ink comic -- with three
+      // separate sleeved forearms and three paws visible at once.
+      // Regenerated both from fps_pistol as the style reference so all three
+      // tunnel weapon frames finally share one look, with an explicit
+      // two-arms-only constraint. Checker/white background keyed out by
+      // border flood-fill (the generator paints fake transparency: raw output
+      // measured alpha extrema (255,255) both times) and re-verified at
+      // (0,255). Reload checked against the idle frame by pixel diff (mean
+      // 40.2) so it is a real redraw, not the usual silent no-op.
+      fps_shotgun: CDN + '0bc2df29-be7d-440c-9585-5dab6a84ee93.png',
       fps_shotgun_fire: CDN + '4935f574-425a-4dff-b4ef-2d9e93f5eee8.png', // unchanged: already fired straight forward, not broken — used as the v11 angle reference
-      fps_shotgun_reload: CDN + '43cd4a49-aa6d-4032-b9c9-4cdf0539521a.png',
+      fps_shotgun_reload: CDN + 'e5942aa5-3713-4974-a6b1-58d33d521b87.png',
       fps_claws: CDN + '6f2f4b7b-4b9e-4cc0-999a-6849db4f1167.png',
       // throat-grab sequence: appear (original) -> mid-rip -> aftermath.
       fps_throat: HF + 'hf_20260720_215610_d78a9dc9-1a50-4fac-b79c-b4a86898f046.png',
@@ -119,7 +144,14 @@ export const CHUNKS = {
       // full 5-pose set (idle/walk1/walk2/lunge/hurt) the same way the VC
       // knife set works, blade held up and threatening instead of a flat
       // idle stance. See fps.js render() for the state->frame mapping.
-      rat_blade: HF + 'hf_20260719_220423_50663cd2-e43d-4bdf-b2a2-a1f9d586085f.png',
+      // v13 (Dylan: "the graphics of the tunnel enemies are really bad id like
+      // to improve them to stop them from being flat and more 3d"). Redrawn
+      // with explicit volumetric shading and rim light, brass/copper armour and
+      // steam vents so it reads as a solid object rather than a flat decal.
+      // Generated on a PURE BLACK background and keyed to alpha locally
+      // (tools/key_black.py) rather than asking for transparency -- the model
+      // paints a fake checkerboard when asked directly. Verified (0,255).
+      rat_blade: CDN + '0bf2e6b8-c719-44fe-a9e9-7ccdffff699a.png',
       rat_blade_walk1: HF + 'hf_20260719_220426_7ed4591b-db12-489f-99c1-1297fb916b7c.png',
       rat_blade_walk2: HF + 'hf_20260719_220428_710aa544-852d-43c1-b42e-99e725ee05a9.png',
       rat_blade_lunge: HF + 'hf_20260719_220431_567c5c0e-c9a3-458e-aee6-31d5dfa0c8de.png',
@@ -190,6 +222,18 @@ export const CHUNKS = {
 // HTTP on its own, so there's nothing to "load" ahead of time. Pointing src
 // at a CDN URL instead of a bundled file is the entire fix; it just needed
 // to live somewhere both main.js and (later) other chunks can share.
+// v13: topside weapon overlays (Dylan: "when he gets gun upgrades, his actual
+// gun needs to change... the same gun shooting different bullets is fucking
+// lazy"). The hero sprite has one rifle painted into it, so picking up a
+// gatling/flamethrower/raygun changed only the bullets. These are drawn OVER
+// the hero at his gun hand, per weapon -- see drawPlayerEnt() in render.js.
+// All generated on pure black and keyed locally; alpha verified (0,255).
+export const WEAPON_ART = {
+  gatling: CDN + '4f16866a-f82c-42e4-91f0-cbc1685ce2d8.png',
+  flame: CDN + 'ed9518af-ee49-46c6-94af-71c7e427b09d.png',
+  raygun: CDN + '49f24919-1e51-4828-b0ea-5a5dc3ccfc29.png',
+};
+
 export const VIDEO_URLS = {
   intro: './assets/video/intro.mp4', // stays bundled: needed at t=0, before any network round trip is acceptable
   // v11.2 (Dylan: "during the cut scene when orange cat is speaking, make

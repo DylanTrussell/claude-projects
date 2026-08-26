@@ -29,6 +29,7 @@ export const audio = {
   sfxBus: null, masterSfxGain: null, masterMusicGain: null,
   masterSfxVol: 1, masterMusicVol: 1, musicMuted: false,
   voices: {}, // sound name -> array of scheduled-end timestamps, for concurrency thinning
+  pendingMusic: null, playingMusic: null, // v13: see music()/unlockMusic()
   ensure() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -90,18 +91,48 @@ export const audio = {
   // makes some scenes sit noticeably quieter than others. Only deviations from
   // 1.0 need an entry here.
   trim: { music_ratpatrol: 1.45 },
-  music(name) {
-    if (!this.ctx || !SND[name]) return;
+  // v13 (Dylan: "after the film ends, and the level begins, the music is not
+  // playing... music_rock plays when you SKIP the intro film"). That asymmetry
+  // was the whole diagnosis. Skipping means clicking SKIP — a user gesture, so
+  // ctx.resume() is granted and music starts. Letting the film run to the end
+  // means the 'ended' handler calls startGame() with NO user gesture anywhere
+  // in the stack, so on a fresh visit the AudioContext is still 'suspended':
+  // resume() returns a promise that never settles into 'running', s.start()
+  // runs against a suspended graph, and the level begins in silence. Nothing
+  // errored, which is why it never showed up in a console check.
+  // Two fixes: remember the track we wanted and re-issue it the moment the
+  // context actually unlocks (unlockMusic below, wired to the first input in
+  // main.js), and ramp the gain instead of hard-starting so the handoff out of
+  // the film is a fade rather than a cut.
+  music(name, fadeMs = 0) {
+    if (!SND[name]) return;
+    this.pendingMusic = name;
+    if (!this.ctx || this.ctx.state !== 'running') return; // replayed by unlockMusic()
     this.stopMusic();
     const s = this.ctx.createBufferSource();
     s.buffer = SND[name]; s.loop = true;
     const g = this.ctx.createGain();
-    g.gain.value = CFG.gainMusic * (this.trim[name] || 1);
+    const target = CFG.gainMusic * (this.trim[name] || 1);
+    if (fadeMs > 0) {
+      g.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(target, this.ctx.currentTime + fadeMs / 1000);
+    } else {
+      g.gain.value = target;
+    }
     s.connect(g).connect(this.masterMusicGain);
     s.start();
     this.musicSrc = s; this.musicGain = g;
+    this.playingMusic = name;
   },
-  stopMusic() { if (this.musicSrc) { try { this.musicSrc.stop(); } catch (_) {} this.musicSrc = null; } },
+  // Called on the first real user input. If a track was requested while the
+  // context was suspended and never actually sounded, start it now.
+  unlockMusic() {
+    this.ensure();
+    if (this.ctx && this.ctx.state === 'running' && this.pendingMusic && this.playingMusic !== this.pendingMusic) {
+      this.music(this.pendingMusic, 600);
+    }
+  },
+  stopMusic() { if (this.musicSrc) { try { this.musicSrc.stop(); } catch (_) {} this.musicSrc = null; this.playingMusic = null; } },
   hum(onoff) {
     if (!this.ctx || !SND.sfx_ufo) return;
     if (onoff && !this.humSrc) {

@@ -14,13 +14,16 @@ export const CFG = {
   invulnMs: 2000,
   hitInvulnMs: 900,       // i-frames after a non-fatal hit
   hitboxScale: 0.6,
-  lives: 20,              // TESTING MODE — drop to ~5 for release
+  lives: 9,               // v13: Dylan's release number (was 20 for testing)
   hpMax: 5,               // health meter: most hits cost 1
   // weapons
   rifleCd: 160, rifleSpd: 760,
   gatlingCd: 66, gatlingAmmo: 200,
   raygunCd: 210, raygunSpd: 700, raygunAmmo: 60, raygunDmg: 2, raygunPierce: 3,
-  flameCd: 55, flameSpd: 430, flameAmmo: 140, flameLife: 500,
+  // v13 (Dylan: "flamethrower is weak"). Faster cadence = a continuous stream
+  // rather than a dotted line of puffs; a touch more reach and life so the
+  // cone actually covers ground and leaves burning patches behind it.
+  flameCd: 34, flameSpd: 470, flameAmmo: 220, flameLife: 620,
   grenadeCd: 420, grenadeVy: -420, grenadeVx: 340, startGrenades: 5,
   grenadeRadius: 160, shrapnelN: 9, shrapnelSpd: 540, shrapnelLife: 340,
   meleeRange: 58, meleeCd: 320, meleeDmg: 3,
@@ -45,7 +48,9 @@ export const CFG = {
   // act III bike
   bikeBase: 250, bikeMin: 150, bikeMax: 400, bikeJumpVy: -620, bikeGunCd: 95,
   // audio mix (audio.md levels)
-  gainMusic: 0.22, gainSfx: 0.5, gainHum: 0.3,
+  // v13 (Dylan: "default the music volume higher 10% and lower sound effects
+  // 10%"). Relative, not absolute: 0.22*1.10 and 0.50*0.90.
+  gainMusic: 0.242, gainSfx: 0.45, gainHum: 0.27,
 };
 
 // Formula-derived palette for ALL procedural art (style contract, block 3/4).

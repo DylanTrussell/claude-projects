@@ -65,7 +65,7 @@ export class ParleyBoss extends RailBase {
 
   step(bits, dt, p) {
     if (this.done) return;
-    this.stepCommon(dt);
+    this.stepCommon(dt, p);
     const dts = dt / 1000;
     if (!this.started) { this.started = true; this.ev({ e: 'music', n: 'music_ratpatrol' }); }
     this.runScript(this.t);

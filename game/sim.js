@@ -66,7 +66,7 @@ export function makeGame(seed, seats) {
     sec: 'A', invasion: false, over: false, won: false,
     score: 0, pows: 0, checkpoint: 0,
     players: seats.map((s, i) => spawnPlayer(s.pid, s.hero, 200 + i * 60)),
-    enemies: [], pickups: [], lures: [],
+    enemies: [], pickups: [], lures: [], fires: [], // v13: burning ground patches from flame/napalm
     bullets: [], // pooled
     waves: WAVES.map(w => ({ ...w, done: false, alive: [] })),
     traps: LEVEL.traps.map(t => ({ ...t })),
@@ -660,6 +660,37 @@ export function step(g, dt, inputs) {
   // -- lures decay --
   for (const l of g.lures) l.t -= dt;
   g.lures = g.lures.filter(l => l.t > 0);
+  // v13: burning ground. Each patch ticks damage into anything standing in it
+  // on a fixed cadence rather than every frame, so walking through costs a
+  // predictable amount instead of melting on contact.
+  // flame or napalm washing over a cheese cache cooks it as well
+  for (const l of g.lures) {
+    if (l.t > 0 && g.fires.some(f2 => Math.abs(f2.x - l.x) < 46)) meltCheese(g, l);
+  }
+  // enemies coated in molten cheese burn down rather than dying on contact
+  for (const e2 of g.enemies) {
+    if (!e2.molten || e2.st === 'gone') continue;
+    e2.molten -= dt;
+    e2.mTick = (e2.mTick || 0) - dt;
+    if (e2.mTick <= 0) { e2.mTick = 300; e2.hp -= 1; evPush(g, { e: 'cheesecoat', x: e2.x, y: e2.y - 40 }); }
+    if (e2.molten <= 0 || e2.hp <= 0) { e2.molten = 0; if (e2.st !== 'gone') killEnemy(g, e2, 1); }
+  }
+  for (const f of g.fires) {
+    f.t -= dt; f.tick -= dt;
+    if (f.tick <= 0) {
+      f.tick = 260;
+      for (const e2 of g.enemies) {
+        if (e2.st === 'gone' || e2.k === 'pow' || e2.k === 'buddy' || !hostileTo(g, e2)) continue;
+        if (e2.k === 'boss') continue; // the mothership does not care about a grass fire
+        if (Math.abs(e2.x - f.x) < 40 && Math.abs(e2.y - f.y) < 96) {
+          e2.hp -= 1;
+          evPush(g, { e: 'hit', x: e2.x, y: e2.y - 40 });
+          if (e2.hp <= 0) killEnemy(g, e2, 0);
+        }
+      }
+    }
+  }
+  g.fires = g.fires.filter(f => f.t > 0);
   // -- pickups decay --
   for (const pk of g.pickups) if (pk.t > 0) pk.t -= dt;
   g.pickups = g.pickups.filter(pk => pk.t > 0);
@@ -681,7 +712,17 @@ export function step(g, dt, inputs) {
       if (b.k === 3) { explode(g, b.x, gy - 10, 1); b.on = 0; continue; }
       if (b.k === 4) { g.lures.push({ id: nextId++, x: b.x, y: gy - 14, t: CFG.cheeseLife }); b.on = 0; continue; }
       if (b.k === 5) { explode(g, b.x, gy - 10, 0); b.on = 0; continue; }
-      if (b.k === 10) { b.on = 0; continue; } // flame fizzles into the dirt
+      // v13 (Dylan: "make them leave flaming residue"). Flame hitting dirt used
+      // to just vanish. Now it drops a burning patch that keeps damaging what
+      // walks through it, so the flamethrower paints ground rather than only
+      // hosing air. Rate-limited by proximity so a held trigger lays a
+      // continuous strip instead of stacking 20 patches on one pixel.
+      if (b.k === 10) {
+        const near = g.fires.find(f => Math.abs(f.x - b.x) < 34);
+        if (near) { near.t = Math.max(near.t, 2600); }
+        else if (g.fires.length < 26) { g.fires.push({ id: nextId++, x: b.x, y: gy - 6, t: 2600, tick: 0 }); }
+        b.on = 0; continue;
+      }
       if (b.y > gy + 8) { b.on = 0; continue; }
     }
     if (b.from === 1 || b.from === 9 || b.from === 8) { // player (1), allied grunts (9), squad buddy (8)
@@ -818,7 +859,40 @@ function applyPickup(g, p, kind) {
   evPush(g, { e: 'sfx', n: 'sfx_meow' });
 }
 
+// v13 (Dylan: "you either poison or blow up their cheese that they're stealing"
+// and "show a rat alien burning to death being covered in molten cheese").
+// A cheese cache caught in a blast or a flame doesn't just vanish -- it goes up,
+// throwing MOLTEN cheese over everything nearby. Rats caught in the splash are
+// coated and burn down rather than dying instantly, which is the beat he asked
+// for. Reuses the v13 fire system so the ground keeps burning too.
+function meltCheese(g, l) {
+  l.t = 0;
+  evPush(g, { e: 'boom', x: l.x, y: l.y, big: 1 });
+  evPush(g, { e: 'cheesemelt', x: l.x, y: l.y });
+  evPush(g, { e: 'sfx', n: 'sfx_explosion' });
+  evPush(g, { e: 'shake', m: CFG.shakeBoom });
+  for (let q = -1; q <= 1; q++) {
+    const fx2 = l.x + q * 40;
+    if (g.fires.length < 40) g.fires.push({ id: nextId++, x: fx2, y: groundAt(fx2) - 6, t: 4200, tick: 0, big: 1, cheese: 1 });
+  }
+  for (const e2 of g.enemies) {
+    if (e2.st === 'gone' || e2.k === 'pow' || e2.k === 'buddy' || !hostileTo(g, e2)) continue;
+    if (Math.abs(e2.x - l.x) < CFG.cheeseRadius && Math.abs(e2.y - l.y) < 140) {
+      // coated: burns down over ~1.6s instead of popping instantly
+      e2.molten = 1600;
+      evPush(g, { e: 'cheesecoat', x: e2.x, y: e2.y - 40 });
+    }
+  }
+  g.cheeseDestroyed = (g.cheeseDestroyed || 0) + 1;
+  g.score += 400;
+  evPush(g, { e: 'banner', k: 'cheeseBurned' });
+}
+
 function explode(g, x, y, fromPlayer) {
+  // any blast within reach of a cheese cache cooks it
+  for (const l of g.lures) {
+    if (l.t > 0 && Math.abs(l.x - x) < CFG.grenadeRadius && Math.abs(l.y - y) < 200) meltCheese(g, l);
+  }
   evPush(g, { e: 'boom', x, y, big: fromPlayer ? 2 : 1 });
   evPush(g, { e: 'sfx', n: 'sfx_explosion' });
   evPush(g, { e: 'shake', m: CFG.shakeBoom + (fromPlayer ? 3 : 0) });
@@ -1036,7 +1110,20 @@ function stepEnemy(g, e2, dt, dts) {
         e2.nT = (e2.nT || 0) - dt;
         if (e2.nT <= 0 && e2.x > g.cam - 60) {
           e2.nT = 320;
-          explode(g, e2.x - 50, groundAt(e2.x - 50) - 14, 1);
+          const bx = e2.x - 50, by = groundAt(bx) - 14;
+          explode(g, bx, by, 1);
+          // v13 (Dylan: "do similar, new fire animation with the napalm").
+          // Napalm previously produced one blast and nothing else -- the whole
+          // point of napalm is that the ground KEEPS burning. Each canister now
+          // lays a wide, long-lived burning patch that damages anything walking
+          // through it, reusing the same fire system the flamethrower feeds.
+          // Longer and wider than flamethrower residue: this is a wall of fire.
+          for (let q = -1; q <= 1; q++) {
+            const fx2 = bx + q * 46;
+            const near = g.fires.find(f2 => Math.abs(f2.x - fx2) < 30);
+            if (near) near.t = Math.max(near.t, 5200);
+            else if (g.fires.length < 40) g.fires.push({ id: nextId++, x: fx2, y: groundAt(fx2) - 6, t: 5200, tick: 0, big: 1 });
+          }
         }
         if (e2.x > g.cam + W + 480) e2.st = 'gone';
         return;
@@ -1131,12 +1218,29 @@ export function serialize(g) {
     t: R(g.t), cam: R(g.cam), sec: g.sec, inv: g.invasion ? 1 : 0,
     over: g.over ? 1 : 0, won: g.won ? 1 : 0,
     score: g.score, pows: g.pows,
-    pl: g.players.map(p => [p.pid, p.hero, R(p.x), R(p.y), p.face, p.st, p.lives, p.weap, p.ammo, p.gren, p.cheese, R(p.invulnT), p.aimUp ? 1 : 0, R(p.runT), p.deaths, p.hp, p.crouch ? 1 : 0, p.mode === 'bike' ? 1 : 0, p.fireFlashT > 0 ? 1 : 0]),
+    pl: g.players.map(p => [p.pid, p.hero, R(p.x), R(p.y), p.face, p.st, p.lives, p.weap, p.ammo, p.gren, p.cheese, R(p.invulnT), p.aimUp ? 1 : 0, R(p.runT), p.deaths, p.hp, p.crouch ? 1 : 0, p.mode === 'bike' ? 1 : 0, p.fireFlashT > 0 ? 1 : 0,
+      // v13 index 19: death cause. deathKind was set on the player but never
+      // serialized, so the renderer could not tell a punji-spike death from any
+      // other and played the same spin-and-fall ragdoll for all of them.
+      p.st === 'dead' ? (p.deathKind === 'trap' ? 1 : p.deathKind === 'pit' ? 2 : 0) : 0,
+      R(p.respT)]),
     en: g.enemies.filter(e2 => e2.st !== 'gone' && e2.x > g.cam - 200 && e2.x < g.cam + W + 400)
       .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0]),
-    bl: g.bullets.filter(b => b.on).map(b => [R(b.x), R(b.y), b.k, b.from]),
+    // v13: index 4 is the bullet's travel angle. Every projectile used to be
+    // drawn as an axis-aligned horizontal dash regardless of where it was
+    // actually going, so firing up (hold W) sent horizontal tracers climbing
+    // the screen sideways -- Dylan caught this in a screenshot. The renderer
+    // needs the velocity direction, and the wire format only carried x/y/kind,
+    // so the angle is computed here (rounded to 1/100 rad, ~0.6 deg, which is
+    // finer than a 4px-tall dash can show) rather than shipping two more floats.
+    bl: g.bullets.filter(b => b.on).map(b => [R(b.x), R(b.y), b.k, b.from, Math.round(Math.atan2(b.vy, b.vx) * 100) / 100,
+      // v13 index 5: normalised age 0..1, only meaningful for flame (k=10).
+      // The renderer grows and cools each tongue of flame over its life so it
+      // dissolves instead of ending on a hard edge.
+      b.k === 10 ? Math.round((1 - Math.max(0, Math.min(1, b.t / CFG.flameLife))) * 100) / 100 : 0]),
     pk: g.pickups.map(pk => [R(pk.x), R(pk.y), pk.kind]),
     lu: g.lures.map(l => [R(l.x), R(l.y)]),
+    fi: g.fires.map(f => [R(f.x), R(f.y), R(f.t), f.big ? 1 : 0]),
     tr: g.traps.map(t2 => t2.armed ? 1 : 0),
     cr: g.crates.map(c2 => c2.hp),
     boss: g.boss ? { hp: g.boss.hp, max: CFG.bossHp } : null,
@@ -1149,7 +1253,7 @@ export function checkpointState(g) {
     seed: g.seed, t: g.t, cam: g.cam, camLock: g.camLock, sec: g.sec, invasion: g.invasion,
     score: g.score, pows: g.pows, checkpoint: g.checkpoint,
     players: g.players, enemies: g.enemies.filter(e2 => e2.st !== 'gone'),
-    pickups: g.pickups, lures: g.lures,
+    pickups: g.pickups, lures: g.lures, fires: g.fires,
     waves: g.waves.map(w2 => ({ x: w2.x, done: w2.done, alive: w2.alive })),
     traps: g.traps, crates: g.crates, bossDone: g.bossDone,
     banners: g.banners,
@@ -1160,7 +1264,7 @@ export function restoreState(snap, seats) {
   Object.assign(g, {
     t: snap.t, cam: snap.cam, camLock: snap.camLock, sec: snap.sec, invasion: snap.invasion,
     score: snap.score, pows: snap.pows, checkpoint: snap.checkpoint,
-    pickups: snap.pickups || [], lures: snap.lures || [],
+    pickups: snap.pickups || [], lures: snap.lures || [], fires: snap.fires || [],
     traps: snap.traps, crates: snap.crates, bossDone: snap.bossDone, banners: snap.banners,
   });
   g.enemies = (snap.enemies || []).map(e2 => ({ ...e2 }));

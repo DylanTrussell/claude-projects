@@ -97,6 +97,9 @@ export class Tunnel {
     this.pistolLost = false;
     this.hasShotgun = false; this.shells = 0;
     this.fireCd = 0; this.meleeT = 0; this.fireT = 0; this.pumpT = 0;
+    this.clawT = 0; this.clawBlood = 0; // v13: claw extend timer + blood-on-claws decay
+    this.dmgDir = []; // v13: {a, t} directional damage indicators, angle relative to view
+    this.rememberedMittens = false; this.vignette = null; // v13: the 'I knew I forgot something' beat
     this.ammoInMag = PISTOL_MAG; this.reloadT = 0; // v10: pistol reload state
     this.walkT = 0; this.prevBits = 0; this.sway = 0; this.turnRate = 0;
     this.zbuf = new Float32Array(RW);
@@ -161,6 +164,10 @@ export class Tunnel {
     this.t += dt;
     const dts = dt / 1000;
     this.fireCd -= dt; this.meleeT -= dt; this.fireT -= dt; this.hurtT -= dt; this.pumpT -= dt;
+    this.clawT = (this.clawT || 0) - dt; this.clawBlood = (this.clawBlood || 0) - dt;
+    if (this.vignette) { this.vignette.t += dt; if (this.vignette.t > this.vignette.T) this.vignette = null; }
+    for (const d2 of this.dmgDir) d2.t -= dt;
+    this.dmgDir = this.dmgDir.filter(d2 => d2.t > 0);
     if (this.reloadT > 0) {
       this.reloadT -= dt;
       if (this.reloadT <= 0) { this.reloadT = 0; this.ammoInMag = PISTOL_MAG; } // reload complete
@@ -268,15 +275,21 @@ export class Tunnel {
         this.alert(8);
         if (this.shells <= 0) this.weap = this.pistolLost ? 'claws' : 'pistol';
       } else if (this.weap === 'claws') {
-        this.fireCd = 260; this.meleeT = 140;
-        this.melee(1, 1.3);
+        this.fireCd = 260; this.meleeT = 190; this.clawT = 190;
+        this.ev({ e: 'sfx', n: 'sfx_screech' }); // angry meow -- see note in strings/audio
+        if (this.melee(2, 1.75)) this.clawBlood = 2600;
+        this.alert(4);
       }
     }
-    // K knife
+    // v13: K is a claw swipe too. Dylan: "if i have a knife why do i have claws?
+    // pick one or the other, i vote just claws". The knife is gone as a weapon
+    // -- fps_knife is no longer drawn anywhere -- but K stays bound as a heavy
+    // swipe so the muscle memory and the tutorial string still work.
     if ((bits & C.GREN) && !(this.prevBits & C.GREN) && this.meleeT <= -80) {
-      this.meleeT = 170; this.fireCd = Math.max(this.fireCd, 200);
-      this.ev({ e: 'sfx', n: 'sfx_knife' });
-      this.melee(2, 1.45);
+      this.meleeT = 210; this.clawT = 210; this.fireCd = Math.max(this.fireCd, 200);
+      this.ev({ e: 'sfx', n: 'sfx_screech' });
+      if (this.melee(3, 1.9)) this.clawBlood = 2600;
+      this.alert(5);
     }
 
     // items
@@ -302,6 +315,19 @@ export class Tunnel {
         this.crawl = 1;
         this.ev({ e: 'sfx', n: 'sfx_purr' });
         return;
+      } else if (this.mapIdx === 0 && !this.rememberedMittens) {
+        // v13 (Dylan): "when you get to the light, but you forgot mittens, you
+        // should show a cat in the darkness scared, meowing, holding his big
+        // mini gun - and it should voice over". Fires once, the first time you
+        // reach the exit without him. Drives an in-engine vignette rather than
+        // a generated film: it has to react to WHEN the player wanders out,
+        // which a pre-rendered video can't do, and it keeps the player in the
+        // tunnel rather than cutting away from it.
+        this.rememberedMittens = true;
+        this.vignette = { t: 0, T: 5200 };
+        this.ev({ e: 'sfx', n: 'vo_mittens' });
+        this.ev({ e: 'banner', k: 'mittensRemember' });
+        this.ev({ e: 'hint', k: 'fpsNeedMittens' });
       } else if (!this.exitHint || this.t - this.exitHint > 5000) {
         this.exitHint = this.t;
         this.ev({ e: 'hint', k: 'fpsNeedMittens' });
@@ -324,9 +350,15 @@ export class Tunnel {
         const nx = e.x + e.lvx * spd, ny = e.y + e.lvy * spd;
         if (!this.solid(nx, e.y)) e.x = nx;
         if (!this.solid(e.x, ny)) e.y = ny;
-        if (d < 0.7 && this.hurtT <= 0) {
+        if (d < 0.85 && this.hurtT <= 0) {
           p.hp -= 1; this.hurtT = 700; e.st = 'recover'; e.t = 0;
           this.ev({ e: 'fpsHurt' });
+          // v13 (Dylan: "you get attacked in the tunnel and its hard to tell
+          // where its coming from"). Record WHERE the hit came from, relative
+          // to where the player is looking, and show an edge indicator. Without
+          // this the only feedback was a full-screen red wash, which says you
+          // were hit but nothing about which way to turn.
+          this.dmgDir.push({ w: Math.atan2(e.y - this.py, e.x - this.px), t: 1500 });
           this.splats.push({ x: W * (0.3 + Math.random() * 0.4), y: H * (0.2 + Math.random() * 0.4), r: 60, t: 800 });
           if (p.hp <= 0) {
             p.deaths++; p.lives--; p.hp = CFG.hpMax;
@@ -421,6 +453,11 @@ export class Tunnel {
     if (best) this.hit(best, dmg);
   }
 
+  // v13 (Dylan: "nothing happens when i strike with claws"). Two reasons it
+  // read as dead: the reach was shorter than the enemy's own lunge range, so a
+  // stalking cat could stand just outside it and never be hit, and a swing that
+  // connected produced no lasting feedback. Now returns whether it landed so
+  // the caller can drive the blood-on-claws state, and the arc is wider.
   melee(dmg, range) {
     for (const e of this.enemies) {
       if (e.dead || e.st === 'hide') continue;
@@ -429,9 +466,10 @@ export class Tunnel {
         let da = Math.atan2(e.y - this.py, e.x - this.px) - this.ang;
         while (da > Math.PI) da -= 2 * Math.PI;
         while (da < -Math.PI) da += 2 * Math.PI;
-        if (Math.abs(da) < 0.9) { this.hit(e, dmg, d < 1.0); return; }
+        if (Math.abs(da) < 1.05) { this.hit(e, dmg, d < 1.0); return true; }
       }
     }
+    return false;
   }
 
   hit(e, dmg, close) {
@@ -743,6 +781,75 @@ export class Tunnel {
       ctx.beginPath(); ctx.arc(sp.x + sp.r * 0.5, sp.y + sp.r * 0.6, sp.r * 0.35, 0, 7); ctx.fill();
     }
     // hurt vignette
+    // v13: directional damage arcs at the screen edge. Angle is stored relative
+    // to the view at the moment of the hit, so it stays pinned to the attacker
+    // in world space as the player turns to face it.
+    for (const d2 of this.dmgDir) {
+      // stored as a WORLD angle, so subtracting the CURRENT view angle keeps
+      // the arc pinned to the attacker while the player turns toward it.
+      // -PI/2 puts "dead ahead" at the top of the screen, so the arc reads like
+      // a compass: swing until it climbs to 12 o'clock and the threat is in
+      // front of you.
+      const rel = Math.atan2(Math.sin(d2.w - this.ang), Math.cos(d2.w - this.ang));
+      const a = rel - Math.PI / 2;
+      const k = Math.min(1, d2.t / 1500);
+      const cx = W / 2, cy = H / 2, R0 = Math.min(W, H) * 0.42;
+      ctx.save();
+      ctx.globalAlpha = k * 0.85;
+      ctx.strokeStyle = '#e8342a';
+      ctx.lineWidth = 16 * k;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R0, a - 0.42, a + 0.42);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // v13: the "I knew I forgot something" vignette. Mittens in the dark,
+    // scared, hugging his minigun, lit by a single weak flicker, breathing a
+    // frightened meow-shiver. Drawn as a letterboxed inset over the tunnel view
+    // so the player never loses their footing in the level.
+    if (this.vignette) {
+      const vt = this.vignette.t, VT = this.vignette.T;
+      // ease in over 400ms, hold, ease out over the last 700ms
+      const a = Math.min(1, Math.min(vt / 400, (VT - vt) / 700));
+      ctx.save();
+      ctx.globalAlpha = a;
+      // letterbox
+      const bar = H * 0.14;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+      // darkened frame
+      ctx.fillStyle = 'rgba(4,5,4,0.86)';
+      ctx.fillRect(0, bar, W, H - bar * 2);
+      // flickering shaft of light on him
+      const flick = 0.62 + 0.38 * Math.abs(Math.sin(vt / 190)) * (0.7 + 0.3 * Math.sin(vt / 47));
+      const cx = W / 2, cy = H * 0.60;
+      const lg = ctx.createRadialGradient(cx, cy - 90, 10, cx, cy - 40, 300);
+      lg.addColorStop(0, `rgba(255,214,140,${(0.30 * flick).toFixed(3)})`);
+      lg.addColorStop(1, 'rgba(255,190,110,0)');
+      ctx.fillStyle = lg;
+      ctx.fillRect(0, bar, W, H - bar * 2);
+      // Mittens himself, shivering
+      const mi = IMG.hero_us;
+      if (mi) {
+        const mh = H * 0.46, mw = mh * (mi.width / mi.height);
+        const shiver = Math.sin(vt / 55) * 1.8 + Math.sin(vt / 23) * 0.9;
+        ctx.save();
+        ctx.globalAlpha = a * (0.55 + 0.45 * flick);
+        ctx.translate(cx + shiver, cy - mh * 0.1);
+        ctx.drawImage(mi, -mw / 2, -mh / 2, mw, mh);
+        ctx.restore();
+      }
+      // his own little scared meow, as a shaking caption under him
+      ctx.globalAlpha = a * 0.9;
+      ctx.fillStyle = '#f3e9c8';
+      ctx.font = 'bold 22px "Courier New", monospace';
+      ctx.textAlign = 'center';
+      const wob = Math.sin(vt / 70) * 2;
+      ctx.fillText('...mrrow?', cx + wob, H * 0.80);
+      ctx.restore();
+      ctx.textAlign = 'left';
+      ctx.globalAlpha = 1;
+    }
     if (this.hurtT > 0) {
       ctx.fillStyle = `rgba(160,20,10,${Math.min(0.5, this.hurtT / 900)})`;
       ctx.fillRect(0, 0, W, H);
@@ -811,7 +918,8 @@ export class Tunnel {
       }
       return;
     }
-    const knifing = this.meleeT > 0 && this.prevBits & C.GREN;
+    // v13: no more knife viewmodel -- claws are the only melee (Dylan's call).
+    const knifing = false;
     // v10 (Dylan: "the gun is still facing sideways... there's no animation
     // for it reloading, there's no animation for it even firing"): a real
     // fire/reload state machine instead of one static per-weapon sprite. The
@@ -819,14 +927,13 @@ export class Tunnel {
     // into the frame (see fps_pistol_fire/fps_shotgun_fire), so no separate
     // procedural flash overlay is needed anymore.
     let id;
-    if (knifing) id = 'fps_knife';
-    else if (this.weap === 'pistol') id = this.reloadT > 0 ? 'fps_pistol_reload' : this.fireT > 40 ? 'fps_pistol_fire' : 'fps_pistol';
+    if (this.weap === 'pistol') id = this.reloadT > 0 ? 'fps_pistol_reload' : this.fireT > 40 ? 'fps_pistol_fire' : 'fps_pistol';
     else if (this.weap === 'shotgun') {
       const rackPh = this.pumpT > 0 ? (620 - this.pumpT) : -1;
       const racking = rackPh >= SHOTGUN_RACK_MS[0] && rackPh <= SHOTGUN_RACK_MS[1];
       id = this.fireT > 40 ? 'fps_shotgun_fire' : racking ? 'fps_shotgun_reload' : 'fps_shotgun';
     } else id = 'fps_claws';
-    const fallbackId = knifing ? 'fps_knife' : this.weap === 'pistol' ? 'fps_pistol' : this.weap === 'shotgun' ? 'fps_shotgun' : 'fps_claws';
+    const fallbackId = this.weap === 'pistol' ? 'fps_pistol' : this.weap === 'shotgun' ? 'fps_shotgun' : 'fps_claws';
     const img = IMG[id] || IMG[fallbackId];
     if (!img) return;
     // movement bob: figure-8; turn sway lags; fire kick + recoil rotation
@@ -841,19 +948,64 @@ export class Tunnel {
       const ph = 620 - this.pumpT;
       if (ph > 150 && ph < 450) pump = Math.sin((ph - 150) / 300 * Math.PI) * 46;
     }
-    const vh = 340;
+    // v13 (Dylan's circled screenshots: the forearms stop dead at the bottom of
+    // the screen with bare background either side of them). The viewmodel was
+    // drawn at exactly vh=340 with y0 = H - vh, so the sprite's bottom edge
+    // landed EXACTLY on the screen edge -- and any downward bob/kick/pump then
+    // lifted... no, pushed it down, exposing the cut. Two fixes: draw bigger,
+    // and deliberately overhang the bottom so the arms run off-screen the way
+    // every FPS viewmodel does, instead of terminating in mid-air.
+    const vh = 408;
     const vw = vh * (img.width / img.height);
-    const x0 = W / 2 - vw / 2 + bx + (knifing ? 90 : 0);
-    const y0 = H - vh + by + kick + pump;
+    const x0 = W / 2 - vw / 2 + bx;
+    const y0 = H - vh * 0.90 + by + kick + pump;
+    // v13 claw strike (Dylan: "they should animate coming out of your fur more
+    // and have blood on them after you strike a cat with them"). The claw
+    // viewmodel used to be a static sprite with only a white arc drawn over it,
+    // which is why a swing read as "nothing happens". Now the paws lunge along
+    // the view axis and rock, so the strike has a real anticipation-and-thrust
+    // shape, and the claws stay bloodied for a couple of seconds afterwards.
+    const clawK = this.weap === 'claws' ? Math.max(0, (this.clawT || 0)) / 210 : 0;
+    // 0 -> 1 -> 0 over the swipe: quick thrust out, slower settle back
+    const thrust = clawK > 0 ? Math.sin(Math.min(1, (1 - clawK) * 1.6) * Math.PI) : 0;
     ctx.save();
     ctx.translate(x0 + vw / 2, H + 40);
-    ctx.rotate(rot);
+    ctx.rotate(rot + thrust * 0.10);
     ctx.translate(-(x0 + vw / 2), -(H + 40));
-    ctx.drawImage(img, x0, y0, vw, vh);
+    const cScale = 1 + thrust * 0.16;          // paws come at the camera
+    const cw = vw * cScale, ch = vh * cScale;
+    const cx0 = x0 - (cw - vw) / 2;
+    const cy0 = y0 - (ch - vh) + thrust * 26;  // and drive upward into the target
+    ctx.drawImage(img, cx0, cy0, cw, ch);
+    // blood: tint just the sprite's own pixels via source-atop in an offscreen
+    // pass, so it stains the claws rather than painting a rectangle on screen.
+    const bl = Math.max(0, this.clawBlood || 0);
+    if (bl > 0 && this.weap === 'claws') {
+      const a = Math.min(1, bl / 2600) * 0.55;
+      if (!this._bloodCv || this._bloodCv.width !== img.width || this._bloodCv.height !== img.height) {
+        this._bloodCv = document.createElement('canvas');
+        this._bloodCv.width = img.width; this._bloodCv.height = img.height;
+      }
+      const bc = this._bloodCv.getContext('2d');
+      bc.clearRect(0, 0, img.width, img.height);
+      bc.drawImage(img, 0, 0);
+      bc.globalCompositeOperation = 'source-atop';
+      // heaviest at the claw tips (top of the sprite), fading down the forearm
+      const bg = bc.createLinearGradient(0, 0, 0, img.height);
+      bg.addColorStop(0, 'rgba(150,10,10,0.95)');
+      bg.addColorStop(0.42, 'rgba(150,10,10,0.35)');
+      bg.addColorStop(0.75, 'rgba(150,10,10,0)');
+      bc.fillStyle = bg;
+      bc.fillRect(0, 0, img.width, img.height);
+      bc.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = a;
+      ctx.drawImage(this._bloodCv, cx0, cy0, cw, ch);
+      ctx.globalAlpha = 1;
+    }
     ctx.restore();
     // melee slash streak
     if (this.meleeT > 0) {
-      const k = this.meleeT / 170;
+      const k = this.meleeT / 210;
       ctx.strokeStyle = `rgba(240,240,235,${(k * 0.8).toFixed(2)})`;
       ctx.lineWidth = 10 * k;
       ctx.beginPath();

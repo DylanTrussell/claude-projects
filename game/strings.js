@@ -44,7 +44,7 @@ export const STR = {
   mittensFreed: "PVT. MITTENS RESCUED!",
   ctlMove: "A/D MOVE · SPACE JUMP · J FIRE",
   fpsEnter: "INTO THE TUNNELS",
-  fpsControls: "A/D TURN · W FORWARD · S BACK · J FIRE · K KNIFE · L SWAP WEAPON",
+  fpsControls: "A/D TURN · W FORWARD · S BACK · J FIRE · K CLAWS · L SWAP WEAPON",
   fpsObjective0: "FIND PVT. MITTENS. GET OUT ALIVE.",
   fpsObjective1: "CLEAR THE NEST.",
   fpsNeedMittens: "NOT WITHOUT MITTENS — HE'S DOWN HERE SOMEWHERE",
@@ -52,6 +52,8 @@ export const STR = {
   gotShotgun: "SHOTGUN!",
   nestCleared: "NEST CLEARED",
   gunSlapped: "HE SLAPPED YOUR GUN AWAY!",
+  // v13: new tunnel beat -- see main.js mittensCut()
+  mittensRemember: "I KNEW I FORGOT SOMETHING.",
   grabPrompt: "MASH J — RIP HIS THROAT OUT",
   throatRipped: "THROAT. RIPPED.",
   followLight: "FOLLOW THE LIGHT",
@@ -77,6 +79,10 @@ export const STR = {
   gotHealth: "+HEALTH",
   gotGrenades: "+3 GRENADES",
   gotCheese: "+CHEESE LURE",
+  // v13 cheese arc (Dylan: "yes the rats are here to steal our cheese... you
+  // either poison or blow up their cheese that they're stealing")
+  cheeseBurned: "THEIR CHEESE. MOLTEN.",
+  cheeseObjective: "THEY CAME FOR THE CHEESE. BURN IT BEFORE THEY TAKE IT.",
   gotLife: "+1 LIFE",
   powFreed: "POW RESCUED!",
   bossWarning: "WARNING: BIG UGLY INCOMING",

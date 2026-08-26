@@ -87,7 +87,10 @@ const dev = new URLSearchParams(location.search).has('dev');
 
 function showChunkLoading(on, msg) {
   $('loading').style.display = on ? 'flex' : 'none';
-  if (on) { $('loadbar').style.width = '0%'; $('loadmsg').textContent = msg || 'loading…'; }
+  // v13 (Dylan: "get rid of that text and just say have the bar filling up").
+  // The bar is the whole progress story; the caption was noise. Kept as an
+  // element so the ASSET FAILURE path below still has somewhere to shout.
+  if (on) { $('loadbar').style.width = '0%'; $('loadmsg').textContent = ''; }
 }
 
 function show(id) {
@@ -141,8 +144,9 @@ function startGame() {
   mode = 'game';
   show(null);
   audio.ensure();
-  audio.music('music_rock');
+  audio.music('music_rock', 1200);
   fxEvent({ e: 'hint', k: 'goalBanner' });
+  ensureChunk('weapons'); // v13: topside weapon overlay art, needed as soon as a pickup lands
   prefetchChunk('tunnel'); // warm the tunnel's CDN chunk now so most players never see the loading beat
   const devRail = dev && new URLSearchParams(location.search).get('rail');
   if (devRail) handleEvents([{ e: 'rail', k: devRail }]);
@@ -296,6 +300,26 @@ $('btn-again').addEventListener('click', () => startGame());
 // no start screen: the film cuts straight to the chopper coming down in gameplay
 $('btn-skip').addEventListener('click', () => { $('intro').style.display = 'none'; touchPad(true); $('introvid').pause(); startGame(); });
 $('introvid').addEventListener('ended', () => { $('intro').style.display = 'none'; touchPad(true); startGame(); });
+// v13 crossfade (Dylan: "the other song should continue for a bit and fade out
+// as the instrumental takes over"). Rather than cut at 'ended', start the level
+// track under the last 2.5s of the film and ride the film's own volume down so
+// the two genuinely overlap. Fires once per playthrough.
+$('introvid').addEventListener('timeupdate', () => {
+  const iv = $('introvid');
+  if (!iv.duration || mode === 'game') return;
+  const left = iv.duration - iv.currentTime;
+  if (left > 2.5 || left < 0) return;
+  if (!iv.__xfade) { iv.__xfade = true; audio.ensure(); audio.music('music_rock', 2200); }
+  iv.volume = Math.max(0, Math.min(1, left / 2.5));
+});
+// v13: the AudioContext only unlocks inside a real user gesture. If the opening
+// film autoplayed (no gesture anywhere in the stack), every music() call before
+// the first click/keypress ran against a suspended graph and silently did
+// nothing — which is exactly why music_rock was audible after SKIP (a click)
+// and silent after letting the film run out. Replay the wanted track on the
+// first input of any kind.
+['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+  window.addEventListener(ev, () => audio.unlockMusic(), { passive: true }));
 
 function showTitle() {
   mode = 'title';
@@ -577,6 +601,9 @@ if (dev) {
   window.__AMtun = () => tunnel && { items: tunnel.items.map(i => ({ kind: i.kind, x: i.x, y: i.y, got: !!i.got })), enemies: tunnel.enemies.map(e => ({ x: e.x, y: e.y, st: e.st, dead: !!e.dead })), mittens: tunnel.mittens, exit: tunnel.exit };
   window.__AMlook = (tx, ty) => { if (tunnel) tunnel.ang = Math.atan2(ty - tunnel.py, tx - tunnel.px); };
   window.__AMburst = (i) => { if (tunnel && tunnel.enemies[i]) tunnel.burst(tunnel.enemies[i]); }; // dev-only: force an enemy out of hiding for verification
+  // dev-only: force a weapon so the flamethrower/raygun rendering can be
+  // verified without hunting down the pickup first.
+  window.__AMweap = (w, ammo) => { const p = g && g.players[0]; if (p) { p.weap = w; p.ammo = ammo || 999; } };
 }
 
 // ---------- boot ----------

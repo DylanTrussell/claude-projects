@@ -3,7 +3,7 @@
 //  Skyraider — you pilot an A-1 over the treeline and napalm it end to end.
 // Same modal pattern as the Tunnel: step(bits,dt,p) / render(ctx,now) / done.
 import { CFG, C, PAL, W, H } from './config.js';
-import { IMG, drawImgHit } from './assets.js';
+import { IMG, SHEET, drawImgHit, drawSheet } from './assets.js';
 import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burst, replaces the flat circle every rail gun used to draw
 
 const GY = 640; // rail ground line
@@ -30,11 +30,20 @@ export class RailBase {
   }
   ev(e) { this.events.push(e); }
   hurt(p, amt) {
+    this._p = p; // v13: draw() needs hull state for the damage smoke/flash
     if (this.hurtT > 0) return;
     p.hp -= amt; this.hurtT = 900; this.shake = 14;
     this.ev({ e: 'fpsHurt' }); this.ev({ e: 'sfx', n: 'sfx_explosion' });
     if (p.hp <= 0) {
       p.deaths++; p.lives--; p.hp = CFG.hpMax;
+      // v13: the aircraft is destroyed, not just the pilot hurt -- three
+      // staggered blasts across the airframe, a hard shake, and the smoke
+      // trail cleared so the replacement Huey comes in clean.
+      this.boom(190, this.hy + 60, 1);
+      this.boom(150, this.hy + 95, 0);
+      this.boom(235, this.hy + 40, 0);
+      this.shake = 26;
+      this.hsmoke = [];
       if (p.lives <= 0) { p.st = 'out'; this.dead = true; this.done = true; }
       this.hurtT = 2200;
     }
@@ -43,20 +52,44 @@ export class RailBase {
     this.booms.push({ x, y, t: 0, big });
     this.ev({ e: 'sfx', n: 'sfx_explosion' });
   }
-  stepCommon(dt) {
+  stepCommon(dt, p) {
+    if (p) this._p = p;
     this.t += dt; this.hurtT -= dt; this.fireT -= dt;
+    if (this.hsmoke) { for (const q of this.hsmoke) q.t += dt; this.hsmoke = this.hsmoke.filter(q => q.t < q.T); }
     this.shake = Math.max(0, this.shake - dt * 0.05);
     for (const b of this.booms) b.t += dt;
     this.booms = this.booms.filter(b => b.t < 700);
   }
+  // v13 (Dylan: "fix all the explosions when rats and space ships blow up
+  // they're just circles"). The rail sections had their OWN explosion drawing,
+  // separate from render.js, and it was literally two arcs -- an orange disc and
+  // a grey disc. This is where the ships he was shooting blew up. Now it plays
+  // the same 16-frame blast sheet the air-support bombs use, with a mirror flip
+  // and scale jitter so a busy sky isn't the identical animation on loop, plus
+  // a shockwave ring and cooling embers.
   drawBooms(ctx) {
+    const es = SHEET.sheet_explosion;
     for (const b of this.booms) {
       const k = b.t / 700;
-      const r = (b.big ? 90 : 44) * (0.4 + k);
-      ctx.fillStyle = `rgba(255,${200 - k * 140 | 0},60,${(1 - k).toFixed(2)})`;
-      ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 7); ctx.fill();
-      ctx.fillStyle = `rgba(60,50,44,${(0.5 * (1 - k)).toFixed(2)})`;
-      ctx.beginPath(); ctx.arc(b.x + r * 0.4, b.y - r * 0.7, r * 0.7, 0, 7); ctx.fill();
+      if (b.sz === undefined) { b.sz = (b.big ? 250 : 132) * (0.88 + Math.random() * 0.24); b.fl = Math.random() < 0.5; }
+      // shockwave
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - k * 1.5) * 0.6;
+      ctx.strokeStyle = k < 0.3 ? '#fff3d0' : PAL.boom1;
+      ctx.lineWidth = Math.max(1, 5 * (1 - k));
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.sz * (0.12 + k * 0.62), 0, 7); ctx.stroke();
+      ctx.restore();
+      if (es) {
+        const fr = Math.min(es.frames - 1, Math.floor(b.t / (1000 / es.fps)));
+        drawSheet(ctx, 'sheet_explosion', fr, b.x - b.sz / 2, b.y - b.sz * 0.55, b.sz, b.sz, b.fl);
+      } else { // no sheet loaded -- soft glow, still not a hard circle
+        const gr = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.sz * 0.6);
+        gr.addColorStop(0, `rgba(255,240,190,${(1 - k).toFixed(2)})`);
+        gr.addColorStop(0.5, `rgba(255,150,50,${(0.6 * (1 - k)).toFixed(2)})`);
+        gr.addColorStop(1, 'rgba(90,40,10,0)');
+        ctx.fillStyle = gr;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.sz * 0.6, 0, 7); ctx.fill();
+      }
     }
   }
   drawSky(ctx, spd) {
@@ -97,7 +130,7 @@ export class DoorGun extends RailBase {
   }
   step(bits, dt, p) {
     if (this.done) return;
-    this.stepCommon(dt);
+    this.stepCommon(dt, p);
     const dts = dt / 1000;
     this.scroll += dts;
     this.gunCd -= dt;
@@ -233,10 +266,43 @@ export class DoorGun extends RailBase {
     if (hi) {
       const hh = 150, hw = hh * (hi.width / hi.height);
       const bobY = Math.sin(now / 300) * 7;
+      // v13 (Dylan: "your helicopter should also glow colors when it gets hit
+      // and start smoking when you get low on health, and blow up when you die
+      // and get replaced"). The Huey had no damage read at all -- the only
+      // feedback for taking a hit was the same red screen wash every mode uses,
+      // so the aircraft itself looked untouched right up to death.
+      // hurtT is set by RailBase.hurt(); p.hp/CFG.hpMax is the hull state.
+      const hurtK = Math.max(0, this.hurtT) / 900;
+      const hpK = Math.max(0, Math.min(1, (this._p ? this._p.hp : CFG.hpMax) / CFG.hpMax));
+      // engine smoke below 60% hull, thickening as it drops
+      if (hpK < 0.6) {
+        this.smokeT = (this.smokeT || 0) + 1;
+        if (this.smokeT % Math.max(1, Math.round(2 + hpK * 6)) === 0) {
+          this.hsmoke = this.hsmoke || [];
+          this.hsmoke.push({ x: 150 + Math.random() * 40, y: this.hy + 70 + Math.random() * 20, t: 0,
+            T: 900 + Math.random() * 500, r: 8 + Math.random() * 8, dark: hpK < 0.3 });
+        }
+      }
+      for (const q of (this.hsmoke || [])) {
+        const k2 = q.t / q.T;
+        const gr = ctx.createRadialGradient(q.x - k2 * 190, q.y - k2 * 26, 0, q.x - k2 * 190, q.y - k2 * 26, q.r * (1 + k2 * 2.4));
+        const base = q.dark ? '40,36,32' : '90,84,76';
+        gr.addColorStop(0, `rgba(${base},${(0.5 * (1 - k2)).toFixed(3)})`);
+        gr.addColorStop(1, `rgba(${base},0)`);
+        ctx.fillStyle = gr;
+        ctx.beginPath(); ctx.arc(q.x - k2 * 190, q.y - k2 * 26, q.r * (1 + k2 * 2.4), 0, 7); ctx.fill();
+      }
       ctx.save();
       ctx.translate(140 + hw / 2, this.hy + hh / 2 + bobY);
-      ctx.rotate(0.05);
+      // below 30% hull the airframe judders
+      if (hpK < 0.3) ctx.rotate(0.05 + Math.sin(now / 40) * 0.02 * (1 - hpK));
+      else ctx.rotate(0.05);
       ctx.drawImage(hi, -hw / 2, -hh / 2, hw, hh);
+      // hit flash: same source-atop silhouette trick the enemies use, so the
+      // aircraft itself blows out white then settles to red as the hull drops.
+      if (hurtK > 0.02) {
+        drawImgHit(ctx, hi, -hw / 2, -hh / 2, hw, hh, hurtK, hpK);
+      }
       if (drawRotor) { drawRotor(ctx, -hw * 0.02, -hh / 2 + 4, hw * 0.55, now); }
       ctx.restore();
       // v11.2 (Dylan: "its a random black line coming out of the gun... it
@@ -311,7 +377,7 @@ export class Skyraider extends RailBase {
   }
   step(bits, dt, p) {
     if (this.done) return;
-    this.stepCommon(dt);
+    this.stepCommon(dt, p);
     const dts = dt / 1000;
     this.gunCd -= dt;
     if (!this.started) { this.started = true; this.ev({ e: 'banner', k: 'actSkyraider' }); this.ev({ e: 'hint', k: 'skyControls' }); this.ev({ e: 'engine', on: true }); }

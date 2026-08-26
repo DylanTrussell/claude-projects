@@ -11,7 +11,9 @@ export const FX = {
   banners: [], hints: [], rays: [], slashes: [],
   flashes: [], // muzzle flashes: {x, y, ang, t, T}
   splats: [], // persistent blood decals: {x, y, r, a}
-  booms: [],  // sprite-sheet explosion instances: {x, y, t, s}
+  booms: [],  // sprite-sheet explosion instances: {x, y, t, s, flip}
+  rings: [],  // v13 expanding shockwave rings on every blast: {x, y, t, T, r}
+  fires: [],  // v13 lingering ground fire from flamethrower/napalm: {x, y, t, T, r}
   opts: { shake: true, flash: true, bigText: false },
   // v11 (Dylan: "he should fall into it when he goes in, and pop out of it
   // when he comes out") — tunnel entry/exit transition timers, counting down
@@ -47,7 +49,28 @@ export function fxEvent(ev) {
       if (big === 2) { // white-hot sparks
         for (let i = 0; i < 14; i++) part(1, ev.x, ev.y, (Math.random() - 0.5) * 700, -Math.random() * 500, 260 + Math.random() * 200, 2 + Math.random() * 2, '#fff3d0');
       }
-      if (big && SHEET.sheet_explosion) FX.booms.push({ x: ev.x, y: ev.y, t: 0, s: big === 2 ? 300 : 200 });
+      // v13 (Dylan: "fix all the explosions when rats and space ships blow up
+      // they're just circles, make them cool animated pixel explosions like the
+      // air support bombs, similar but not exact same"). The 16-frame blast
+      // sheet was gated behind `big`, so ONLY air-support bombs and boss kills
+      // ever got it — every ordinary rat/ship death fell through to bare
+      // particle circles, which is exactly what he was looking at. Every death
+      // now gets the sheet; scale carries the weight difference.
+      // "Similar but not exact same": small blasts get a random mirror and a
+      // ±12% scale jitter so a firefight doesn't play the identical 16 frames
+      // over and over, plus a hot core flash the big bombs don't use.
+      if (SHEET.sheet_explosion) {
+        const base = big === 2 ? 300 : big ? 200 : 118;
+        const jit = big ? 1 : 0.88 + Math.random() * 0.24;
+        FX.booms.push({ x: ev.x, y: ev.y, t: 0, s: base * jit, flip: !big && Math.random() < 0.5 });
+      }
+      if (!big) { // quick white-hot core so a small kill still reads as a POP
+        for (let i = 0; i < 5; i++) {
+          const a = Math.random() * Math.PI * 2, s = 90 + Math.random() * 190;
+          part(1, ev.x, ev.y, Math.cos(a) * s, Math.sin(a) * s - 40, 150 + Math.random() * 110, 2 + Math.random() * 2.5, '#fff3d0');
+        }
+      }
+      FX.rings.push({ x: ev.x, y: ev.y, t: 0, T: big === 2 ? 420 : big ? 320 : 220, r: big === 2 ? 190 : big ? 130 : 70 });
       if (FX.opts.shake) FX.shake = Math.max(FX.shake, big === 2 ? CFG.shakeBoom + 4 : big ? CFG.shakeBoom : CFG.shakeHit);
       if (big) FX.hitPause = CFG.hitPauseMs + (big === 2 ? 20 : 0);
       if (big && FX.opts.flash) FX.flash = CFG.flashMs + (big === 2 ? 40 : 0);
@@ -90,6 +113,28 @@ export function fxEvent(ev) {
       while (FX.splats.length > 40) FX.splats.shift();
       break;
     }
+    // v13: molten cheese. Thick yellow gobs that arc out and stick, plus a
+    // greasy orange flash -- deliberately gloopier and slower than blood or
+    // sparks so a cheese kill reads differently from a bullet kill.
+    case 'cheesemelt': {
+      for (let i = 0; i < 26; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 70 + Math.random() * 330;
+        part(1, ev.x, ev.y, Math.cos(a) * sp, Math.sin(a) * sp - 150, 600 + Math.random() * 500,
+          4 + Math.random() * 9, Math.random() < 0.7 ? PAL.cheese : PAL.cheeseDark);
+      }
+      for (let i = 0; i < 8; i++) {
+        FX.splats.push({ x: ev.x + (Math.random() - 0.5) * 190, y: CFG.groundY - 2 + Math.random() * 6,
+          r: 12 + Math.random() * 22, a: 0.55 + Math.random() * 0.25, cheese: 1 });
+      }
+      while (FX.splats.length > 40) FX.splats.shift();
+      break;
+    }
+    case 'cheesecoat':
+      for (let i = 0; i < 7; i++) {
+        part(1, ev.x, ev.y, (Math.random() - 0.5) * 120, -30 - Math.random() * 120,
+          500 + Math.random() * 300, 3 + Math.random() * 5, Math.random() < 0.5 ? PAL.cheese : PAL.boom1);
+      }
+      break;
     case 'shake': if (FX.opts.shake) FX.shake = Math.max(FX.shake, ev.m); break;
     case 'greenflash': FX.green = 1100; break;
     case 'banner': FX.banners.push({ k: ev.k, t: 2100 }); break;
@@ -117,6 +162,17 @@ export function fxUpdate(dt) {
   FX.rays = FX.rays.filter(r => r.t > 0);
   for (const s of FX.slashes) s.t -= dt;
   FX.slashes = FX.slashes.filter(s => s.t > 0);
+  for (const r of FX.rings) r.t += dt;
+  FX.rings = FX.rings.filter(r => r.t < r.T);
+  // v13: ground fire burns down over its own lifetime and spits embers while lit
+  for (const f of FX.fires) {
+    f.t += dt;
+    if (Math.random() < dt / 90) {
+      part(1, f.x + (Math.random() - 0.5) * f.r * 1.6, f.y, (Math.random() - 0.5) * 40, -60 - Math.random() * 90,
+        260 + Math.random() * 220, 2 + Math.random() * 3, Math.random() < 0.5 ? PAL.boom1 : PAL.boom2);
+    }
+  }
+  FX.fires = FX.fires.filter(f => f.t < f.T);
   for (const fl of FX.flashes) fl.t -= dt;
   FX.flashes = FX.flashes.filter(fl => fl.t > 0);
   for (const b of FX.booms) b.t += dt;
@@ -432,7 +488,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
 }
 
 function drawPlayerEnt(ctx, p, cam, t, myPid) {
-  const [pid, hero, x, y, face, st, lives, weap, ammo, gren, cheese, invulnT, aimUp, runT, , , crouch, bike, fireFlash] = p;
+  const [pid, hero, x, y, face, st, lives, weap, ammo, gren, cheese, invulnT, aimUp, runT, , , crouch, bike, fireFlash, deathKind, respT] = p;
   if (st === 'out' || st === 'riding') return; // riding: he's aboard the heli
   const sx = x - cam;
   if (invulnT > 0 && Math.floor(t / 90) % 2 === 0 && st === 'alive') return; // blink
@@ -480,7 +536,30 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
   const sheetId = hero === 'us' ? 'sheet_hero_us_run' : 'sheet_hero_vc_run';
   const imgId = hero === 'us' ? 'hero_us' : 'hero_vc';
   ctx.save();
-  if (st === 'dead') { ctx.globalAlpha = 0.85; ctx.translate(sx, y - hgt / 2); ctx.rotate(face * 0.6); ctx.translate(-sx, -(y - hgt / 2)); }
+  // v13 (Dylan: "when he falls into spikes, animate him being impaled to
+  // death"). Every death played one spin-and-flop ragdoll. deathKind===1 is the
+  // punji trap: the body does NOT spin away -- it drops straight down onto the
+  // stakes, jolts on impact, sags, and bleeds. respT counts 1400->0, so
+  // 1-respT/1400 is a clean 0->1 progress through the death.
+  if (st === 'dead' && deathKind === 1) {
+    const k = Math.max(0, Math.min(1, 1 - (respT || 0) / 1400));
+    // fast drop onto the stakes, then a slow settle as the body sags
+    const drop = (k < 0.18 ? (k / 0.18) * 26 : 26 + (k - 0.18) / 0.82 * 8);
+    const jolt = k < 0.30 ? Math.sin(k / 0.30 * Math.PI * 3) * (1 - k / 0.30) * 5 : 0;
+    ctx.globalAlpha = 0.92;
+    ctx.translate(sx + jolt, y - hgt / 2 + drop);
+    ctx.rotate(face * 0.12 + jolt * 0.01); // slumped, not spun
+    ctx.translate(-sx, -(y - hgt / 2));
+    // blood running down the stakes under him, growing as he hangs there
+    ctx.save();
+    ctx.globalAlpha = 0.75 * Math.min(1, k * 2);
+    ctx.fillStyle = PAL.blood;
+    for (let i = 0; i < 3; i++) {
+      const bw = 3 + i, bx = sx - 10 + i * 10;
+      ctx.fillRect(bx, y - 20 + drop, bw, 20 * Math.min(1, k * 1.6) + 6);
+    }
+    ctx.restore();
+  } else if (st === 'dead') { ctx.globalAlpha = 0.85; ctx.translate(sx, y - hgt / 2); ctx.rotate(face * 0.6); ctx.translate(-sx, -(y - hgt / 2)); }
   const upId = hero === 'us' ? 'hero_us_up' : 'hero_vc_up';
   const upImg = IMG[upId];
   if (aimUp && st === 'alive' && upImg) { // dedicated pose: the gun actually points up
@@ -507,6 +586,24 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(sx - 5, y - hgt - 40); ctx.lineTo(sx, y - hgt - 50); ctx.lineTo(sx + 5, y - hgt - 40); ctx.fill();
   }
+  // v13 weapon overlay (Dylan: "his actual gun needs to change... the same gun
+  // shooting different bullets is fucking lazy"). The hero sprite has a rifle
+  // baked in, so every pickup looked identical. These sit over the gun hand,
+  // sized off the hero's height and flipped with his facing. Only the upgrades
+  // draw -- the default rifle is already in the sprite.
+  const wepArt = { gatling: 'wep_gatling', flame: 'wep_flame', raygun: 'wep_raygun' }[weap];
+  if (wepArt && IMG[wepArt] && st === 'alive' && !bike) {
+    const wi = IMG[wepArt];
+    const ww = hgt * 0.92, wh2 = ww * (wi.height / wi.width);
+    // hand sits just forward of centre, a little above the hip
+    const hx = sx + face * hgt * 0.20, hy2 = y - hgt * (aimUp ? 0.72 : 0.46);
+    ctx.save();
+    ctx.translate(hx, hy2);
+    if (aimUp) ctx.rotate(face * -1.15);       // swing the barrel skyward with the aim-up pose
+    if (face < 0) ctx.scale(-1, 1);
+    ctx.drawImage(wi, -ww * 0.28, -wh2 / 2, ww, wh2);
+    ctx.restore();
+  }
   if (pid === myPid) {
     ctx.fillStyle = PAL.cheese;
     ctx.beginPath(); ctx.moveTo(sx - 7, y - hgt - 18); ctx.lineTo(sx + 7, y - hgt - 18); ctx.lineTo(sx, y - hgt - 8); ctx.fill();
@@ -518,6 +615,12 @@ function drawBullet(ctx, b, cam) {
   const [x, y, k] = b;
   const sx = x - cam;
   if (sx < -40 || sx > W + 40) return;
+  // v13: elongated projectiles rotate to face travel. sim.js sends the angle at
+  // index 4; older snapshots (and the boss beam, which is world-vertical by
+  // design) fall back to 0 = pointing right, i.e. the previous behaviour.
+  const ang = b.length > 4 ? b[4] : 0;
+  const spin = (k === 1 || k === 2 || k === 6 || k === 8 || k === 9) && ang !== 0;
+  if (spin) { ctx.save(); ctx.translate(sx, y); ctx.rotate(ang); ctx.translate(-sx, -y); }
   if (k === 1 || k === 2) { // tracer
     ctx.fillStyle = PAL.tracer;
     ctx.fillRect(sx - 7, y - 2, 14, 4);
@@ -544,17 +647,45 @@ function drawBullet(ctx, b, cam) {
     ctx.fillRect(sx - 20, y - 2, 40, 5);
     ctx.fillStyle = '#eaffd0';
     ctx.fillRect(sx + 12, y - 1, 8, 3);
-  } else if (k === 10) { // flame blob
-    ctx.fillStyle = Math.random() < 0.5 ? PAL.boom1 : PAL.boom2;
-    ctx.beginPath(); ctx.arc(sx, y, 7 + Math.random() * 7, 0, 7); ctx.fill();
-    ctx.fillStyle = 'rgba(255,154,60,0.35)';
-    ctx.beginPath(); ctx.arc(sx, y, 15, 0, 7); ctx.fill();
+  } else if (k === 10) { // flame
+    // v13 (Dylan: "flamethrower is weak, it shoots circles, make the flames
+    // look real... stop the flame getting cut off, it should just fade out not
+    // have a hard cut off with weak feathering"). Was two hard-edged discs at
+    // random colours — literally circles, and both ended on a crisp boundary.
+    // Now: a soft radial core that grows and cools along the projectile's life
+    // (index 5 = 0 at spawn, 1 at burnout, sent by sim.js), so the tongue of
+    // flame widens and dissolves instead of stopping dead. Every stop is a
+    // gradient to fully transparent, so there is no edge to see.
+    const age = b.length > 5 ? b[5] : 0.35;
+    const grow = 15 + age * 44;   // v13: bigger than the first pass -- at 8+26 the stream still read as 'weak' (Dylan's word) even once it was soft-edged
+    const heat = 1 - age;
+    const wob = Math.sin((sx + y) * 0.35 + age * 9) * 2.5;
+    const cx = sx, cy = y + wob;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter'; // overlapping puffs fuse into one sheet of fire instead of reading as separate blobs
+    const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, grow * 1.7);
+    g1.addColorStop(0, 'rgba(255,250,228,' + (0.92 * heat + 0.16).toFixed(3) + ')');
+    g1.addColorStop(0.3, 'rgba(255,196,80,' + (0.72 * heat + 0.20).toFixed(3) + ')');
+    g1.addColorStop(0.65, 'rgba(255,116,28,' + (0.46 * heat + 0.14).toFixed(3) + ')');
+    g1.addColorStop(1, 'rgba(90,30,10,0)');
+    ctx.fillStyle = g1;
+    ctx.beginPath(); ctx.arc(cx, cy, grow * 1.7, 0, 7); ctx.fill();
+    // a little dark smoke trailing the cooling tail, again edge-free
+    if (age > 0.55) {
+      const g2 = ctx.createRadialGradient(cx, cy - 6, 0, cx, cy - 6, grow * 1.3);
+      g2.addColorStop(0, 'rgba(70,60,50,' + (0.30 * (age - 0.55) / 0.45).toFixed(3) + ')');
+      g2.addColorStop(1, 'rgba(70,60,50,0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(cx, cy - 6, grow * 1.3, 0, 7); ctx.fill();
+    }
+    ctx.restore();
   } else if (k === 7) { // boss death beam
     ctx.fillStyle = PAL.acidGlow;
     ctx.fillRect(sx - 26, 0, 52, H);
     ctx.fillStyle = PAL.ray;
     ctx.fillRect(sx - 8, 0, 16, H);
   }
+  if (spin) ctx.restore();
 }
 
 // ---------- shared muzzle-flash burst (v11.2) ----------
@@ -566,33 +697,80 @@ function drawBullet(ctx, b, cam) {
 // the same real "fire" look instead of a dot. `s01` is 0-1 (1 = just fired,
 // fading to 0); `ang` is the barrel angle in radians (0 = facing +x).
 export function drawMuzzleBurst(ctx, x, y, ang, s01) {
+  // v13 (Dylan: "animate the muzzle flash with actual fire like metal slug, and
+  // closer to the effect you have on the air support bombs those look good").
+  // The v11.2 burst was flat vector geometry -- a translucent cone, two hard
+  // four-point stars and a white dot, all at fixed opacity. It read as a decal,
+  // not fire. What makes the air-support blast work is layered radial falloff
+  // with a white-hot core cooling to orange and no hard edges anywhere, so this
+  // now uses the same construction: a gradient fireball core, a gradient-filled
+  // flame cone, licking tongues whose length varies per shot, and a fast
+  // decaying ember spray. Everything is driven off k so it actually animates
+  // across the flash's lifetime instead of only scaling.
   const k = Math.max(0, Math.min(1, s01));
+  if (k <= 0) return;
+  const age = 1 - k;              // 0 at the instant of firing -> 1 at burnout
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(ang);
-  const s = (0.55 + 0.45 * (1 - k)) * (0.6 + 0.4 * k);
-  ctx.globalAlpha = Math.max(0, k);
-  ctx.fillStyle = 'rgba(255,224,138,0.5)';
+  const s = 0.75 + 0.55 * age;    // the flash blooms outward as it dies
+  ctx.globalCompositeOperation = 'lighter';
+
+  // 1. flame cone down the barrel axis: gradient along its length, so the tip
+  // dissolves into nothing rather than ending on a straight edge.
+  const L = (46 + 30 * age) * s;
+  const cone = ctx.createLinearGradient(0, 0, L, 0);
+  cone.addColorStop(0, `rgba(255,248,222,${(0.85 * k).toFixed(3)})`);
+  cone.addColorStop(0.35, `rgba(255,196,86,${(0.55 * k).toFixed(3)})`);
+  cone.addColorStop(0.7, `rgba(255,124,32,${(0.28 * k).toFixed(3)})`);
+  cone.addColorStop(1, 'rgba(190,60,10,0)');
+  ctx.fillStyle = cone;
   ctx.beginPath();
-  ctx.moveTo(2, 0);
-  ctx.lineTo(30 * s + 14, -16 * s);
-  ctx.lineTo(30 * s + 14, 16 * s);
-  ctx.closePath(); ctx.fill();
-  ctx.fillStyle = PAL.boom2;
-  for (let rot = 0; rot < 2; rot++) {
-    ctx.save();
-    ctx.rotate(rot * Math.PI / 4);
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(L * 0.5, -15 * s, L, -3 * s);
+  ctx.quadraticCurveTo(L * 1.06, 0, L, 3 * s);
+  ctx.quadraticCurveTo(L * 0.5, 15 * s, 0, 0);
+  ctx.fill();
+
+  // 2. tongues of flame licking off the cone at slight angles -- the thing that
+  // makes a Metal Slug flash read as burning gas rather than a star shape.
+  for (let i = 0; i < 4; i++) {
+    const a2 = (i - 1.5) * 0.30 + Math.sin(i * 2.1) * 0.05;
+    const tl = L * (0.45 + 0.42 * ((i * 7 % 5) / 5)) * (0.7 + 0.5 * k);
+    const tg = ctx.createLinearGradient(0, 0, Math.cos(a2) * tl, Math.sin(a2) * tl);
+    tg.addColorStop(0, `rgba(255,236,180,${(0.5 * k).toFixed(3)})`);
+    tg.addColorStop(1, 'rgba(255,110,20,0)');
+    ctx.strokeStyle = tg;
+    ctx.lineWidth = (7 - i * 0.9) * s * k;
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(20 * s, 0); ctx.lineTo(4 * s, 4 * s);
-    ctx.lineTo(0, 20 * s); ctx.lineTo(-4 * s, 4 * s);
-    ctx.lineTo(-20 * s, 0); ctx.lineTo(-4 * s, -4 * s);
-    ctx.lineTo(0, -20 * s); ctx.lineTo(4 * s, -4 * s);
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(Math.cos(a2) * tl * 0.55, Math.sin(a2) * tl * 0.9, Math.cos(a2) * tl, Math.sin(a2) * tl);
+    ctx.stroke();
   }
-  ctx.fillStyle = '#fff3d0';
-  ctx.beginPath(); ctx.arc(0, 0, 7 * s, 0, 7); ctx.fill();
+
+  // 3. white-hot ball at the muzzle, cooling through the same ramp the big
+  // bombs use. Radial, so it has no boundary.
+  const R0 = (13 + 9 * age) * s;
+  const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R0);
+  core.addColorStop(0, `rgba(255,255,244,${(0.95 * k).toFixed(3)})`);
+  core.addColorStop(0.4, `rgba(255,214,120,${(0.7 * k).toFixed(3)})`);
+  core.addColorStop(1, 'rgba(255,120,30,0)');
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.arc(0, 0, R0, 0, 7); ctx.fill();
+
+  // 4. sparks thrown forward, densest at the moment of firing
+  const nSpark = Math.round(5 * k);
+  for (let i = 0; i < nSpark; i++) {
+    const a2 = (i / Math.max(1, nSpark) - 0.5) * 1.15;
+    const d = L * (0.6 + 0.55 * ((i * 13 % 7) / 7));
+    ctx.fillStyle = `rgba(255,240,190,${(0.8 * k).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a2) * d, Math.sin(a2) * d, 1.6 * s, 0, 7);
+    ctx.fill();
+  }
   ctx.restore();
+  ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
 }
 
@@ -723,7 +901,9 @@ export function render(ctx, view, t, myPid, dbg) {
     const bx = s.x - cam;
     if (bx < -60 || bx > W + 60) continue;
     ctx.globalAlpha = s.a;
-    ctx.fillStyle = '#6e1410';
+    // v13: cheese splats share the decal system with blood but keep their own
+    // colour, so a molten-cheese kill leaves yellow on the ground, not red.
+    ctx.fillStyle = s.cheese ? '#d99a1b' : '#6e1410';
     ctx.beginPath(); ctx.ellipse(bx, s.y, s.r, s.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -732,6 +912,14 @@ export function render(ctx, view, t, myPid, dbg) {
   drawPlatforms(ctx, cam, view.crates);
 
   for (const l of view.lu || []) { drawPickup(ctx, l[0] - cam, l[1] + 14, 'cheese', t); }
+  // v13: sim-authoritative burning ground (survives across frames, damages
+  // enemies) mirrored into the client-side FX.fires list the renderer draws.
+  // Matched by rounded x so a patch isn't re-added every snapshot.
+  for (const f of view.fi || []) {
+    let ex = FX.fires.find(q => Math.abs(q.x - f[0]) < 6);
+    if (!ex) FX.fires.push({ x: f[0], y: f[1], t: 0, T: Math.max(400, f[2]), r: (f[3] ? 54 : 30) + Math.random() * 12 });
+    else ex.T = Math.max(ex.T, ex.t + Math.max(200, f[2]));
+  }
   for (const pk of view.pk || []) drawPickup(ctx, pk[0] - cam, pk[1], pk[2], t);
 
   // boss telegraph rays
@@ -788,12 +976,43 @@ export function render(ctx, view, t, myPid, dbg) {
     ctx.beginPath(); ctx.arc(s.x - cam, s.y, 26 + k2 * 18, -0.9 + k2 * 2, 0.6 + k2 * 2); ctx.stroke();
   }
 
+  // v13: ground fire left behind by the flamethrower and napalm. Drawn UNDER
+  // the blast sheet so a fresh explosion reads on top of its own residue.
+  // Layered soft blobs with a per-flame time offset rather than one hard disc —
+  // Dylan's note was that flames "shoot circles" with "a hard cut off with weak
+  // feathering", so nothing here uses a crisp edge.
+  for (const f of FX.fires) {
+    const life = 1 - f.t / f.T;
+    const flick = 0.75 + 0.25 * Math.sin(f.t / 55 + f.x);
+    const fx = f.x - cam;
+    for (let L = 0; L < 3; L++) {
+      const rr = f.r * (1 - L * 0.26) * flick * (0.45 + life * 0.55);
+      const gr = ctx.createRadialGradient(fx, f.y - rr * 0.3, 0, fx, f.y - rr * 0.3, Math.max(1, rr));
+      gr.addColorStop(0, L === 0 ? 'rgba(255,240,190,' + (0.55 * life).toFixed(3) + ')' : 'rgba(255,170,60,' + (0.4 * life).toFixed(3) + ')');
+      gr.addColorStop(0.55, 'rgba(255,120,30,' + (0.28 * life).toFixed(3) + ')');
+      gr.addColorStop(1, 'rgba(120,40,10,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(fx, f.y - rr * 0.3, Math.max(1, rr), 0, 7); ctx.fill();
+    }
+  }
+
+  // v13: expanding shockwave ring on every blast — cheap, reads instantly, and
+  // gives small kills a sense of concussion the bare particles never had.
+  for (const r of FX.rings) {
+    const k = r.t / r.T;
+    ctx.globalAlpha = (1 - k) * 0.55;
+    ctx.strokeStyle = k < 0.35 ? '#fff3d0' : PAL.boom1;
+    ctx.lineWidth = Math.max(1, 5 * (1 - k));
+    ctx.beginPath(); ctx.arc(r.x - cam, r.y, r.r * (0.15 + k * 0.85), 0, 7); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   // sprite-sheet explosions (the generated 16-frame blast)
   if (SHEET.sheet_explosion) {
     const es = SHEET.sheet_explosion;
     for (const b of FX.booms) {
       const fr = Math.min(es.frames - 1, Math.floor(b.t / (1000 / es.fps)));
-      drawSheet(ctx, 'sheet_explosion', fr, b.x - cam - b.s / 2, b.y - b.s * 0.62, b.s, b.s, false);
+      drawSheet(ctx, 'sheet_explosion', fr, b.x - cam - b.s / 2, b.y - b.s * 0.62, b.s, b.s, !!b.flip);
     }
   }
 

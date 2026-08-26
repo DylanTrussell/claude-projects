@@ -40,7 +40,7 @@ export class PTBoat extends RailBase {
   }
   step(bits, dt, p) {
     if (this.done) return;
-    this.stepCommon(dt);
+    this.stepCommon(dt, p);
     const dts = dt / 1000;
     this.scroll += dts;
     this.gunCd -= dt; this.chargeCd -= dt;
@@ -221,7 +221,7 @@ export class Surf extends RailBase {
   }
   step(bits, dt, p) {
     if (this.done) return;
-    this.stepCommon(dt);
+    this.stepCommon(dt, p);
     const dts = dt / 1000;
     this.scroll += dts;
     this.gunCd -= dt; this.diveCd -= dt; this.dive -= dt;
