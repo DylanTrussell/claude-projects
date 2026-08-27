@@ -541,7 +541,7 @@ function drawFpsHud(ctx) {
     // reads on the HUD, not just in the viewmodel.
     const wname = tunnel.weap === 'pistol' ? (tunnel.reloadT > 0 ? 'PISTOL — RELOADING' : `PISTOL ${tunnel.ammoInMag}/10`) : tunnel.weap === 'shotgun' ? `SHOTGUN ${tunnel.shells}` : 'CLAWS';
     ctx.fillStyle = tunnel.weap === 'pistol' && tunnel.reloadT > 0 ? '#c8372d' : '#f3e9c8';
-    ctx.fillText(`x${p.lives}  ${wname}  ·  KNIFE: K`, 16, 50);
+    ctx.fillText(`x${p.lives}  ${wname}  ·  CLAWS: K`, 16, 50);
     ctx.fillStyle = '#f3e9c8';
   } else {
     ctx.fillText(`x${p.lives}`, 16, 50);

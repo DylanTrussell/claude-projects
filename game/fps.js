@@ -680,7 +680,7 @@ export class Tunnel {
         }
       } else if (s.kind === 'corpse') {
         img = this.enemyKind === 'rat' ? IMG.alien_trooper : (IMG.vc_corpse || IMG.grunt_vc);
-      } else if (s.kind === 'mittens') img = IMG.hero_us;
+      } else if (s.kind === 'mittens') img = IMG.grunt_us; // was hero_us -- see the vignette fix note above, same wrong-sprite bug
       else if (s.kind === 'shotgun') img = IMG.pickup_shotgun_glow || IMG.fps_shotgun || IMG.pickup_flame;
       else if (s.kind === 'raygun') img = IMG.pickup_raygun;
       else if (s.kind === 'tuna') img = IMG.pickup_health;
@@ -828,8 +828,14 @@ export class Tunnel {
       lg.addColorStop(1, 'rgba(255,190,110,0)');
       ctx.fillStyle = lg;
       ctx.fillRect(0, bar, W, H - bar * 2);
-      // Mittens himself, shivering
-      const mi = IMG.hero_us;
+      // Mittens himself, shivering. There's no dedicated Mittens sprite in the
+      // asset pipeline (he's never had his own art -- topside he's rendered
+      // with the same grunt_us sprite as the other two squad buddies, see
+      // SPRITE_FOR.buddy in render.js). This was drawing IMG.hero_us -- the
+      // PLAYER's own portrait -- which put Sgt. Whiskers in the tunnel
+      // shivering at himself. grunt_us at least matches how Mittens already
+      // reads everywhere else he appears in the game.
+      const mi = IMG.grunt_us;
       if (mi) {
         const mh = H * 0.46, mw = mh * (mi.width / mi.height);
         const shiver = Math.sin(vt / 55) * 1.8 + Math.sin(vt / 23) * 0.9;
@@ -926,14 +932,22 @@ export class Tunnel {
     // fire/reload art has the muzzle flash and shell casing painted directly
     // into the frame (see fps_pistol_fire/fps_shotgun_fire), so no separate
     // procedural flash overlay is needed anymore.
+    // v13 fix (was: claws only ever drew when 'claws' was the equipped weapon,
+    // but K is bound as a melee action on TOP of whatever gun you're holding
+    // -- see the K handler above -- so in the common case, striking showed no
+    // claws and no blood at all, just the generic slash streak). Swap the
+    // viewmodel to the claws sprite for the swing AND for as long as they're
+    // bloodied afterward, then fall back to the held weapon.
+    const clawOverlay = (this.clawT || 0) > 0 || (this.clawBlood || 0) > 0;
     let id;
-    if (this.weap === 'pistol') id = this.reloadT > 0 ? 'fps_pistol_reload' : this.fireT > 40 ? 'fps_pistol_fire' : 'fps_pistol';
+    if (clawOverlay) id = 'fps_claws';
+    else if (this.weap === 'pistol') id = this.reloadT > 0 ? 'fps_pistol_reload' : this.fireT > 40 ? 'fps_pistol_fire' : 'fps_pistol';
     else if (this.weap === 'shotgun') {
       const rackPh = this.pumpT > 0 ? (620 - this.pumpT) : -1;
       const racking = rackPh >= SHOTGUN_RACK_MS[0] && rackPh <= SHOTGUN_RACK_MS[1];
       id = this.fireT > 40 ? 'fps_shotgun_fire' : racking ? 'fps_shotgun_reload' : 'fps_shotgun';
     } else id = 'fps_claws';
-    const fallbackId = this.weap === 'pistol' ? 'fps_pistol' : this.weap === 'shotgun' ? 'fps_shotgun' : 'fps_claws';
+    const fallbackId = clawOverlay ? 'fps_claws' : this.weap === 'pistol' ? 'fps_pistol' : this.weap === 'shotgun' ? 'fps_shotgun' : 'fps_claws';
     const img = IMG[id] || IMG[fallbackId];
     if (!img) return;
     // movement bob: figure-8; turn sway lags; fire kick + recoil rotation
@@ -965,7 +979,7 @@ export class Tunnel {
     // which is why a swing read as "nothing happens". Now the paws lunge along
     // the view axis and rock, so the strike has a real anticipation-and-thrust
     // shape, and the claws stay bloodied for a couple of seconds afterwards.
-    const clawK = this.weap === 'claws' ? Math.max(0, (this.clawT || 0)) / 210 : 0;
+    const clawK = clawOverlay ? Math.max(0, (this.clawT || 0)) / 210 : 0;
     // 0 -> 1 -> 0 over the swipe: quick thrust out, slower settle back
     const thrust = clawK > 0 ? Math.sin(Math.min(1, (1 - clawK) * 1.6) * Math.PI) : 0;
     ctx.save();
@@ -980,7 +994,7 @@ export class Tunnel {
     // blood: tint just the sprite's own pixels via source-atop in an offscreen
     // pass, so it stains the claws rather than painting a rectangle on screen.
     const bl = Math.max(0, this.clawBlood || 0);
-    if (bl > 0 && this.weap === 'claws') {
+    if (bl > 0 && clawOverlay) {
       const a = Math.min(1, bl / 2600) * 0.55;
       if (!this._bloodCv || this._bloodCv.width !== img.width || this._bloodCv.height !== img.height) {
         this._bloodCv = document.createElement('canvas');
