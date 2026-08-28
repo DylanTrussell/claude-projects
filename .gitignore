@@ -10,6 +10,7 @@ tools/node_modules/
 # Scratch/output from past sessions (screenshots, backups, generation drafts)
 work/
 handoff_extra/
+tools/flow_tmp/
 
 # Stale deploy zip artifacts — the real deploy zip is built fresh each time via assemble.sh + zip
 *.zip

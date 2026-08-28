@@ -74,6 +74,25 @@
     #touch .small{font-size:13px}
     #touch button.txt{font-size:clamp(11px,3vw,14px);letter-spacing:0}
   }
+  /* Portrait gameplay was the same wasted-screen problem the cutscene rotation
+     below already solves for film, but the CANVAS never got a fix: at 1280x720
+     logical into a 390x844 phone, scale = min(0.305, 1.172) = 0.305, so the game
+     drew 390x219 in an 844-tall viewport -- 26% of the screen, with the hero at
+     29 CSS px and the punji-trap tell under 20. Rather than re-slice the camera
+     (which W drives, along with wave locks and culling), ask for the handset the
+     game is actually designed for. Sim is paused underneath while this is up. */
+  #rotate{display:none}
+  @media (max-aspect-ratio: 1/1) and (pointer: coarse){
+    #rotate{
+      display:flex;position:fixed;inset:0;z-index:60;
+      flex-direction:column;align-items:center;justify-content:center;gap:14px;
+      background:#14170f;color:#f3e9c8;text-align:center;padding:24px;
+    }
+    .rot-icon{font-size:64px;animation:rotnudge 1.8s ease-in-out infinite}
+    .rot-title{font-size:clamp(20px,6vw,30px);font-weight:bold;letter-spacing:1px;color:#8CFF3B}
+    .rot-sub{font-size:clamp(13px,3.6vw,17px);opacity:.75}
+    @keyframes rotnudge{0%,55%{transform:rotate(0)}75%,100%{transform:rotate(-90deg)}}
+  }
   /* Cutscenes: a 16:9 film letterboxed into a portrait phone wastes most of the
      screen (measured ~219px of video in an 844px-tall viewport). Rotate the
      wrapper so the film uses the phone's LONG axis — the player turns the handset
@@ -190,6 +209,12 @@
       <button class="primary" id="btn-resume"></button>
     </div>
   </div>
+</div>
+
+<div id="rotate">
+  <div class="rot-icon">📱</div>
+  <div class="rot-title">TURN YOUR PHONE</div>
+  <div class="rot-sub">Apocalypse Meow plays sideways.</div>
 </div>
 
 <script type="module" src="./main.js"></script>

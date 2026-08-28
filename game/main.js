@@ -146,6 +146,11 @@ function startGame() {
   audio.ensure();
   audio.music('music_rock', 1200);
   fxEvent({ e: 'hint', k: 'goalBanner' });
+  // Act I never said which key FIRES. The tunnel, the door gun and the
+  // skyraider all print their controls; the main side-scroller -- the mode you
+  // spend most of the game in and the first thing you ever see -- only said
+  // "PUSH EAST. SHOOT EVERYTHING ELSE." Playtester mashed keys to find out.
+  fxEvent({ e: 'hint', k: 'ctlBasics' });
   ensureChunk('weapons'); // v13: topside weapon overlay art, needed as soon as a pickup lands
   prefetchChunk('tunnel'); // warm the tunnel's CDN chunk now so most players never see the loading beat
   const devRail = dev && new URLSearchParams(location.search).get('rail');
@@ -161,8 +166,28 @@ function endGame(won) {
   $('t-result').textContent = won ? STR.victory : STR.gameOver;
   $('t-result').style.color = won ? '#8CFF3B' : '#c8372d';
   const deaths = (v.pl || []).reduce((a, p) => a + (p[14] || 0), 0);
+  const score = v.score || 0, pows = v.pows || 0;
+  // The long-term reward rung. Until this, a run ended by printing three
+  // numbers that were then thrown away -- nothing carried from one session to
+  // the next, so there was no reason to play a second time. Best score is the
+  // cheapest possible persistent hook; the rank turns the raw number into a
+  // target you can name ("I got a B, I want an A").
+  let best = 0;
+  try { best = +(localStorage.getItem('am_best') || 0) || 0; } catch (_) {}
+  const isRecord = score > best;
+  if (isRecord) { try { localStorage.setItem('am_best', String(score)); } catch (_) {} }
+  // Rank rewards score, rewards optional rescues heavily, and punishes deaths
+  // -- so the safest possible run (die freely, skip POWs) can't earn an S.
+  const rating = score + pows * 2000 - deaths * 400;
+  const rank = rating >= 30000 ? 'S' : rating >= 24000 ? 'A' : rating >= 18000 ? 'B' : rating >= 12000 ? 'C' : 'D';
   $('t-stats').innerHTML =
-    `${STR.score}: <b>${v.score || 0}</b><br>${STR.pows}: <b>${v.pows || 0}</b><br>${STR.deaths}: <b>${deaths}</b>`;
+    `${STR.score}: <b>${score}</b><br>` +
+    `${STR.pows}: <b>${pows}</b><br>` +
+    `${STR.deaths}: <b>${deaths}</b><br>` +
+    `<span style="font-size:1.6em;color:#FFC93C">${STR.rank}: <b>${rank}</b></span><br>` +
+    (isRecord
+      ? `<span style="color:#8CFF3B">${STR.newRecord}</span>`
+      : `${STR.best}: <b>${Math.max(best, score)}</b>`);
   show('screen-tally');
 }
 
@@ -380,6 +405,14 @@ let acc = 0, last = performance.now(), paused = false;
 let frames = 0, fpsAt = last, fps = 0;
 addEventListener('blur', () => { paused = true; });
 addEventListener('focus', () => { paused = false; last = performance.now(); });
+// Freeze the sim while the portrait "turn your phone" overlay covers the screen
+// (index.html #rotate) -- otherwise the player keeps taking hits behind it.
+const portraitQ = matchMedia('(max-aspect-ratio: 1/1) and (pointer: coarse)');
+let rotateBlocked = portraitQ.matches;
+portraitQ.addEventListener('change', (e) => {
+  rotateBlocked = e.matches;
+  if (!e.matches) last = performance.now(); // no dt spike on the way back in
+});
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -387,7 +420,7 @@ function frame(now) {
   dt = Math.min(dt, 250);
   fxUpdate(dt);
 
-  if (mode === 'game' && g && !cutsceneActive && !paused && !manualPause && !loadingChunk) {
+  if (mode === 'game' && g && !cutsceneActive && !paused && !manualPause && !loadingChunk && !rotateBlocked) {
     if (tunnel) { // first-person underworld
       const p = g.players[0];
       tunnel.step(myBits(), dt, p);
@@ -561,6 +594,7 @@ function drawFpsHud(ctx) {
   let by = H * 0.3;
   ctx.textAlign = 'center';
   for (const b of FX.banners) {
+    if ((b.d || 0) > 0) continue; // queued behind an earlier banner (see render.js fxEvent)
     ctx.globalAlpha = Math.min(1, b.t / 400);
     ctx.font = 'bold 32px monospace';
     ctx.fillStyle = '#26231c'; ctx.fillText(STR[b.k] || b.k, W / 2 + 2, by + 2);
@@ -569,6 +603,7 @@ function drawFpsHud(ctx) {
   }
   let hy = H - 84;
   for (const h2 of FX.hints) {
+    if ((h2.d || 0) > 0) continue; // queued behind an earlier hint (see render.js fxEvent)
     ctx.globalAlpha = Math.min(1, h2.t / 500);
     ctx.font = 'bold 15px monospace';
     ctx.fillStyle = '#26231c'; ctx.fillText(STR[h2.k] || h2.k, W / 2 + 1, hy + 1);

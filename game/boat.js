@@ -31,7 +31,7 @@ function drawWater(ctx, scroll, tint) {
 // ============================ PT BOAT ============================
 export class PTBoat extends RailBase {
   constructor() {
-    super(54000);
+    super(54000, 20);           // quota: the sim bot manages ~23-27 here
     this.py = 340;              // position across the river (near bank <-> far bank)
     this.gunCd = 0; this.chargeCd = 0; this.charges = 6;
     this.mines = []; this.depth = []; this.started = false;
@@ -144,7 +144,7 @@ export class PTBoat extends RailBase {
       if (this.flyby.x < -420) this.flyby = null;
     }
 
-    if (this.t >= this.dur) { this.done = true; this.ev({ e: 'banner', k: 'ptboatDone' }); this.ev({ e: 'sfx', n: 'sfx_explosion' }); }
+    if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'ptboatDone' }); this.ev({ e: 'sfx', n: 'sfx_explosion' }); }
     this.prevBits = bits;
   }
 
@@ -215,7 +215,7 @@ export class PTBoat extends RailBase {
 // The boat's gone. Boards under your feet, wave rolling east toward the LZ.
 export class Surf extends RailBase {
   constructor() {
-    super(46000);
+    super(46000, 30);           // quota: the sim bot manages ~36-40 here
     this.py = 340; this.dive = 0; this.diveCd = 0;
     this.gunCd = 0; this.started = false;
   }
@@ -275,7 +275,7 @@ export class Surf extends RailBase {
     }
     this.foes = this.foes.filter(f => f.hp > 0 && f.x > -140);
 
-    if (this.t >= this.dur) { this.done = true; this.ev({ e: 'banner', k: 'surfDone' }); }
+    if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'surfDone' }); }
     this.prevBits = bits;
   }
 

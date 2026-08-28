@@ -34,7 +34,12 @@ export const CFG = {
   alienHp: 3, alienSpd: 85, alienFireCd: 1500, rayBulletSpd: 380,
   ufoHp: 5, ufoBeamDps: 0, ufoPull: 300, ufoHover: 150,
   heliHp: 24,
-  bossHp: 320,
+  // 320 was a measured 60s of holding one button -- half of ALL on-foot
+  // playtime in the game, spent on the least interesting input. 140 puts the
+  // rifle kill at ~22s and the gatling at ~9s, and pairs with the much
+  // stronger open-hatch grenade hit (sim.js) so five grenades is a real
+  // alternative line rather than the 53 it used to need.
+  bossHp: 140,
   // pacing
   snapHz: 20, inputHz: 30, lerpMs: 100,
   // pools / caps (thresholds.md)

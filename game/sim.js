@@ -75,7 +75,7 @@ export function makeGame(seed, seats) {
     boss: null, bossDone: false,
     heliEvac: null,
     events: [],
-    banners: { A: false, tunnel: false, B: false, boss: false, cheeseHint: false, trapHint: false, ufoHint: false },
+    banners: { A: false, tunnel: false, B: false, boss: false, cheeseDrop: false, cheeseHint: false, trapHint: false, ufoHint: false },
     // scripted opening
     phase: 'insertion', phaseT: 0, phaseStep: 0,
     pinned: false, airSupport: 'none', airT: 0,
@@ -274,7 +274,12 @@ function hurtPlayer(g, p, why, dmg) {
 
 function killEnemy(g, e, big) {
   e.st = 'gone';
-  g.score += e.k === 'boss' ? 5000 : e.k === 'ufo' ? 300 : e.k === 'heli' ? 800 : 100;
+  const pts = e.k === 'boss' ? 5000 : e.k === 'ufo' ? 300 : e.k === 'heli' ? 800 : 100;
+  g.score += pts;
+  // The short rung of the reward ladder. The score lived only in the top-centre
+  // HUD, which on a phone is a couple of CSS pixels tall, so a good firefight
+  // and a bad one felt identical. Float the points off the body instead.
+  evPush(g, { e: 'score', x: e.x, y: e.y - 50, n: pts });
   evPush(g, { e: 'boom', x: e.x, y: e.y - 30, big: big ? 1 : 0 });
   evPush(g, { e: 'sfx', n: 'sfx_explosion' });
   // drops: their weapons, not their lunch — cheese is mission-issued, not confetti
@@ -314,7 +319,20 @@ export function step(g, dt, inputs) {
       if (p.respT <= 0) {
         if (p.lives > 1) {
           p.lives--; p.st = 'alive'; p.hp = CFG.hpMax; p.invulnT = CFG.invulnMs;
-          p.x = safeGroundX(g, Math.max(g.cam + 120, g.checkpoint + 100)); p.y = 100; p.vx = 0; p.vy = 0;
+          // Respawn 260px in rather than 120: at 120 you drop in at the very
+          // edge of a 1280-wide camera, half-cropped and often right on top of
+          // whatever just killed you. Playtesters twice lost track of their own
+          // character on respawn.
+          p.x = safeGroundX(g, Math.max(g.cam + 260, g.checkpoint + 100)); p.y = 100; p.vx = 0; p.vy = 0;
+          // Tell the player what killed them. deathKind has been set since v13
+          // but ONLY ever picked a ragdoll animation -- the player was never
+          // actually told, so repeated deaths taught nothing. Both playtesters
+          // independently called this the worst feedback gap in the game.
+          const causeK = p.deathKind === 'trap' ? 'diedTrap'
+            : p.deathKind === 'pit' ? 'diedPit'
+            : p.deathKind === 'boom' ? 'diedBoom'
+            : p.deathKind === 'abduct' ? 'diedAbduct' : 'diedShot';
+          evPush(g, { e: 'hint', k: causeK });
         } else { p.lives = 0; p.st = 'out'; }
         if (g.players.every(q => q.st === 'out')) {
           g.over = true; evPush(g, { e: 'gameover' });
@@ -474,11 +492,26 @@ export function step(g, dt, inputs) {
     }
     // POW rescue
     for (const e2 of g.enemies) {
-      if (e2.k === 'pow' && e2.st === 'captive' && Math.abs(e2.x - p.x) < 44 && Math.abs(e2.y - p.y) < 80) {
+      // Rescue box was 44x80 -- roughly "standing on his exact tile" -- and the
+      // camera is monotonic (sim.js: g.cam = Math.max(g.cam, ...)), so the
+      // player gets exactly ONE pass at the only outdoor POW in the game with
+      // no way to walk back. Any vertical displacement on that single pass
+      // loses him silently: there's a platform at x=6600, a pit just before,
+      // and -- measured on a real run -- the exam-B UFO tractor beam hauls the
+      // player straight up his column, crossing him at dx=1 but dy=286. Tall,
+      // narrow box instead: you still have to be on his column, but however
+      // you arrive there counts. He's worth a life now, so silently missing
+      // him is the worst outcome.
+      if (e2.k === 'pow' && e2.st === 'captive' && Math.abs(e2.x - p.x) < 80 && Math.abs(e2.y - p.y) < 320) {
         e2.st = 'freed'; e2.t = 3000; g.pows++; g.score += 500;
         evPush(g, { e: 'banner', k: 'powFreed' });
         evPush(g, { e: 'sfx', n: 'sfx_meow' });
-        const kind = g.pows % 5 === 0 ? 'life' : 'grenades';
+        // The game contains exactly TWO POWs (the outdoor one here and Mittens
+        // in the tunnel), so the old `% 5` meant g.pows never hit the multiple
+        // and the 'life' pickup -- plus its banner and its sprite -- was dead
+        // code. Lives could only ever go down. At `% 2` the second rescue pays
+        // a life, which makes optional rescues the one way to extend a run.
+        const kind = g.pows % 2 === 0 ? 'life' : 'grenades';
         g.pickups.push({ id: nextId++, x: e2.x + 30, y: e2.y, kind, t: 15000 });
       }
     }
@@ -551,11 +584,18 @@ export function step(g, dt, inputs) {
         evPush(g, { e: 'hint', k: 'ufoHint' });
         evPush(g, { e: 'hint', k: 'ctlAimUp' });
       }
-      if (w.x === 6450 && !g.banners.cheeseHint) { // the cheese MISSION: one supply drop, used with intent
-        g.banners.cheeseHint = true;
+      if (w.x === 6450 && !g.banners.cheeseDrop) { // the cheese MISSION: one supply drop, used with intent
+        // Two fixes here. (1) This used to set g.banners.cheeseHint, which is
+        // the SAME flag applyPickup tests before firing the "throw it" hint --
+        // so the hint could never fire and the whole cheese mechanic shipped
+        // untaught. Uses its own cheeseDrop flag now. (2) One cheese spawned
+        // BEHIND the player, and the wave's camLock immediately pushes the
+        // camera forward, so it was unreachable and simply expired; the player
+        // ended up with one cheese, not two. Both spawn ahead now.
+        g.banners.cheeseDrop = true;
         const px2 = alivePlayers(g)[0] ? alivePlayers(g)[0].x : g.cam + 300;
-        g.pickups.push({ id: nextId++, x: px2 - 70, y: CFG.groundY - 20, kind: 'cheese', t: 60000 });
         g.pickups.push({ id: nextId++, x: px2 + 70, y: CFG.groundY - 20, kind: 'cheese', t: 60000 });
+        g.pickups.push({ id: nextId++, x: px2 + 220, y: CFG.groundY - 20, kind: 'cheese', t: 60000 });
         evPush(g, { e: 'banner', k: 'cheeseMission' });
       }
     }
@@ -581,8 +621,15 @@ export function step(g, dt, inputs) {
     evPush(g, { e: 'banner', k: 'pinned' });
     evPush(g, { e: 'hint', k: 'airHint' });
   }
-  if (g.airSupport === 'ready' && g.pinned && (Math.floor(g.t / 6000) !== Math.floor((g.t - dt) / 6000))) {
-    evPush(g, { e: 'hint', k: 'airHint' }); // re-prompt every 6s until they call it
+  // Re-prompt every 6s until they call it -- but only while the L key ACTUALLY
+  // calls air support, and only a few times. Without the !g.invasion guard this
+  // fired 17 times a run and kept nagging "PRESS L -- CALL IN AIR SUPPORT" long
+  // after the invasion flipped L over to throwing cheese, i.e. telling the
+  // player to do something the code no longer lets them do.
+  if (g.airSupport === 'ready' && g.pinned && !g.invasion && (g.airHints || 0) < 3 &&
+      (Math.floor(g.t / 6000) !== Math.floor((g.t - dt) / 6000))) {
+    g.airHints = (g.airHints || 0) + 1;
+    evPush(g, { e: 'hint', k: 'airHint' });
   }
   if (g.airSupport === 'inbound') {
     g.airT -= dt;
@@ -727,6 +774,26 @@ export function step(g, dt, inputs) {
     }
     if (b.from === 1 || b.from === 9 || b.from === 8) { // player (1), allied grunts (9), squad buddy (8)
       if (b.k === 4) continue; // cheese sails over everyone's heads
+      // Crates take BULLETS, not just explosions. Until this existed, explode()
+      // was the only thing that ever touched g.crates, so every crate in the
+      // game required a grenade -- and a full playthrough ends with all five
+      // still standing. That gated BOTH the only flamethrower in the game
+      // (x=4350) and BOTH tuna crates, which are the only healing that exists,
+      // so a player who never lobbed a grenade at a wooden box had no heals at
+      // all. Grenades still work and still pop several at once.
+      if (b.from === 1 && b.k !== 3) {
+        let hitCrate = false;
+        for (const cr of g.crates) {
+          if (cr.hp > 0 && Math.abs(b.x - cr.x) < 26 && b.y > CFG.groundY - 74 && b.y < CFG.groundY + 6) {
+            cr.hp = 0;
+            g.pickups.push({ id: nextId++, x: cr.x, y: CFG.groundY - 20, kind: cr.kind, t: 15000 });
+            evPush(g, { e: 'hit', x: b.x, y: b.y });
+            evPush(g, { e: 'sfx', n: 'sfx_shrapnel' });
+            b.on = 0; hitCrate = true; break;
+          }
+        }
+        if (hitCrate) continue;
+      }
       for (const e2 of g.enemies) {
         if (e2.st === 'gone' || e2.k === 'pow' || e2.k === 'buddy' || e2.st === 'drag' || !hostileTo(g, e2)) continue;
         if (b.from === 9 && e2.side !== 'alien') continue; // allies only strafe aliens
@@ -848,14 +915,16 @@ function applyPickup(g, p, kind) {
   if (kind === 'gatling') { p.weap = 'gatling'; p.ammo = CFG.gatlingAmmo; evPush(g, { e: 'banner', k: 'gotGatling' }); }
   else if (kind === 'raygun') { p.weap = 'raygun'; p.ammo = CFG.raygunAmmo; evPush(g, { e: 'banner', k: 'gotRaygun' }); evPush(g, { e: 'sfx', n: 'sfx_raygun' }); }
   else if (kind === 'flame') { p.weap = 'flame'; p.ammo = CFG.flameAmmo; evPush(g, { e: 'banner', k: 'gotFlame' }); evPush(g, { e: 'sfx', n: 'sfx_flame' }); }
-  else if (kind === 'tuna') { p.hp = Math.min(CFG.hpMax, p.hp + 2); g.score += 100; evPush(g, { e: 'banner', k: 'gotHealth' }); evPush(g, { e: 'sfx', n: 'sfx_purr' }); return; }
+  // Was +100 here and a second, unreachable `else if (kind === 'tuna')` below
+  // that added +300 -- dead because this branch returns first. Folded the
+  // intended total into the one live branch.
+  else if (kind === 'tuna') { p.hp = Math.min(CFG.hpMax, p.hp + 2); g.score += 400; evPush(g, { e: 'banner', k: 'gotHealth' }); evPush(g, { e: 'sfx', n: 'sfx_purr' }); return; }
   else if (kind === 'grenades') { p.gren += 3; evPush(g, { e: 'banner', k: 'gotGrenades' }); }
   else if (kind === 'cheese') {
     p.cheese += 1; evPush(g, { e: 'banner', k: 'gotCheese' });
     if (!g.banners.cheeseHint && g.invasion) { g.banners.cheeseHint = true; evPush(g, { e: 'hint', k: 'cheeseHint' }); }
   }
   else if (kind === 'life') { p.lives++; evPush(g, { e: 'banner', k: 'gotLife' }); }
-  else if (kind === 'tuna') { g.score += 300; }
   evPush(g, { e: 'sfx', n: 'sfx_meow' });
 }
 
@@ -902,8 +971,13 @@ function explode(g, x, y, fromPlayer) {
       if (e2.st === 'gone' || e2.k === 'pow' || !hostileTo(g, e2)) continue;
       if (e2.k === 'boss') {
         // a blast under the open hatch rides the shockwave up into the core
+        // 6 meant 53 grenades to kill a 320hp boss while carrying 5 -- the
+        // "ride the shockwave into the core" line existed but could never
+        // actually be the play. At 30 against 140hp it's five well-placed
+        // grenades, so timing the open hatch is a genuine alternative to
+        // parking under the hull and holding fire.
         if (e2.open && Math.abs(x - e2.x) < 210 && Math.abs(y - (e2.y - 170)) < 340) {
-          e2.hp -= 6; if (e2.hp <= 0) winBoss(g, e2);
+          e2.hp -= 30; if (e2.hp <= 0) winBoss(g, e2);
         }
         continue;
       }

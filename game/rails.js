@@ -20,8 +20,14 @@ function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay -
 // whichever session hit that either reverted without writing it down, or
 // never actually tried loading main.js with the import in place.
 export class RailBase {
-  constructor(dur) {
-    this.t = 0; this.dur = dur;
+  // quota: kills that end the section EARLY. Every rail used to run its full
+  // hardcoded timer no matter how well you shot -- 204s of the ~325s
+  // playthrough where killing 95 things and killing 25 things took exactly the
+  // same wall-clock time, so the only skill expression was not dying. Hitting
+  // the quota now cuts the section short, which is the one place accuracy can
+  // buy the player anything. Timer still ends it for everyone else.
+  constructor(dur, quota) {
+    this.t = 0; this.dur = dur; this.quota = quota || 0;
     this.done = false; this.events = [];
     this.scroll = 0; this.kills = 0;
     this.foes = []; this.shots = []; this.flak = []; this.booms = [];
@@ -29,6 +35,8 @@ export class RailBase {
     this.prevBits = 0; this.shake = 0;
   }
   ev(e) { this.events.push(e); }
+  // true once the section should end: quota met, or the timer ran out.
+  ended() { return (this.quota > 0 && this.kills >= this.quota) || this.t >= this.dur; }
   hurt(p, amt) {
     this._p = p; // v13: draw() needs hull state for the damage smoke/flash
     if (this.hurtT > 0) return;
@@ -122,7 +130,7 @@ export class RailBase {
 // ============================ DOOR GUN ============================
 export class DoorGun extends RailBase {
   constructor() {
-    super(52000);
+    super(52000, 70);           // quota: the sim bot manages ~95 here, so 70 rewards a good gunner
     this.hy = 300;              // heli altitude
     this.gunCd = 0;
     this.started = false;
@@ -228,7 +236,7 @@ export class DoorGun extends RailBase {
     }
     this.flak = this.flak.filter(fk => fk.y > -80 && fk.y < H + 200 && fk.x > -100 && fk.x < W + 200);
 
-    if (this.t >= this.dur) { this.done = true; this.ev({ e: 'banner', k: 'doorgunDone' }); }
+    if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'doorgunDone' }); }
     this.prevBits = bits;
   }
 
@@ -370,7 +378,7 @@ export class DoorGun extends RailBase {
 // ============================ SKYRAIDER ============================
 export class Skyraider extends RailBase {
   constructor() {
-    super(52000);
+    super(52000, 42);           // quota: the sim bot manages ~53 here
     this.py = 260; this.spd = 340;
     this.gunCd = 0; this.napalm = 8; this.cans = []; this.fires = [];
     this.started = false;
@@ -482,7 +490,7 @@ export class Skyraider extends RailBase {
     }
     this.flak = this.flak.filter(fk => fk.y > -80 && fk.y < H + 200 && fk.x > -100 && fk.x < W + 200);
 
-    if (this.t >= this.dur) { this.done = true; this.ev({ e: 'banner', k: 'skyDone' }); this.ev({ e: 'engine', on: false }); }
+    if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'skyDone' }); this.ev({ e: 'engine', on: false }); }
     this.prevBits = bits;
   }
 

@@ -13,6 +13,7 @@ export const FX = {
   splats: [], // persistent blood decals: {x, y, r, a}
   booms: [],  // sprite-sheet explosion instances: {x, y, t, s, flip}
   rings: [],  // v13 expanding shockwave rings on every blast: {x, y, t, T, r}
+  scores: [], // floating "+100" kill rewards: {x, y, n, t, T}
   fires: [],  // v13 lingering ground fire from flamethrower/napalm: {x, y, t, T, r}
   opts: { shake: true, flash: true, bigText: false },
   // v11 (Dylan: "he should fall into it when he goes in, and pop out of it
@@ -38,6 +39,9 @@ function part(kind, x, y, vx, vy, t, r, col) {
 
 export function fxEvent(ev) {
   switch (ev.e) {
+    case 'score':
+      FX.scores.push({ x: ev.x, y: ev.y, n: ev.n | 0, t: 0, T: 850 });
+      break;
     case 'boom': {
       const big = ev.big | 0;
       const n = big === 2 ? 44 : big ? 26 : 12;
@@ -137,8 +141,18 @@ export function fxEvent(ev) {
       break;
     case 'shake': if (FX.opts.shake) FX.shake = Math.max(FX.shake, ev.m); break;
     case 'greenflash': FX.green = 1100; break;
-    case 'banner': FX.banners.push({ k: ev.k, t: 2100 }); break;
-    case 'hint': FX.hints.push({ k: ev.k, t: 4200 }); break;
+    // Banners QUEUE instead of all firing at once. At the pinned-down fight
+    // three fire within a second ("ACT I - RIVER PATROL" / "THE TUNNEL" /
+    // "PINNED DOWN!") and filled the middle of the screen in 34px type during
+    // the hardest encounter in the game, burying the small green "PRESS L"
+    // prompt that is the actual way out of it. Each new banner now waits for
+    // the ones ahead of it.
+    case 'banner': FX.banners.push({ k: ev.k, t: 2100, d: FX.banners.length * 900 }); break;
+    // Hints queue for the same reason banners do -- three at once (goal +
+    // controls + "PRESS L") stack across the bottom of the screen right where
+    // the enemies are during the pinned-down fight. Shorter stagger than
+    // banners since hints are small type and linger longer.
+    case 'hint': FX.hints.push({ k: ev.k, t: 4200, d: FX.hints.length * 1500 }); break;
     case 'ray': FX.rays.push({ x: ev.x, t: 900 }); break; // telegraph before boss beam
   }
 }
@@ -154,9 +168,9 @@ export function fxUpdate(dt) {
   FX.shake = Math.max(0, FX.shake - dt * 0.02);
   FX.flash = Math.max(0, FX.flash - dt);
   FX.green = Math.max(0, (FX.green || 0) - dt);
-  for (const b of FX.banners) b.t -= dt;
+  for (const b of FX.banners) { if ((b.d || 0) > 0) b.d -= dt; else b.t -= dt; }
   FX.banners = FX.banners.filter(b => b.t > 0);
-  for (const h2 of FX.hints) h2.t -= dt;
+  for (const h2 of FX.hints) { if ((h2.d || 0) > 0) h2.d -= dt; else h2.t -= dt; }
   FX.hints = FX.hints.filter(h2 => h2.t > 0);
   for (const r of FX.rays) r.t -= dt;
   FX.rays = FX.rays.filter(r => r.t > 0);
@@ -164,6 +178,8 @@ export function fxUpdate(dt) {
   FX.slashes = FX.slashes.filter(s => s.t > 0);
   for (const r of FX.rings) r.t += dt;
   FX.rings = FX.rings.filter(r => r.t < r.T);
+  for (const s of FX.scores) s.t += dt;
+  FX.scores = FX.scores.filter(s => s.t < s.T);
   // v13: ground fire burns down over its own lifetime and spits embers while lit
   for (const f of FX.fires) {
     f.t += dt;
@@ -622,8 +638,25 @@ function drawBullet(ctx, b, cam) {
   const spin = (k === 1 || k === 2 || k === 6 || k === 8 || k === 9) && ang !== 0;
   if (spin) { ctx.save(); ctx.translate(sx, y); ctx.rotate(ang); ctx.translate(-sx, -y); }
   if (k === 1 || k === 2) { // tracer
-    ctx.fillStyle = PAL.tracer;
-    ctx.fillRect(sx - 7, y - 2, 14, 4);
+    // Playtest: "your own bullets are the least visible object on screen" --
+    // and it was true in the code, not just in feel. This was a flat 14x4
+    // #ffe08a rect with NO glow layer, fired against khaki/mud, while the
+    // alien ray below gets a 28x9 acid halo and even shrapnel gets one. Enemy
+    // fire read beautifully and yours didn't. b[3] is b.from (1 = the player),
+    // so the player's rounds now get the glow + hot-white core treatment and
+    // enemy small-arms keep the original flat tracer.
+    const mine = b.length > 3 && b[3] === 1;
+    if (mine) {
+      ctx.fillStyle = 'rgba(255,240,190,0.30)';
+      ctx.fillRect(sx - 17, y - 5, 34, 10);
+      ctx.fillStyle = PAL.tracer;
+      ctx.fillRect(sx - 11, y - 3, 22, 6);
+      ctx.fillStyle = '#fffef2';
+      ctx.fillRect(sx - 4, y - 1, 14, 2);
+    } else {
+      ctx.fillStyle = PAL.tracer;
+      ctx.fillRect(sx - 7, y - 2, 14, 4);
+    }
   } else if (k === 3) { // grenade
     ctx.fillStyle = PAL.jungle2;
     ctx.beginPath(); ctx.arc(sx, y, 7, 0, 7); ctx.fill();
@@ -1007,6 +1040,26 @@ export function render(ctx, view, t, myPid, dbg) {
     ctx.globalAlpha = 1;
   }
 
+  // floating "+100" on every kill: rises, fades, and pops slightly bigger for
+  // the rarer high-value targets so a UFO or a heli reads as worth more at a
+  // glance rather than only in the HUD total.
+  for (const s of FX.scores) {
+    const k = s.t / s.T;
+    const big = s.n >= 800;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (1 - k) * 1.8);
+    ctx.font = `bold ${big ? 26 : 18}px monospace`;
+    ctx.textAlign = 'center';
+    const tx = s.x - cam, ty = s.y - k * 46;
+    ctx.fillStyle = '#26231c';
+    ctx.fillText('+' + s.n, tx + 2, ty + 2);
+    ctx.fillStyle = big ? '#FFC93C' : '#8CFF3B';
+    ctx.fillText('+' + s.n, tx, ty);
+    ctx.restore();
+  }
+  ctx.textAlign = 'left';
+  ctx.globalAlpha = 1;
+
   // sprite-sheet explosions (the generated 16-frame blast)
   if (SHEET.sheet_explosion) {
     const es = SHEET.sheet_explosion;
@@ -1089,6 +1142,7 @@ export function render(ctx, view, t, myPid, dbg) {
   // banners / hints
   let by = H * 0.30;
   for (const b of FX.banners) {
+    if ((b.d || 0) > 0) continue; // still queued behind an earlier banner
     const a = Math.min(1, b.t / 400);
     ctx.globalAlpha = a;
     hudText(ctx, STR[b.k] || b.k, W / 2, by, 34, 'center', PAL.cheese);
@@ -1097,6 +1151,7 @@ export function render(ctx, view, t, myPid, dbg) {
   }
   let hby = H - 96;
   for (const h2 of FX.hints) {
+    if ((h2.d || 0) > 0) continue; // still queued behind an earlier hint
     ctx.globalAlpha = Math.min(1, h2.t / 500);
     hudText(ctx, STR[h2.k] || h2.k, W / 2, hby, 16, 'center', PAL.acid);
     ctx.globalAlpha = 1;
