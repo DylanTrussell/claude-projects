@@ -130,7 +130,11 @@ export class RailBase {
 // ============================ DOOR GUN ============================
 export class DoorGun extends RailBase {
   constructor() {
-    super(52000, 70);           // quota: the sim bot manages ~95 here, so 70 rewards a good gunner
+    // 52s/quota 70 was non-binding: a brick holding fire hits 70 in ~40s
+    // because kills here are spawn-capped, not aim-capped, so skill bought
+    // about 3 seconds. Shorter timer and a slightly lower quota, since this is
+    // the longest single block of runtime in the game.
+    super(44000, 62);
     this.hy = 300;              // heli altitude
     this.gunCd = 0;
     this.started = false;
@@ -378,9 +382,17 @@ export class DoorGun extends RailBase {
 // ============================ SKYRAIDER ============================
 export class Skyraider extends RailBase {
   constructor() {
-    super(52000, 42);           // quota: the sim bot manages ~53 here
+    // quota 42 -> 34: with napalm halved below, 42 is out of reach (a naive
+    // run now lands 22-30) and the section always ran its full timer again.
+    // 34 sits just above a no-aim run, so it's the gun that gets you out early.
+    super(52000, 34);
     this.py = 260; this.spd = 340;
-    this.gunCd = 0; this.napalm = 8; this.cans = []; this.fires = [];
+    // napalm 8 -> 4: measured, the dominant Skyraider strategy was to NOT fly
+    // -- sit at a fixed altitude mashing K, where napalm supplied 31 of 40
+    // kills (77%) and taking the aim axis (altitude) was actively the worst
+    // policy in the game. Halving the free canisters makes the gun, and
+    // therefore moving, matter again.
+    this.gunCd = 0; this.napalm = 4; this.cans = []; this.fires = [];
     this.started = false;
   }
   step(bits, dt, p) {
@@ -461,7 +473,22 @@ export class Skyraider extends RailBase {
           this.flak.push({ x: f.x, y: f.y - 20, vy: (dyr / dr) * aaSpd, vx: (dxr / dr) * aaSpd });
           this.ev({ e: 'sfx', n: 'sfx_laser' });
         }
-      } else if (f.k === 'burst') { f.t += dt; f.x -= this.spd * 0.7 * dts; if (f.t > 220 && f.t < 480 && aabb(f.x, f.y, 260, this.py, 78)) { f.t = 9999; this.hurt(p, 1); } if (f.t > 900) f.hp = 0; }
+      } else if (f.k === 'burst') {
+        // Flak bursts were inert -- 506 spawns measured across 40 sections, 0
+        // hits, ever. They armed on their own AGE (f.t between 220 and 480ms)
+        // but were hit-tested against the player's fixed screen x of 260,
+        // while spawning at x=W+60 and drifting left at spd*0.7 = 238px/s.
+        // Reaching the player takes ~4.5s; they disarmed at 480ms and were
+        // deleted at 900ms. A quarter of this section's spawn budget did
+        // nothing. Arm on PROXIMITY instead, which is what makes holding a
+        // single safe altitude punishable the way the section intends.
+        f.t += dt; f.x -= this.spd * 0.7 * dts;
+        if (!f.armed && Math.abs(f.x - 260) < 90) {
+          f.armed = 1;
+          if (Math.abs(f.y - this.py) < 78) this.hurt(p, 1);
+        }
+        if (f.x < -80) f.hp = 0;
+      }
       else if (f.k === 'ufo') {
         f.ph += dts * 2.4; f.x -= (this.spd * 0.5 + 160) * dts; f.y += Math.sin(f.ph) * 90 * dts; f.cd -= dt;
         if (aabb(f.x, f.y, 260, this.py, 66)) { f.hp = 0; this.boom(f.x, f.y, 1); this.hurt(p, 1); }

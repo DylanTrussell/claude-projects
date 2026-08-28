@@ -23,7 +23,10 @@ export const CFG = {
   // v13 (Dylan: "flamethrower is weak"). Faster cadence = a continuous stream
   // rather than a dotted line of puffs; a touch more reach and life so the
   // cone actually covers ground and leaves burning patches behind it.
-  flameCd: 34, flameSpd: 470, flameAmmo: 220, flameLife: 620,
+  // flameAmmo 220 -> 480: at flameCd 34ms, 220 rounds is 7.5 seconds, the
+  // SHORTEST duration of any weapon (raygun 12.6s, gatling 13.2s) despite
+  // being the one-per-game crate reward. 480 puts it at ~16s, in line.
+  flameCd: 34, flameSpd: 470, flameAmmo: 480, flameLife: 620,
   grenadeCd: 420, grenadeVy: -420, grenadeVx: 340, startGrenades: 5,
   grenadeRadius: 160, shrapnelN: 9, shrapnelSpd: 540, shrapnelLife: 340,
   meleeRange: 58, meleeCd: 320, meleeDmg: 3,
@@ -35,11 +38,12 @@ export const CFG = {
   ufoHp: 5, ufoBeamDps: 0, ufoPull: 300, ufoHover: 150,
   heliHp: 24,
   // 320 was a measured 60s of holding one button -- half of ALL on-foot
-  // playtime in the game, spent on the least interesting input. 140 puts the
-  // rifle kill at ~22s and the gatling at ~9s, and pairs with the much
-  // stronger open-hatch grenade hit (sim.js) so five grenades is a real
-  // alternative line rather than the 53 it used to need.
-  bossHp: 140,
+  // playtime in the game, spent on the least interesting input. 140 overshot
+  // the other way: five grenades (5 x 30 = 150) cleared it outright and the
+  // best measured kill was 4.1s. 190 lands the rifle at ~30s (still down from
+  // 51s) and the grenade line at ~8-15s, so the hatch read is worth making
+  // without trivialising the fight. Pairs with b.open 2400 -> 1200 in sim.js.
+  bossHp: 190,
   // pacing
   snapHz: 20, inputHz: 30, lerpMs: 100,
   // pools / caps (thresholds.md)

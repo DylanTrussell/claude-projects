@@ -18,13 +18,19 @@ function runRail(kind, p) {
   const bot = RAIL_BOT[kind] || railBot;
   const cap = kind === 'parley' ? 180000 : 90000; // parley has no built-in timer (super(999999), ends on win/death)
   let ms = 0, fr = 0;
-  while (!rail.done && ms < cap) {
+  // Stop on death, not just on rail.done. RailBase.hurt() sets p.st = 'out'
+  // when lives run out, and the outer sim loop then skips that player forever,
+  // so no gameover ever fires -- with lives=9 this harness silently ground on
+  // to the 10-minute cap instead of reporting anything, which hid exactly how
+  // lethal the rail sections are. main.js handles this correctly; the harness
+  // did not.
+  while (!rail.done && !rail.dead && p.st !== 'out' && ms < cap) {
     rail.step(bot(rail, fr++), 1000 / 60, p);
     rail.events.length = 0;
     ms += 1000 / 60;
   }
   console.log(`RAIL ${kind}: done=${rail.done} kills=${rail.kills} dead=${!!rail.dead} in ${(ms / 1000).toFixed(1)}s`);
-  if (!rail.done) { console.log('RESULT: FAIL — rail timeout'); process.exit(1); }
+  if (!rail.done && !rail.dead && p.st !== 'out') { console.log('RESULT: FAIL — rail timeout'); process.exit(1); }
   return rail;
 }
 

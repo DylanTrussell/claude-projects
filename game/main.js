@@ -179,7 +179,11 @@ function endGame(won) {
   // Rank rewards score, rewards optional rescues heavily, and punishes deaths
   // -- so the safest possible run (die freely, skip POWs) can't earn an S.
   const rating = score + pows * 2000 - deaths * 400;
-  const rank = rating >= 30000 ? 'S' : rating >= 24000 ? 'A' : rating >= 18000 ? 'B' : rating >= 12000 ? 'C' : 'D';
+  // Thresholds re-scaled after measurement: at S >= 30000 a four-input bot
+  // (hold right, hold fire, jump at gaps, aim up at flyers) averaged 30,525
+  // and took S on 10 of 12 runs -- the persistence hook was maxed on run one.
+  // These sit above that bot's ceiling, so S has to be earned.
+  const rank = rating >= 42000 ? 'S' : rating >= 34000 ? 'A' : rating >= 26000 ? 'B' : rating >= 18000 ? 'C' : 'D';
   $('t-stats').innerHTML =
     `${STR.score}: <b>${score}</b><br>` +
     `${STR.pows}: <b>${pows}</b><br>` +
@@ -478,17 +482,23 @@ function frame(now) {
         const wasSurf = rail instanceof Surf;
         const wasParley = rail instanceof ParleyBoss;
         const kills = rail.kills, dead = rail.dead;
+        // Kill quotas (v13.1) end a rail early when you shoot well -- but the
+        // payout is kills*100, so clearing the quota FORGOES the kills you'd
+        // have racked up running the timer out: measured ~4,765 points across
+        // the four sections, i.e. playing well lowered your score. Pay for the
+        // time you saved so the incentive points the same way as the skill.
+        const timeBonus = Math.max(0, Math.round((rail.dur - rail.t) / 100) * 10);
         rail = null;
         if (dead) { endGame(false); }
         else if (wasPTBoat) { // straight into the surf-out, no return to normal control in between
-          g.score += kills * 100;
+          g.score += kills * 100 + timeBonus;
           handleEvents([{ e: 'rail', k: 'surf' }]);
         } else if (wasParley) { // Chancellor Grimtail down — the evac he interrupted actually lands now
-          g.score += kills * 100;
+          g.score += kills * 100 + timeBonus;
           g.over = true; g.won = true;
           handleEvents([{ e: 'victory' }]);
         } else {
-          g.score += kills * 100;
+          g.score += kills * 100 + timeBonus;
           if (wasDoorgun) { // Charlie hops off the gun and back into the fight
             for (const e of g.enemies) if (e.duel) e.st = 'gone';
           }

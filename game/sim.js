@@ -485,7 +485,18 @@ export function step(g, dt, inputs) {
 
     // pickups
     for (const pk of g.pickups) {
-      if (pk.t > 0 && Math.abs(pk.x - p.x) < 42 && Math.abs(pk.y - (p.y - 40)) < 70) {
+      // Reach is asymmetric on purpose. It was Math.abs(...) < 70, and EVERY
+      // crate in LEVEL.crates sits inside a LEVEL.platforms footprint -- so
+      // shooting a crate open while standing on it put the pickup ~100px below
+      // a 70px reach and you simply could not take it. Measured: a bot that
+      // jumps normally collected the tuna at x=2100 on 3 of 25 runs despite
+      // passing within 42px every time. Downward reach now covers a platform
+      // top; upward stays tight so you can't hoover pickups from mid-air.
+      const pdy = pk.y - (p.y - 40);
+      // Don't burn a tuna at full health -- there are only two in the game and
+      // there's no way to decline one you walk over.
+      if (pk.kind === 'tuna' && p.hp >= CFG.hpMax) continue;
+      if (pk.t > 0 && Math.abs(pk.x - p.x) < 42 && pdy < 170 && pdy > -70) {
         pk.t = 0;
         applyPickup(g, p, pk.kind);
       }
@@ -913,7 +924,16 @@ function hostileTo(g, e2) {
 
 function applyPickup(g, p, kind) {
   if (kind === 'gatling') { p.weap = 'gatling'; p.ammo = CFG.gatlingAmmo; evPush(g, { e: 'banner', k: 'gotGatling' }); }
-  else if (kind === 'raygun') { p.weap = 'raygun'; p.ammo = CFG.raygunAmmo; evPush(g, { e: 'banner', k: 'gotRaygun' }); evPush(g, { e: 'sfx', n: 'sfx_raygun' }); }
+  // Rayguns drop constantly (18% off aliens, 25% off UFOs) and used to
+  // overwrite whatever you were holding unconditionally. The flame crate sits
+  // at x=4350, right between the two densest alien waves, so of the runs that
+  // finally reached the flamethrower after the crate fix, 11 of 12 lost it to
+  // a raygun within seconds -- mean hold 3.5s for the game's one unique
+  // weapon. A common drop no longer overwrites a special you're still using.
+  else if (kind === 'raygun') {
+    if (p.weap !== 'rifle' && p.ammo > 15) return;
+    p.weap = 'raygun'; p.ammo = CFG.raygunAmmo; evPush(g, { e: 'banner', k: 'gotRaygun' }); evPush(g, { e: 'sfx', n: 'sfx_raygun' });
+  }
   else if (kind === 'flame') { p.weap = 'flame'; p.ammo = CFG.flameAmmo; evPush(g, { e: 'banner', k: 'gotFlame' }); evPush(g, { e: 'sfx', n: 'sfx_flame' }); }
   // Was +100 here and a second, unreachable `else if (kind === 'tuna')` below
   // that added +300 -- dead because this branch returns first. Folded the
@@ -1258,7 +1278,11 @@ function stepBoss(g, b, dt, dts) {
   b.atkT -= dt;
   if (b.open > 0) { b.open -= dt; }
   if (b.atkT <= 0) {
-    b.open = 2400; // the hull hatch irises open while it attacks — that's your window
+    // The hull hatch irises open while it attacks -- that's your window. Was
+    // 2400ms against a 3000-3400ms attack cycle, i.e. open ~77% of the time,
+    // so "time the open hatch" wasn't a timing problem at all. 1200 makes the
+    // window a real read worth watching for.
+    b.open = 1200;
     if (!g.banners.core) { g.banners.core = true; evPush(g, { e: 'banner', k: 'coreExposed' }); }
     const ap = alivePlayers(g);
     const p = ap.length ? ap[(g.rng() * ap.length) | 0] : null;
