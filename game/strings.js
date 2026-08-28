@@ -153,7 +153,10 @@ Object.assign(STR, {
   connected: "connected",
   disconnected: "away",
   goalBanner: "PUSH EAST. RESCUE POWS. SHOOT EVERYTHING ELSE.",
-  ctlBasics: "A/D MOVE · SPACE JUMP · J FIRE · K GRENADE",
+  // Includes W and L on purpose: the game later demands both ("HOLD W — AIM
+  // UP", "PRESS L — CALL IN AIR SUPPORT") and the first version of this line
+  // taught neither.
+  ctlBasics: "A/D MOVE · W AIM UP · SPACE JUMP · J FIRE · K GRENADE · L SPECIAL",
   goalBoss: "GET UNDER IT — SHOOT UP (W) WHEN THE HATCH OPENS",
   cheeseHint: "Aliens can't resist cheese. Throw it. (L / Y button)",
   trapHint: "Disturbed earth hides traps. Jump it.",
@@ -163,6 +166,7 @@ Object.assign(STR, {
   diedPit: "FELL INTO THE SPIKES — jump the gaps",
   diedBoom: "KILLED BY A BLAST — keep clear of explosions",
   diedAbduct: "TAKEN BY A UFO — shoot it or stay out from under it",
+  diedTunnel: "KILLED IN THE DARK — back to the entrance. Watch the red arc.",
   ufoHint: "Tractor beams pull you up — keep moving!",
   paused: "PAUSED — tab back in to fight",
   pausedTitle: "PAUSED",

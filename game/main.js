@@ -165,8 +165,15 @@ function endGame(won) {
   const v = lastView || {};
   $('t-result').textContent = won ? STR.victory : STR.gameOver;
   $('t-result').style.color = won ? '#8CFF3B' : '#c8372d';
-  const deaths = (v.pl || []).reduce((a, p) => a + (p[14] || 0), 0);
-  const score = v.score || 0, pows = v.pows || 0;
+  // Read the LIVE game state, not lastView. lastView is only re-serialized by
+  // the side-scroller step, so it is frozen at whatever it was when you
+  // entered a tunnel or a rail -- and dying inside the tunnel therefore
+  // reported the deaths you had BEFORE going in. Measured: 8 tunnel deaths
+  // reported as "DEATHS: 1". Falls back to the snapshot if g is gone.
+  const deaths = g ? g.players.reduce((a, p) => a + (p.deaths || 0), 0)
+                   : (v.pl || []).reduce((a, p) => a + (p[14] || 0), 0);
+  const score = (g ? g.score : v.score) || 0;
+  const pows = (g ? g.pows : v.pows) || 0;
   // The long-term reward rung. Until this, a run ended by printing three
   // numbers that were then thrown away -- nothing carried from one session to
   // the next, so there was no reason to play a second time. Best score is the

@@ -147,12 +147,27 @@ export function fxEvent(ev) {
     // the hardest encounter in the game, burying the small green "PRESS L"
     // prompt that is the actual way out of it. Each new banner now waits for
     // the ones ahead of it.
-    case 'banner': FX.banners.push({ k: ev.k, t: 2100, d: FX.banners.length * 900 }); break;
+    // Cap the queue depth. Queueing alone caused a new bug: a banner stuck
+    // behind several others could surface tens of seconds later, completely
+    // out of context -- "ACT I - RIVER PATROL" was seen playing over the boss
+    // fight at x=7000. Anything more than two deep is stale by the time it
+    // would show, so drop it rather than display it late.
+    case 'banner':
+      if (FX.banners.length < 3) FX.banners.push({ k: ev.k, t: 2100, d: FX.banners.length * 900 });
+      break;
     // Hints queue for the same reason banners do -- three at once (goal +
     // controls + "PRESS L") stack across the bottom of the screen right where
     // the enemies are during the pinned-down fight. Shorter stagger than
     // banners since hints are small type and linger longer.
-    case 'hint': FX.hints.push({ k: ev.k, t: 4200, d: FX.hints.length * 1500 }); break;
+    // Same cap as banners, and a death cause always jumps the queue -- it's
+    // the one message that is useless if it arrives after you've respawned and
+    // started fighting again.
+    case 'hint': {
+      const urgent = typeof ev.k === 'string' && ev.k.startsWith('died');
+      if (urgent) FX.hints.length = 0;
+      if (FX.hints.length < 3) FX.hints.push({ k: ev.k, t: 4200, d: urgent ? 0 : FX.hints.length * 1500 });
+      break;
+    }
     case 'ray': FX.rays.push({ x: ev.x, t: 900 }); break; // telegraph before boss beam
   }
 }
@@ -1045,15 +1060,20 @@ export function render(ctx, view, t, myPid, dbg) {
   // glance rather than only in the HUD total.
   for (const s of FX.scores) {
     const k = s.t / s.T;
-    const big = s.n >= 800;
+    // Threshold was 800, which only caught helicopters -- a UFO pays 300, so
+    // the rarest air kills still popped the small green number. Anything worth
+    // more than a grunt now reads as a bigger, gold hit. Base colour moved off
+    // acid green too: Act II's whole palette is green, so green-on-green was
+    // the least legible choice available.
+    const big = s.n >= 300;
     ctx.save();
     ctx.globalAlpha = Math.min(1, (1 - k) * 1.8);
-    ctx.font = `bold ${big ? 26 : 18}px monospace`;
+    ctx.font = `bold ${big ? 28 : 19}px monospace`;
     ctx.textAlign = 'center';
     const tx = s.x - cam, ty = s.y - k * 46;
     ctx.fillStyle = '#26231c';
     ctx.fillText('+' + s.n, tx + 2, ty + 2);
-    ctx.fillStyle = big ? '#FFC93C' : '#8CFF3B';
+    ctx.fillStyle = big ? '#FFC93C' : '#fff3d0';
     ctx.fillText('+' + s.n, tx, ty);
     ctx.restore();
   }

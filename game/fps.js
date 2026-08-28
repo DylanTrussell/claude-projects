@@ -365,6 +365,12 @@ export class Tunnel {
             if (p.lives <= 0) { p.st = 'out'; this.done = true; this.result.dead = true; return; }
             this.px = this.spawn[0]; this.py = this.spawn[1];
             this.hurtT = 2000;
+            // The side-scroller names your killer on respawn; the tunnel --
+            // the darkest, most confusing part of the game and the place a
+            // playtester burned eight lives without ever knowing what hit
+            // them -- said nothing at all. It also silently teleports you back
+            // to the entrance, which reads as "nothing happened" without this.
+            this.ev({ e: 'hint', k: 'diedTunnel' });
           }
         }
         if (e.t > 420) { e.st = 'recover'; e.t = 0; }
