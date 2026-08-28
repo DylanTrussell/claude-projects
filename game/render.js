@@ -292,7 +292,7 @@ function drawIslands(ctx, cam, t) {
   }
 }
 
-function drawPlatforms(ctx, cam, crates) {
+function drawPlatforms(ctx, cam, crates, t) {
   for (const [px, py, pw, ph] of LEVEL.platforms) {
     if (px + pw < cam - 40 || px > cam + W + 40) continue;
     // sandbag stack
@@ -319,6 +319,19 @@ function drawPlatforms(ctx, cam, crates) {
     ctx.fillStyle = PAL.cheese; ctx.fillRect(x - 24, CFG.groundY - 48, 48, 8);
     o(ctx); ctx.strokeRect(x - 24, CFG.groundY - 48, 48, 48);
     ctx.beginPath(); ctx.moveTo(x - 24, CFG.groundY - 48); ctx.lineTo(x + 24, CFG.groundY); ctx.stroke();
+    // Mark crates as SHOOTABLE. They're now the only source of the
+    // flamethrower and of every heal in the game, but they're drawn in the
+    // same muted mud/khaki as the scenery they sit among, so a playtester
+    // walked past all five without ever registering they could be opened.
+    // A pulsing stencilled band plus a bright rivet reads as "supply crate,
+    // not terrain" without needing new art.
+    const pulse = 0.55 + 0.45 * Math.sin((t || 0) / 260 + c.x * 0.01);
+    ctx.save();
+    ctx.globalAlpha = pulse * 0.9;
+    ctx.fillStyle = '#FFC93C';
+    ctx.fillRect(x - 16, CFG.groundY - 30, 32, 5);
+    ctx.fillRect(x - 3, CFG.groundY - 41, 6, 6);
+    ctx.restore();
   }
 }
 
@@ -957,7 +970,7 @@ export function render(ctx, view, t, myPid, dbg) {
   }
   drawTunnels(ctx, cam);
   drawTraps(ctx, cam, view.tr || []);
-  drawPlatforms(ctx, cam, view.crates);
+  drawPlatforms(ctx, cam, view.crates, t);
 
   for (const l of view.lu || []) { drawPickup(ctx, l[0] - cam, l[1] + 14, 'cheese', t); }
   // v13: sim-authoritative burning ground (survives across frames, damages
