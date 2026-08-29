@@ -350,24 +350,30 @@ export class DoorGun extends RailBase {
       // it stays welded to the gunner's paws at every aim angle.
       const gx = 277, gy2 = this.hy + 107 + bobY;
       const ang = 0.598 + this.aimA;
-      // A real tapered barrel with a highlight and a flash hider, not the flat
-      // "random black line" Dylan called out in v11.2 -- but sized to the gun
-      // the gunner is holding rather than replacing him with a second cat.
+      // v13.2 (Dylan, with M60D reference photos: "the gun that aims looks
+      // like a separate entity... the cat should be manning the gun, and it
+      // should be one thing that you can aim"). The procedural rects read as a
+      // floating black tube. Real M60D sprite now, pivoted at the same pintle
+      // anchor so it stays welded to the baked-in gunner's paws; the mount
+      // point on the ART is ~28% along the gun, so that point sits on the
+      // pivot at every aim angle -- gun and gunner move as one machine.
       const cA = Math.cos(ang), sA = Math.sin(ang);
+      const m60 = IMG.m60_doorgun;
       ctx.save();
       ctx.translate(gx, gy2);
       ctx.rotate(ang);
-      ctx.fillStyle = '#3a3a32';                       // barrel body
-      ctx.fillRect(-12, -4, 46, 8);
-      ctx.fillStyle = '#55554a';                       // top highlight
-      ctx.fillRect(-12, -4, 46, 2);
-      ctx.fillStyle = '#26231c';                       // flash hider
-      ctx.fillRect(30, -5.5, 8, 11);
-      ctx.fillStyle = '#2f2f28';                       // receiver stub back toward his paws
-      ctx.fillRect(-18, -6, 10, 12);
+      if (m60) {
+        const gw = 76, gh = gw * (m60.height / m60.width);
+        ctx.drawImage(m60, -gw * 0.28, -gh * 0.62, gw, gh);
+      } else { // fallback: the old procedural barrel
+        ctx.fillStyle = '#3a3a32'; ctx.fillRect(-12, -4, 46, 8);
+        ctx.fillStyle = '#55554a'; ctx.fillRect(-12, -4, 46, 2);
+        ctx.fillStyle = '#26231c'; ctx.fillRect(30, -5.5, 8, 11);
+        ctx.fillStyle = '#2f2f28'; ctx.fillRect(-18, -6, 10, 12);
+      }
       ctx.restore();
       if (this.fireT > 0) {
-        drawMuzzleBurst(ctx, gx + cA * 40, gy2 + sA * 40, ang, this.fireT / 70);
+        drawMuzzleBurst(ctx, gx + cA * 52, gy2 + sA * 52, ang, this.fireT / 70);
       }
     }
     this.drawBooms(ctx);

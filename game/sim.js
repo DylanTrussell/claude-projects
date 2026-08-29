@@ -526,12 +526,24 @@ export function step(g, dt, inputs) {
         g.pickups.push({ id: nextId++, x: e2.x + 30, y: e2.y, kind, t: 15000 });
       }
     }
-    // tunnel doors: the war goes underground
-    if (g.phase === 'play' && !g.fps0 && Math.abs(p.x - LEVEL.fpsDoors.main) < 30 && p.onG) {
-      g.fps0 = 'active';
-      evPush(g, { e: 'banner', k: 'fpsEnter' });
-      evPush(g, { e: 'fps', map: 0 });
+    // tunnel doors: the war goes underground.
+    // v13.1 hardening (Dylan hit a run where "the tunnel's not even there at
+    // all" and the game rolled on to the next cutscene): the old trigger was a
+    // 60px window that ALSO required being on the ground that exact frame --
+    // jump across it, or clip it mid-knockback, and the story-critical tunnel
+    // silently never happens, with no way to know. Now CROSSING the door x
+    // arms it (airborne or not) and it fires on the next landing.
+    if (g.phase === 'play' && !g.fps0) {
+      const dx0 = LEVEL.fpsDoors.main;
+      if (p.prevX !== undefined && (p.prevX - dx0) * (p.x - dx0) <= 0) p.fps0Armed = true;
+      if (Math.abs(p.x - dx0) < 30 && p.onG) p.fps0Armed = true;
+      if (p.fps0Armed && p.onG) {
+        g.fps0 = 'active';
+        evPush(g, { e: 'banner', k: 'fpsEnter' });
+        evPush(g, { e: 'fps', map: 0 });
+      }
     }
+    p.prevX = p.x;
     if (g.invasion && !g.fps1 && !g.rideOn && Math.abs(p.x - LEVEL.fpsDoors.nest) < 44 && p.onG) {
       if (!g.nestHintT || g.t - g.nestHintT > 6000) { g.nestHintT = g.t; evPush(g, { e: 'hint', k: 'fpsNest' }); }
       if ((bits & C.DOWN) && !(p.prevC & C.DOWN)) {

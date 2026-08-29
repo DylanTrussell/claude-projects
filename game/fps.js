@@ -30,23 +30,30 @@ const SHOTGUN_RACK_MS = [150, 450]; // window inside pumpT where the reload/rack
 //          B explosive barrel (chains; hurts everyone)
 //          D secret wall — claw the gold scratches to open it
 //          S shotgun   T tuna   H shell box   R alien raygun   c torch
+// v13.2 maps (built + validated by scratchpad mapbuild.mjs, not eyeballed):
+// the round-1 rebuild put the throat-grab BEFORE any enemy, so the pistol was
+// taken away unused -- "you need to be able to use the gun first" (Dylan).
+// New flow: entry -> open FIGHT ROOM (two telegraphed ambushers + a barrel,
+// the pistol gets a real workout) -> grab corner -> torch-lit SHOTGUN chamber
+// immediately after (a gunner snipes across the hall while you take it) ->
+// gunner hall -> prison arena (Mittens) -> loop-back exit corridor.
 export const MAPS = [
   { // 0 — the VC tunnel: rescue Pvt. Mittens.
     enemies: 'vc',
     grid: [
       '################',
-      '#P.....#..#....#',
-      '#.####.#.##.##.#',
-      '#.#c...G....#c.#',
-      '#.#.########.#.#',
-      '#.#.#S...a#..#.#',
-      '#B#.#.##..#.##.#',
-      '#..c#..#B.#..#.#',
-      '#.#D####.##a.#.#',
-      '#.#TH#.g......g#',
-      '#.#..#..#c..####',
-      '#.####.##.#..M.#',
-      '#E...c....#....#',
+      '#P....#...a.#TH#',
+      '#...c....B..#DD#',
+      '#.#####.a...#..#',
+      '#.#######.###.##',
+      '#....G....###.##',
+      '#..c.########a##',
+      '#.S....g...B...#',
+      '#....#........g#',
+      '############..##',
+      '#.....a.#.a..g.#',
+      '#.#####.#B....M#',
+      '#E..c.....c....#',
       '################',
     ],
     objective: 'fpsObjective0',
@@ -55,17 +62,17 @@ export const MAPS = [
     enemies: 'rat',
     grid: [
       '##############',
-      '#P...#...#..T#',
-      '#.#c.#.a.#.#.#',
-      '#.#..g...#.#.#',
-      '#.##.###.#.#.#',
-      '#..#..cB.#a..#',
-      '#a.##.###.##.#',
-      '#..#..#R#..#c#',
-      '#.#c#.#.#.B#.#',
-      '#.#...g....#.#',
-      '#.#.#####.##.#',
-      '#E..c#....a..#',
+      '#P...#.a....T#',
+      '#..c....B###.#',
+      '#.####...###.#',
+      '#.#####.####.#',
+      '#.###.g....a.#',
+      '#.####..a#####',
+      '#..c...R....##',
+      '#.####B..#.###',
+      '#.########g###',
+      '#.########c###',
+      '#E..c..a.B..##',
       '##############',
     ],
     objective: 'fpsObjective1',
@@ -356,9 +363,13 @@ export class Tunnel {
         for (let i = -2; i <= 2; i++) this.shoot(1, 0.09, 7, i * 0.07);
         this.alert(8);
         if (this.shells <= 0) this.weap = this.pistolLost ? 'claws' : 'pistol';
-      } else if (this.weap === 'claws') {
+      } else if (this.weap === 'claws' && !(this.prevBits & C.FIRE)) {
+        // press-edge ONLY: holding J with claws used to re-trigger every 260ms
+        // -- a constant screech-as-if-shooting even when hitting nothing,
+        // which Dylan called out ("making a sound effect as if I was shooting,
+        // but I wasn't"). One press, one swipe, one sound.
         this.fireCd = 260; this.meleeT = 190; this.clawT = 190;
-        this.ev({ e: 'sfx', n: 'sfx_screech' }); // angry meow -- see note in strings/audio
+        this.ev({ e: 'sfx', n: 'sfx_screech' });
         if (this.melee(2, 1.75)) this.clawBlood = 2600;
         this.checkSecret();
         this.alert(4);
@@ -440,15 +451,30 @@ export class Tunnel {
           if (!this.solid(nx, e.y)) e.x = nx;
           if (!this.solid(e.x, ny)) e.y = ny;
         }
+        // pending second round of a burst tracks the player's CURRENT position
+        if (e.burstT > 0) {
+          e.burstT -= dt;
+          if (e.burstT <= 0) {
+            const bd2 = Math.max(0.2, Math.hypot(this.px - e.x, this.py - e.y));
+            const spd2 = this.enemyKind === 'rat' ? 5.2 : 4.6;
+            this.bolts.push({ x: e.x, y: e.y, vx: (this.px - e.x) / bd2 * spd2, vy: (this.py - e.y) / bd2 * spd2, t: 3000 });
+            this.ev({ e: 'sfx', n: 'sfx_laser' });
+          }
+        }
         const see = d < 8.5 && this.los(e.x, e.y);
         if (see && e.boltCd <= 0) {
           if (!e.aiming) { e.aiming = 1; e.aimT = 0; this.ev({ e: 'sfx', n: 'sfx_reload' }); } // the click IS the tell
           e.aimT += dt;
-          if (e.aimT > 680) {
-            e.aiming = 0; e.boltCd = 1500 + Math.random() * 600;
+          if (e.aimT > 560) {
+            // two-round burst, fast bolts. Playtest on v1 of the gunner:
+            // "their bullets were going slow" -- at 2.9 cells/s a bolt took
+            // 2+ seconds to arrive and read as harmless. 4.6/5.2 with a
+            // follow-up round makes standing still an actual mistake while
+            // the 560ms glow still gives an honest dodge window.
+            e.aiming = 0; e.boltCd = 1400 + Math.random() * 500; e.burstT = 170;
             const bd = Math.max(0.2, d);
-            const spd = this.enemyKind === 'rat' ? 3.3 : 2.9;
-            this.bolts.push({ x: e.x, y: e.y, vx: (this.px - e.x) / bd * spd, vy: (this.py - e.y) / bd * spd, t: 3600 });
+            const spd = this.enemyKind === 'rat' ? 5.2 : 4.6;
+            this.bolts.push({ x: e.x, y: e.y, vx: (this.px - e.x) / bd * spd, vy: (this.py - e.y) / bd * spd, t: 3000 });
             this.ev({ e: 'sfx', n: 'sfx_laser' });
           }
         } else if (!see) { e.aiming = 0; e.aimT = 0; }
@@ -458,7 +484,7 @@ export class Tunnel {
         if (d < 1.9 && this.los(e.x, e.y)) this.burst(e);
         continue;
       }
-      if (e.st === 'burst') { e.t += dt; if (e.t > 330) e.st = 'chase'; continue; }
+      if (e.st === 'burst') { e.t += dt; if (e.t > 260) e.st = 'chase'; continue; }
       if (e.st === 'lunge') {
         e.t += dt;
         const spd = 5.2 * dts;
@@ -476,7 +502,7 @@ export class Tunnel {
       // chase: stalk down the corridors
       if (d > 1.35) {
         const vx = (this.px - e.x) / d, vy = (this.py - e.y) / d;
-        const spd = (this.enemyKind === 'rat' ? 2.3 : 2.0) * dts;
+        const spd = (this.enemyKind === 'rat' ? 2.9 : 2.6) * dts; // v13.1: stalkers actually close distance now
         const nx = e.x + vx * spd, ny = e.y + vy * spd;
         const R2 = 0.22;
         if (nx !== e.x && !this.solid(nx + (nx > e.x ? R2 : -R2), e.y)) e.x = nx;
@@ -673,32 +699,53 @@ export class Tunnel {
     const sc = this.sctx;
 
     // ---- floor + ceiling casting into a 320x180 ImageData ----
+    // v13.1 perf rewrite (playtest: "tons of lag"): this loop used to call
+    // Math.cos/sin THREE times per pixel -- ~350k trig calls a frame at
+    // 320x180, the single hottest thing in the tunnel. Ray direction, fisheye
+    // correction and the flashlight cone are per-COLUMN quantities, so they're
+    // now precomputed once (cone/correction once ever, direction once per
+    // frame) and the inner loop is pure multiply-add.
     if (!this._fdata) this._fdata = sc.createImageData(RW, RH);
+    if (!this._cols) {
+      this._cols = { ca: new Float32Array(RW), inv: new Float32Array(RW), cone: new Float32Array(RW) };
+      for (let x = 0; x < RW; x++) {
+        const colAng = (x / RW - 0.5) * FOV;
+        this._cols.ca[x] = colAng;
+        this._cols.inv[x] = 1 / Math.cos(colAng);
+        this._cols.cone[x] = 0.28 + 0.72 * Math.max(0, Math.cos(colAng * 2.1)) ** 2;
+      }
+      this._dirX = new Float32Array(RW); this._dirY = new Float32Array(RW);
+    }
+    for (let x = 0; x < RW; x++) {
+      const a = this.ang + this._cols.ca[x];
+      this._dirX[x] = Math.cos(a) * this._cols.inv[x];
+      this._dirY[x] = Math.sin(a) * this._cols.inv[x];
+    }
     const px8 = this._fdata.data;
-    const cosA = Math.cos(this.ang), sinA = Math.sin(this.ang);
     const flick = 0.92 + 0.08 * Math.sin(now / 90) * Math.sin(now / 51 + 2) + (Math.sin(now / 4000) > 0.996 ? -0.3 : 0);
+    const dirX = this._dirX, dirY = this._dirY, coneT = this._cols.cone;
+    const ppx = this.px, ppy = this.py;
+    const floorTex = this._flat.floor, ceilTex = this._flat.ceil;
     for (let y = 0; y < RH; y++) {
       const dy = y - HORIZON;
       if (dy === 0) continue;
       const below = dy > 0;
-      const rowDist = (RH / 2) / Math.abs(dy);
-      const tex = below ? this._flat.floor : this._flat.ceil;
-      for (let x = 0; x < RW; x++) {
-        const colAng = (x / RW - 0.5) * FOV;
-        const corr = rowDist / Math.cos(colAng);
-        const wx = this.px + Math.cos(this.ang + colAng) * corr;
-        const wy = this.py + Math.sin(this.ang + colAng) * corr;
-        const i = (y * RW + x) * 4;
+      const rowDist = (RH / 2) / (dy < 0 ? -dy : dy);
+      const tex = below ? floorTex : ceilTex;
+      let rowK = (1.68 - rowDist * 0.28) * flick;
+      if (!below) rowK *= 0.7;
+      let i = y * RW * 4;
+      for (let x = 0; x < RW; x++, i += 4) {
+        const wx = ppx + dirX[x] * rowDist;
+        const wy = ppy + dirY[x] * rowDist;
         let r, g, b;
         if (tex) {
-          const tx = ((wx % 1 + 1) % 1 * 64) | 0, ty = ((wy % 1 + 1) % 1 * 64) | 0;
-          const j = (ty * 64 + tx) * 4;
+          const tx = ((wx * 64) | 0) & 63, ty = ((wy * 64) | 0) & 63;
+          const j = ((ty << 6) + tx) << 2;
           r = tex[j]; g = tex[j + 1]; b = tex[j + 2];
         } else { r = below ? 40 : 16; g = below ? 28 : 11; b = below ? 16 : 7; }
-        // flashlight cone + falloff (v13.1: wider + brighter floor, see wall note)
-        const cone = 0.28 + 0.72 * Math.max(0, Math.cos(colAng * 2.1)) ** 2;
-        let lt = Math.max(0.09, Math.min(1, (1.68 - rowDist * 0.28) * cone * flick));
-        if (!below) lt *= 0.7;
+        let lt = rowK * coneT[x];
+        if (lt > 1) lt = 1; else if (lt < 0.09) lt = 0.09;
         px8[i] = r * lt; px8[i + 1] = g * lt; px8[i + 2] = b * lt; px8[i + 3] = 255;
       }
     }
@@ -842,8 +889,9 @@ export class Tunnel {
         continue;
       }
       if (s.kind === 'torch') {
-        // flame landmark: flickering triangle + warm halo on a stick
-        const fh = (RH * 0.30) / d;
+        // real sconce art (v13.2 -- the procedural stick+triangle version got
+        // called "a weird torch"), with a live warm halo behind it
+        const fh = (RH * 0.34) / d;
         const baseY = HORIZON + (RH * 0.5) / d / 2;
         const fl = 0.75 + 0.25 * Math.sin(now / 70 + s.tc.ph * 2.3) * Math.sin(now / 113 + s.tc.ph);
         const gl = sc.createRadialGradient(sx, baseY - fh * 0.7, 0, sx, baseY - fh * 0.7, fh * 1.7);
@@ -851,47 +899,62 @@ export class Tunnel {
         gl.addColorStop(1, 'rgba(255,150,60,0)');
         sc.fillStyle = gl;
         sc.beginPath(); sc.arc(sx, baseY - fh * 0.7, fh * 1.7, 0, 7); sc.fill();
-        sc.fillStyle = `rgba(70,50,30,${b})`;
-        sc.fillRect(sx - Math.max(1, fh * 0.05), baseY - fh * 0.55, Math.max(1.5, fh * 0.1), fh * 0.55);
-        const fw = fh * 0.22 * (0.8 + fl * 0.3);
-        sc.fillStyle = `rgba(255,140,40,${(0.9 * fl).toFixed(2)})`;
-        sc.beginPath(); sc.moveTo(sx - fw, baseY - fh * 0.55); sc.lineTo(sx + fw, baseY - fh * 0.55); sc.lineTo(sx, baseY - fh * (0.9 + 0.12 * fl)); sc.closePath(); sc.fill();
-        sc.fillStyle = `rgba(255,230,140,${(0.9 * fl).toFixed(2)})`;
-        sc.beginPath(); sc.moveTo(sx - fw * 0.45, baseY - fh * 0.55); sc.lineTo(sx + fw * 0.45, baseY - fh * 0.55); sc.lineTo(sx, baseY - fh * (0.78 + 0.1 * fl)); sc.closePath(); sc.fill();
+        const timg = IMG.torch_wall;
+        if (timg) {
+          const tw = fh * (timg.width / timg.height);
+          try { sc.drawImage(timg, sx - tw / 2, baseY - fh, tw, fh); } catch (_) {}
+          sc.globalAlpha = Math.min(0.5, Math.max(0, 1 - b - 0.25));
+          sc.fillStyle = '#000';
+          sc.fillRect(sx - tw / 2, baseY - fh, tw, fh);
+          sc.globalAlpha = 1;
+        }
         continue;
       }
       if (s.kind === 'barrel') {
-        // gold pulsing band = shootable, same language as the topside crates
-        const bh = (RH * 0.34) / d;
-        const bw = bh * 0.72;
+        const bimg = IMG.barrel_drum;
+        const bh = (RH * 0.36) / d;
         const byB = HORIZON + (RH * 0.5) / d / 2 - bh;
-        sc.fillStyle = `rgba(94,62,30,${b})`;
-        sc.beginPath(); sc.ellipse(sx, byB + bh, bw / 2, bh * 0.10, 0, 0, 7); sc.fill();
-        sc.fillRect(sx - bw / 2, byB + bh * 0.08, bw, bh * 0.92);
-        sc.beginPath(); sc.ellipse(sx, byB + bh * 0.08, bw / 2, bh * 0.10, 0, 0, 7); sc.fill();
-        sc.fillStyle = `rgba(56,36,18,${b})`;
-        sc.fillRect(sx - bw / 2, byB + bh * 0.30, bw, bh * 0.06);
-        sc.fillRect(sx - bw / 2, byB + bh * 0.68, bw, bh * 0.06);
+        // gold pulse under it = shootable, same language as the topside crates
         const pulse = 0.5 + 0.5 * Math.sin(now / 280 + s.x * 2);
-        sc.fillStyle = `rgba(255,201,60,${(0.55 * pulse * (b + 0.3)).toFixed(2)})`;
-        sc.fillRect(sx - bw / 2, byB + bh * 0.44, bw, bh * 0.14);
-        if (s.e.fuse > 0) { // lit: it's about to go
-          sc.fillStyle = `rgba(255,255,220,${0.5 + 0.5 * Math.sin(now / 30)})`;
+        const gl2 = sc.createRadialGradient(sx, byB + bh * 0.55, 0, sx, byB + bh * 0.55, bh * 0.75);
+        gl2.addColorStop(0, `rgba(255,201,60,${(0.20 * pulse + 0.06).toFixed(2)})`);
+        gl2.addColorStop(1, 'rgba(255,201,60,0)');
+        sc.fillStyle = gl2;
+        sc.beginPath(); sc.arc(sx, byB + bh * 0.55, bh * 0.75, 0, 7); sc.fill();
+        if (bimg) {
+          const bw = bh * (bimg.width / bimg.height);
+          try { sc.drawImage(bimg, sx - bw / 2, byB, bw, bh); } catch (_) {}
+          sc.globalAlpha = Math.min(0.8, 1 - b);
+          sc.fillStyle = '#000';
           sc.fillRect(sx - bw / 2, byB, bw, bh);
+          sc.globalAlpha = 1;
+          if (s.e.fuse > 0) { // lit: it's about to go
+            sc.globalAlpha = 0.5 + 0.5 * Math.sin(now / 30);
+            sc.fillStyle = 'rgba(255,255,220,0.9)';
+            sc.fillRect(sx - bw / 2, byB, bw, bh);
+            sc.globalAlpha = 1;
+          }
         }
         continue;
       }
       if (s.kind === 'shells') {
-        const shH = (RH * 0.12) / d;
-        const shW = shH * 2.1;
+        const simg = IMG.ammo_shells;
+        const shH = (RH * 0.16) / d;
         const syB = HORIZON + (RH * 0.5) / d / 2 - shH;
-        sc.fillStyle = `rgba(50,72,40,${b})`;
-        sc.fillRect(sx - shW / 2, syB, shW, shH);
-        sc.fillStyle = `rgba(214,48,36,${b})`;
-        sc.fillRect(sx - shW / 2 + shW * 0.12, syB + shH * 0.25, shW * 0.76, shH * 0.5);
         const pulse2 = 0.5 + 0.5 * Math.sin(now / 300);
-        sc.fillStyle = `rgba(255,201,60,${(0.4 * pulse2).toFixed(2)})`;
-        sc.fillRect(sx - shW / 2, syB - shH * 0.2, shW, shH * 0.15);
+        const gl3 = sc.createRadialGradient(sx, syB + shH * 0.4, 0, sx, syB + shH * 0.4, shH * 1.3);
+        gl3.addColorStop(0, `rgba(255,201,60,${(0.22 * pulse2 + 0.05).toFixed(2)})`);
+        gl3.addColorStop(1, 'rgba(255,201,60,0)');
+        sc.fillStyle = gl3;
+        sc.beginPath(); sc.arc(sx, syB + shH * 0.4, shH * 1.3, 0, 7); sc.fill();
+        if (simg) {
+          const shW = shH * (simg.width / simg.height);
+          try { sc.drawImage(simg, sx - shW / 2, syB, shW, shH); } catch (_) {}
+          sc.globalAlpha = Math.min(0.7, 1 - b);
+          sc.fillStyle = '#000';
+          sc.fillRect(sx - shW / 2, syB, shW, shH);
+          sc.globalAlpha = 1;
+        }
         continue;
       }
       if (s.kind === 'exit') {
@@ -1279,10 +1342,17 @@ export class Tunnel {
     // lifted... no, pushed it down, exposing the cut. Two fixes: draw bigger,
     // and deliberately overhang the bottom so the arms run off-screen the way
     // every FPS viewmodel does, instead of terminating in mid-air.
-    const vh = 408;
+    // Claws draw BIGGER with a much deeper overhang: at 408/0.90 the sprite's
+    // bottom edge sat only 41px past the screen, and the sway/thrust rotation
+    // (pivot near bottom-center) lifts a corner by up to ~30px -- Dylan's
+    // circled screenshots show exactly that: both paw bottoms cut off in
+    // mid-air. 500/0.82 puts the bottom ~90px offscreen, beyond anything the
+    // rotation can expose.
+    const isClaw = id === 'fps_claws';
+    const vh = isClaw ? 500 : 408;
     const vw = vh * (img.width / img.height);
     const x0 = W / 2 - vw / 2 + bx;
-    const y0 = H - vh * 0.90 + by + kick + pump;
+    const y0 = H - vh * (isClaw ? 0.82 : 0.90) + by + kick + pump;
     // v13 claw strike (Dylan: "they should animate coming out of your fur more
     // and have blood on them after you strike a cat with them"). The claw
     // viewmodel used to be a static sprite with only a white arc drawn over it,

@@ -71,9 +71,14 @@ export const CHUNKS = {
       // corrected orientation (same muzzle-flash/shell-eject content, just
       // flipped). All three re-verified for real alpha transparency via
       // PIL extrema (not just visual checkerboard) before shipping.
-      fps_pistol: HF + 'hf_20260720_011314_7513c4c2-cb36-4162-ae53-055f4ab3b916.png',
-      fps_pistol_fire: HF + 'hf_20260720_011315_71a02bba-88fe-4dd9-86f5-0ca4b756bc10.png',
-      fps_pistol_reload: CDN + 'c5352fc4-a17e-4f25-80c6-a5ce9bcf297c.png',
+      // v13.2 (Dylan: "is that a human hand in the tunnel? make it a cat
+      // hand"): the whole pistol/shotgun viewmodel set had bare HUMAN hands
+      // baked into the CDN art while the claws were tabby paws. Re-edited via
+      // nano-banana (paws in, guns untouched), keyed to alpha, and shipped in
+      // the LOCAL bundle so the base loadAll owns them.
+      fps_pistol: './assets/fps_pistol.png',
+      fps_pistol_fire: './assets/fps_pistol_fire.png',
+      fps_pistol_reload: './assets/fps_pistol_reload.png',
       // v11.2 (Dylan: "you hold the back stock and trigger with your right
       // hand and the pump/grip up front with your left hand... you should
       // barely see the right arm it should be under the wood, there should
@@ -106,9 +111,10 @@ export const CHUNKS = {
       // measured alpha extrema (255,255) both times) and re-verified at
       // (0,255). Reload checked against the idle frame by pixel diff (mean
       // 40.2) so it is a real redraw, not the usual silent no-op.
-      fps_shotgun: CDN + '0bc2df29-be7d-440c-9585-5dab6a84ee93.png',
-      fps_shotgun_fire: CDN + '4935f574-425a-4dff-b4ef-2d9e93f5eee8.png', // unchanged: already fired straight forward, not broken — used as the v11 angle reference
-      fps_shotgun_reload: CDN + 'e5942aa5-3713-4974-a6b1-58d33d521b87.png',
+      // v13.2: cat-paw edits, local bundle (see the pistol note above)
+      fps_shotgun: './assets/fps_shotgun.png',
+      fps_shotgun_fire: './assets/fps_shotgun_fire.png',
+      fps_shotgun_reload: './assets/fps_shotgun_reload.png',
       fps_claws: CDN + '6f2f4b7b-4b9e-4cc0-999a-6849db4f1167.png',
       // throat-grab sequence: appear (original) -> mid-rip -> aftermath.
       fps_throat: HF + 'hf_20260720_215610_d78a9dc9-1a50-4fac-b79c-b4a86898f046.png',

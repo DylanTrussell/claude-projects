@@ -669,6 +669,30 @@ if (dev) {
     throw err;
   }
   $('loading').style.display = 'none';
+  // v13.2: ?tunnel=1 (Mittens tunnel) / ?tunnel=2 (rat nest) boots STRAIGHT
+  // into that tunnel -- no film, no title, no walking there. Dylan liked the
+  // tunnel as "a separate thing I can click on until we test it and make it
+  // perfect", so it's a first-class mode now. Dev warps also skip the film
+  // (his note: "the intro cutscene replays on every load, SKIP every time").
+  const qs = new URLSearchParams(location.search);
+  const tunnelMode = +(qs.get('tunnel') || 0);
+  if (tunnelMode === 1 || tunnelMode === 2) {
+    if (IMG.logo) { $('t-logo').src = IMG.logo.src; $('t-logo').style.display = 'block'; $('t-title').style.display = 'none'; }
+    startGame();
+    const p0 = g.players[0];
+    p0.x = tunnelMode === 1 ? LEVEL.fpsDoors.main : LEVEL.fpsDoors.nest;
+    g.cam = Math.max(0, p0.x - W * 0.4); g.checkpoint = p0.x;
+    if (tunnelMode === 2) { g.invasion = true; g.sec = 'B'; }
+    handleEvents([{ e: 'fps', map: tunnelMode - 1 }]);
+    requestAnimationFrame(frame);
+    return;
+  }
+  if (dev && +(qs.get('warp') || 0) > 0) {
+    if (IMG.logo) { $('t-logo').src = IMG.logo.src; $('t-logo').style.display = 'block'; $('t-title').style.display = 'none'; }
+    startGame();
+    requestAnimationFrame(frame);
+    return;
+  }
   const iv = $('introvid');
   iv.src = './assets/video/intro.mp4';
   attachSubs(iv, $('introsub'), SUBS.intro);
