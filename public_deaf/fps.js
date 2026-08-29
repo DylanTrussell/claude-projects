@@ -208,8 +208,9 @@ export class Tunnel {
   // bolts, barrel blasts) so the directional arc, the splats, the death-cause
   // hint and the respawn all fire no matter what did the hurting. Returns true
   // if the tunnel run ended (caller must stop stepping).
-  hurtFrom(p, sx, sy, dmg) {
+  hurtFrom(p, sx, sy, dmg, why) {
     if (this.hurtT > 0) return false;
+    this._lastHurt = why || 'blade'; // remembered for the death message
     p.hp -= dmg; this.hurtT = 900; // was 700 -- loop-1 measured 5->1 hp in ~2s from stacked hits
     this.ev({ e: 'fpsHurt' });
     // v13 (Dylan: "you get attacked in the tunnel and its hard to tell where
@@ -236,8 +237,9 @@ export class Tunnel {
           e2.x = e2.hx; e2.y = e2.hy; e2.st = 'recover'; e2.t = 0;
         }
       }
-      // name the killer on respawn -- the tunnel used to say nothing at all
-      this.ev({ e: 'hint', k: 'diedTunnel' });
+      // name the killer on respawn, per cause -- loop-1: "all six deaths had
+      // the SAME message". Each one now teaches its own counter.
+      this.ev({ e: 'hint', k: this._lastHurt === 'bolt' ? 'diedTunnelShot' : this._lastHurt === 'boom' ? 'diedTunnelBoom' : 'diedTunnel' });
     }
     return false;
   }
@@ -570,7 +572,7 @@ export class Tunnel {
       }
       if (b.t > 0 && Math.hypot(this.px - b.x, this.py - b.y) < 0.38) {
         b.t = 0;
-        if (this.hurtFrom(p, b.x - b.vx * 0.2, b.y - b.vy * 0.2, 1)) return;
+        if (this.hurtFrom(p, b.x - b.vx * 0.2, b.y - b.vy * 0.2, 1, 'bolt')) return;
       }
     }
     this.bolts = this.bolts.filter(b => b.t > 0);
@@ -598,7 +600,7 @@ export class Tunnel {
       if (e2.kind === 'barrel') { if (dd < 1.5 && e2.fuse <= 0) e2.fuse = 140; continue; }
       if (dd < 1.7) { if (e2.st === 'hide') this.burst(e2); this.hit(e2, 9); }
     }
-    if (p && Math.hypot(this.px - e.x, this.py - e.y) < 1.25) this.hurtFrom(p, e.x, e.y, 1);
+    if (p && Math.hypot(this.px - e.x, this.py - e.y) < 1.25) this.hurtFrom(p, e.x, e.y, 1, 'boom');
     this.alert(7);
   }
 

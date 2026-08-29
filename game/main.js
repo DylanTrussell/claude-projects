@@ -608,7 +608,14 @@ function drawFpsHud(ctx) {
     // reads on the HUD, not just in the viewmodel.
     const wname = tunnel.weap === 'pistol' ? (tunnel.reloadT > 0 ? 'PISTOL — RELOADING' : `PISTOL ${tunnel.ammoInMag}/10`) : tunnel.weap === 'shotgun' ? `SHOTGUN ${tunnel.shells}` : 'CLAWS';
     ctx.fillStyle = tunnel.weap === 'pistol' && tunnel.reloadT > 0 ? '#c8372d' : '#f3e9c8';
-    ctx.fillText(`x${p.lives}  ${wname}  ·  CLAWS: K`, 16, 50);
+    // Progression on the HUD (loop-1: no stats anywhere): kills always;
+    // shells shown while carrying them WITHOUT the shotgun, so "SHELLS +5"
+    // pickups stop reading as a no-op ("it said I got shells, but there was
+    // no shotgun").
+    let line = `x${p.lives}  ${wname}  ·  CLAWS: K`;
+    if (tunnel.weap !== 'shotgun' && tunnel.shells > 0) line += tunnel.hasShotgun ? `  ·  SHELLS ${tunnel.shells}` : `  ·  SHELLS ${tunnel.shells} (find the SHOTGUN)`;
+    if (tunnel.result.kills > 0) line += `  ·  KILLS ${tunnel.result.kills}`;
+    ctx.fillText(line, 16, 50);
     ctx.fillStyle = '#f3e9c8';
   } else {
     ctx.fillText(`x${p.lives}`, 16, 50);
