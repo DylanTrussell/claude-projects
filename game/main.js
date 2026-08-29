@@ -83,6 +83,7 @@ let tunnel = null; // active first-person tunnel section
 let rail = null;   // active vehicle rail section (door gun / skyraider)
 let loadingChunk = false; // v10: freezes the sim while a lazy CDN chunk fetches
 let hudShown = false; // tracks #hudbtns (pause/music) visibility, only touched on change
+let directTunnel = false; // ?tunnel=N boot: skip the sink-into-the-ground beat (there's no topside to sink from)
 const dev = new URLSearchParams(location.search).has('dev');
 
 function showChunkLoading(on, msg) {
@@ -298,7 +299,8 @@ function handleEvents(evs) {
         // CDN fetch outlasts the fall animation, and both gate the actual
         // mode switch together.
         loadingChunk = true;
-        FX.tunnelFallT = TUNNEL_TRANS_MS;
+        const transMs = directTunnel ? 200 : TUNNEL_TRANS_MS;
+        FX.tunnelFallT = directTunnel ? 0 : TUNNEL_TRANS_MS;
         let chunkReady = false, animDone = false, overlayShown = false;
         const finishFall = () => {
           if (!chunkReady || !animDone) return;
@@ -311,8 +313,8 @@ function handleEvents(evs) {
           fxEvent({ e: 'hint', k: ev.map === 0 ? 'fpsObjective0' : 'fpsObjective1' });
         };
         ensureChunk('tunnel').catch(e => console.error('tunnel chunk failed', e)).then(() => { chunkReady = true; finishFall(); });
-        setTimeout(() => { animDone = true; finishFall(); }, TUNNEL_TRANS_MS);
-        setTimeout(() => { if (!chunkReady) { overlayShown = true; showChunkLoading(true, 'entering the tunnel…'); } }, TUNNEL_TRANS_MS);
+        setTimeout(() => { animDone = true; finishFall(); }, transMs);
+        setTimeout(() => { if (!chunkReady) { overlayShown = true; showChunkLoading(true, 'entering the tunnel…'); } }, transMs);
         break;
       }
       case 'fpsKill': if (g) g.score += 150; break;
@@ -691,6 +693,7 @@ if (dev) {
   const tunnelMode = +(qs.get('tunnel') || 0);
   if (tunnelMode === 1 || tunnelMode === 2) {
     if (IMG.logo) { $('t-logo').src = IMG.logo.src; $('t-logo').style.display = 'block'; $('t-title').style.display = 'none'; }
+    directTunnel = true; // loop-1: ?tunnel=2 booted to ~3s of raw black -- skip the topside fall beat
     startGame();
     const p0 = g.players[0];
     p0.x = tunnelMode === 1 ? LEVEL.fpsDoors.main : LEVEL.fpsDoors.nest;

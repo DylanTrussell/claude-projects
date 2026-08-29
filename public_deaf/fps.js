@@ -192,9 +192,15 @@ export class Tunnel {
   }
 
   alert(radius) {
+    // v13.2: bursting a hider now needs LINE OF SIGHT (or point-blank range).
+    // A pistol shot used to wake every lurker within 3+ cells THROUGH WALLS --
+    // they'd hunt the player down dark corridors minutes later, which is where
+    // loop-1's six "killed by something I never saw" deaths came from.
     for (const e of this.enemies) {
-      if (!e.dead && e.st !== 'hide' && Math.hypot(e.x - this.px, e.y - this.py) < radius) e.st = 'chase';
-      else if (!e.dead && e.st === 'hide' && Math.hypot(e.x - this.px, e.y - this.py) < radius * 0.55) this.burst(e);
+      if (e.dead) continue;
+      const d = Math.hypot(e.x - this.px, e.y - this.py);
+      if (e.st !== 'hide' && d < radius) e.st = 'chase';
+      else if (e.st === 'hide' && d < radius * 0.55 && (d < 1.2 || this.los(e.x, e.y))) this.burst(e);
     }
   }
 
@@ -204,17 +210,32 @@ export class Tunnel {
   // if the tunnel run ended (caller must stop stepping).
   hurtFrom(p, sx, sy, dmg) {
     if (this.hurtT > 0) return false;
-    p.hp -= dmg; this.hurtT = 700;
+    p.hp -= dmg; this.hurtT = 900; // was 700 -- loop-1 measured 5->1 hp in ~2s from stacked hits
     this.ev({ e: 'fpsHurt' });
     // v13 (Dylan: "you get attacked in the tunnel and its hard to tell where
     // its coming from"): world-angle edge arc pinned to the attacker.
     this.dmgDir.push({ w: Math.atan2(sy - this.py, sx - this.px), t: 1500 });
     this.splats.push({ x: W * (0.3 + Math.random() * 0.4), y: H * (0.2 + Math.random() * 0.4), r: 60, t: 800 });
+    // shove the player OFF the attacker so a hit creates space instead of
+    // leaving you standing inside the swarm eating the next swing
+    const kd = Math.max(0.1, Math.hypot(this.px - sx, this.py - sy));
+    this.tryMove(this.px + (this.px - sx) / kd * 0.55, this.py + (this.py - sy) / kd * 0.55);
     if (p.hp <= 0) {
       p.deaths++; p.lives--; p.hp = CFG.hpMax;
       if (p.lives <= 0) { p.st = 'out'; this.done = true; this.result.dead = true; return true; }
       this.px = this.spawn[0]; this.py = this.spawn[1];
       this.hurtT = 2000;
+      // Respawn safety (loop-1: killed AT the spawn point while the previous
+      // death message was still on screen, and respawned mid-firefight on an
+      // empty magazine): full mag, and any stalker camped near the entrance
+      // gets sent back to its niche to recover.
+      this.ammoInMag = PISTOL_MAG; this.reloadT = 0;
+      for (const e2 of this.enemies) {
+        if (e2.dead || e2.kind !== 'ambush') continue;
+        if (Math.hypot(e2.x - this.px, e2.y - this.py) < 3.5) {
+          e2.x = e2.hx; e2.y = e2.hy; e2.st = 'recover'; e2.t = 0;
+        }
+      }
       // name the killer on respawn -- the tunnel used to say nothing at all
       this.ev({ e: 'hint', k: 'diedTunnel' });
     }
@@ -510,6 +531,13 @@ export class Tunnel {
         continue;
       }
       if (e.st === 'recover') { e.t += dt; if (e.t > 620) e.st = 'chase'; continue; }
+      // blade-out warning: a stalker closing to knife range announces itself
+      // with a "shink" before it can ever swing (loop-1: first contact from
+      // the dark read as instant death). One warning per few seconds each.
+      if (e.st === 'chase' && d < 2.8 && (!e.warnAt || this.t - e.warnAt > 4000)) {
+        e.warnAt = this.t;
+        this.ev({ e: 'sfx', n: 'sfx_knife' });
+      }
       // chase: stalk down the corridors
       if (d > 1.35) {
         const vx = (this.px - e.x) / d, vy = (this.py - e.y) / d;
@@ -581,7 +609,10 @@ export class Tunnel {
   navTargets() {
     const targets = [];
     if (this.mapIdx === 0) {
-      if (this.grabCell) targets.push({ x: this.grabCell.x | 0, y: this.grabCell.y | 0, label: 'DEEPER', done: () => this.script && this.script.done });
+      // the grab corner IS the road to the shotgun -- label it as the prize,
+      // not "DEEPER" (loop-1: compass said DEEPER the whole level, never
+      // SHOTGUN; the surprise on the way stays a surprise)
+      if (this.grabCell) targets.push({ x: this.grabCell.x | 0, y: this.grabCell.y | 0, label: 'SHOTGUN', done: () => this.script && this.script.done });
       for (const it of this.items) if (it.kind === 'shotgun') targets.push({ x: it.x | 0, y: it.y | 0, label: 'SHOTGUN', done: () => it.got });
       if (this.mittens) targets.push({ x: this.mittens.x | 0, y: this.mittens.y | 0, label: 'MITTENS', done: () => this.result.rescued });
     }
@@ -606,6 +637,7 @@ export class Tunnel {
       const dd = field.get(kk);
       if (dd !== undefined && dd < bestD) { bestD = dd; wp = [cx + ddx + 0.5, cy + ddy + 0.5]; }
     }
+    this._navDist = field.get(cx + ',' + cy) ?? null; // paces to target, for the HUD
     const targetAng = Math.atan2(wp[1] - this.py, wp[0] - this.px);
     if (this.navAng === undefined) this.navAng = targetAng;
     let da = targetAng - this.navAng;
@@ -805,12 +837,14 @@ export class Tunnel {
       sc.fillRect(c, y0 - 1, 1.5, hgt + 2);
       // secret wall: three glowing claw scratches. Gold pulse = "interact",
       // the same language the topside supply crates now use.
-      if (hitCell === 'D' && dist < 7) {
-        const inBand = (wallX > 0.30 && wallX < 0.36) || (wallX > 0.47 && wallX < 0.53) || (wallX > 0.64 && wallX < 0.70);
+      if (hitCell === 'D' && dist < 9) {
+        // wider, brighter (loop-1: 35 minutes, secret never spotted). The
+        // torch placed beside every secret wall does the rest.
+        const inBand = (wallX > 0.27 && wallX < 0.37) || (wallX > 0.45 && wallX < 0.55) || (wallX > 0.63 && wallX < 0.73);
         if (inBand) {
-          const pulse = 0.45 + 0.4 * Math.sin(now / 300 + mapX * 2 + mapY);
-          sc.fillStyle = `rgba(255,201,60,${(pulse * Math.min(1, b + 0.35)).toFixed(2)})`;
-          sc.fillRect(c, y0 + hgt * 0.28, 1.5, hgt * 0.44);
+          const pulse = 0.60 + 0.35 * Math.sin(now / 300 + mapX * 2 + mapY);
+          sc.fillStyle = `rgba(255,201,60,${(pulse * Math.min(1, b + 0.5)).toFixed(2)})`;
+          sc.fillRect(c, y0 + hgt * 0.26, 1.5, hgt * 0.48);
         }
       }
     }
@@ -837,6 +871,11 @@ export class Tunnel {
       }
       if (e.dead && e.noCorpse) continue;
       sprites.push({ x: e.x, y: e.y, kind: e.dead ? 'corpse' : 'enemy', e });
+      // v13.2 (loop-1 playtest: SIX deaths to "ghosts" -- alerted stalkers
+      // hunting through corridors too dark to read): live knife-cats keep
+      // their eyeshine in EVERY state, so whatever the light does, the eyes
+      // give the position away. Cat eyes shine in the dark; so do rat eyes.
+      if (!e.dead && e.kind !== 'gun') sprites.push({ x: e.x, y: e.y, kind: 'eyes', e, over: 1 });
     }
     for (const t2 of this.torches) sprites.push({ x: t2.x, y: t2.y, kind: 'torch', tc: t2 });
     for (const b2 of this.bolts) sprites.push({ x: b2.x, y: b2.y, kind: 'bolt' });
@@ -874,12 +913,13 @@ export class Tunnel {
         if (blink) continue;
         const eh = HORIZON - (RH * 0.10) / d;
         const gap = (RH * 0.055) / d, er = Math.max(0.8, (RH * 0.016) / d);
+        const ec = this.enemyKind === 'rat' ? '140,255,60' : '255,196,70';
         const gl = sc.createRadialGradient(sx, eh, 0, sx, eh, gap * 2.4);
-        gl.addColorStop(0, 'rgba(255,180,60,0.30)');
-        gl.addColorStop(1, 'rgba(255,180,60,0)');
+        gl.addColorStop(0, `rgba(${ec},0.30)`);
+        gl.addColorStop(1, `rgba(${ec},0)`);
         sc.fillStyle = gl;
         sc.beginPath(); sc.arc(sx, eh, gap * 2.4, 0, 7); sc.fill();
-        sc.fillStyle = 'rgba(255,196,70,0.95)';
+        sc.fillStyle = `rgba(${ec},0.95)`;
         sc.fillRect(sx - gap - er / 2, eh - er / 2, er, er);
         sc.fillRect(sx + gap - er / 2, eh - er / 2, er, er);
         continue;
@@ -1082,7 +1122,9 @@ export class Tunnel {
         sc.globalAlpha = 1;
         try { sc.drawImage(img, sx - sw / 2, drawY, sw, drawH); } catch (_) {}
         sc.filter = 'none';
-        sc.globalAlpha = Math.min(0.8, 1 - b);
+        // live enemies never dim past 55% black -- a threat must stay readable
+        // at the edge of the light (loop-1: "killed by something I never saw")
+        sc.globalAlpha = Math.min(s.e && !s.e.dead ? 0.55 : 0.8, 1 - b);
         sc.fillStyle = '#000';
         sc.fillRect(sx - sw / 2, drawY, sw, drawH);
       }
@@ -1246,6 +1288,11 @@ export class Tunnel {
       let rel = this.navAng - this.ang;
       while (rel > Math.PI) rel -= 2 * Math.PI;
       while (rel < -Math.PI) rel += 2 * Math.PI;
+      // hysteresis: with the target dead-behind, rel oscillates across +/-PI
+      // and the chevron used to thrash between screen edges (loop-1). Past
+      // 150 degrees it now sticks to whichever side it was already on.
+      if (Math.abs(rel) > 2.6) rel = (this._navSide || (rel >= 0 ? 1 : -1)) * Math.abs(rel);
+      else this._navSide = rel >= 0 ? 1 : -1;
       const cxp = W / 2 + Math.max(-1, Math.min(1, rel / (FOV * 0.7))) * (W * 0.34);
       const cyp = H - 46;
       const pulse = 0.6 + 0.4 * Math.sin(now / 260);
@@ -1262,12 +1309,16 @@ export class Tunnel {
       // unlabeled dim chevron reads as decoration, "-> MITTENS" reads as a
       // waypoint.
       if (this._navLabel) {
+        // "SHOTGUN · 14" -- the pace count is what tells you you're getting
+        // warmer, which the bare arrow never could (loop-1: lost for half the
+        // session with the compass working "correctly")
+        const lbl = this._navDist != null ? `${this._navLabel} · ${this._navDist}` : this._navLabel;
         ctx.save();
         ctx.globalAlpha = 0.55 + 0.35 * pulse;
         ctx.font = 'bold 13px monospace';
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#26231c'; ctx.fillText(this._navLabel, cxp + 1, cyp + 25);
-        ctx.fillStyle = '#FFC93C'; ctx.fillText(this._navLabel, cxp, cyp + 24);
+        ctx.fillStyle = '#26231c'; ctx.fillText(lbl, cxp + 1, cyp + 25);
+        ctx.fillStyle = '#FFC93C'; ctx.fillText(lbl, cxp, cyp + 24);
         ctx.restore();
       }
     }
