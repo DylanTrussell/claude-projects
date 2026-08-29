@@ -34,3 +34,40 @@ json.dump({'images': imgs, 'sheets': sheets, 'audio': audio}, open('public/asset
 print('manifest:', len(imgs), 'images,', len(sheets), 'sheets,', len(audio), 'audio')
 EOF
 echo assembled.
+
+# ---- deaf twin for automated playtesting (Dylan: "mute while you simulate",
+# said three times before this existed). public_deaf/ is public/ with the
+# audio DESTINATION nulled before any module runs: every AudioContext routes
+# through a zero-gain sink and every media element is force-muted on play.
+# Agents browse port 8935 (this build) and CANNOT make sound, param or no
+# param; Dylan plays port 8934 (public/) with sound intact.
+rm -rf public_deaf && cp -R public public_deaf
+python3 - <<'PYEOF'
+inject = """<script>
+(() => {
+  for (const N of ['AudioContext', 'webkitAudioContext']) {
+    const Real = window[N];
+    if (!Real) continue;
+    window[N] = function (...a) {
+      const ctx = new Real(...a);
+      const realDest = ctx.destination;       // capture before override
+      const sink = ctx.createGain();
+      sink.gain.value = 0;
+      sink.connect(realDest);
+      Object.defineProperty(ctx, 'destination', { get: () => sink });
+      return ctx;
+    };
+    window[N].prototype = Real.prototype;
+  }
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function (...a) { this.muted = true; this.volume = 0; return play.apply(this, a); };
+  setInterval(() => document.querySelectorAll('audio,video').forEach(m => { m.muted = true; m.volume = 0; }), 500);
+})();
+</script>"""
+p = 'public_deaf/index.html'
+s = open(p).read()
+import re
+s = s.replace('<head>', '<head>\\n' + inject, 1) if '<head>' in s else inject + s
+open(p, 'w').write(s)
+print('deaf build injected')
+PYEOF
