@@ -441,6 +441,8 @@ function frame(now) {
         tunnel = null;
         if (r.dead) { endGame(false); }
         else {
+          // v13.1 tunnel rebuild: kills and secrets pay like everything else
+          g.score += (r.kills || 0) * 100 + (r.secrets || 0) * 500;
           if (mapIdx === 0) {
             g.fps0 = 'done';
             if (r.rescued) { g.pows++; g.score += 800; p.weap = 'gatling'; p.ammo = 200; handleEvents([{ e: 'banner', k: 'gotGatling' }]); }

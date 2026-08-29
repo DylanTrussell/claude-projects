@@ -15,39 +15,58 @@ const PISTOL_MAG = 10;          // v10: pistol now has a real magazine + reload 
 const PISTOL_RELOAD_MS = 820;
 const SHOTGUN_RACK_MS = [150, 450]; // window inside pumpT where the reload/rack sprite shows
 
+// v13.1 map rebuild (Dylan: "rebuild the tunnel outright... think wolfenstein,
+// doom, really make it fun"). The old grids were dense 1-wide mazes with
+// ambushers parked adjacent to doorways -- a playtester burned 8 lives in
+// there without ever seeing what killed them and called it "an unlit blurry
+// maze with no wayfinding". These are DOOM-shaped instead: rooms and loops,
+// torches as landmarks along the main path, ambushers placed ACROSS rooms so
+// they burst at range, and both grids are machine-validated (connectivity,
+// secret pocket sealed, nothing critical behind a secret, no ambush within 4
+// tiles of spawn) rather than eyeballed.
+// Legend:  P start   E exit shaft   G throat-grab corner   M Mittens
+//          a knife-cat in a wall niche (glowing eyes telegraph it now)
+//          g GUNNER — stands guard, visible aim windup, dodgeable bolt
+//          B explosive barrel (chains; hurts everyone)
+//          D secret wall — claw the gold scratches to open it
+//          S shotgun   T tuna   H shell box   R alien raygun   c torch
 export const MAPS = [
-  { // 0 — the VC tunnel: rescue Pvt. Mittens. Short, scripted, scary.
-    // a = knife cat hiding in a wall niche   G = throat-grab corner
-    // S = shotgun   T = tuna   M = Mittens   E = exit light-shaft
+  { // 0 — the VC tunnel: rescue Pvt. Mittens.
     enemies: 'vc',
     grid: [
-      '############',
-      '#P....##T..#',
-      '#.##a.##.#.#',
-      '#..#.....a.#',
-      '#####G######',
-      '#..a.S...#.#',
-      '#.####.#.#.#',
-      '#..#.a.#.#M#',
-      '##.#.###.#.#',
-      '#E.....a...#',
-      '############',
+      '################',
+      '#P.....#..#....#',
+      '#.####.#.##.##.#',
+      '#.#c...G....#c.#',
+      '#.#.########.#.#',
+      '#.#.#S...a#..#.#',
+      '#B#.#.##..#.##.#',
+      '#..c#..#B.#..#.#',
+      '#.#D####.##a.#.#',
+      '#.#TH#.g......g#',
+      '#.#..#..#c..####',
+      '#.####.##.#..M.#',
+      '#E...c....#....#',
+      '################',
     ],
     objective: 'fpsObjective0',
   },
   { // 1 — the rat nest (optional): grab their tech, get out
     enemies: 'rat',
     grid: [
-      '##########',
-      '#P..#..T.#',
-      '#.#.##.#.#',
-      '#.#a...#.#',
-      '#.###a##.#',
-      '#..#.R#..#',
-      '##a#.#.###',
-      '#..#.#..a#',
-      '#E.......#',
-      '##########',
+      '##############',
+      '#P...#...#..T#',
+      '#.#c.#.a.#.#.#',
+      '#.#..g...#.#.#',
+      '#.##.###.#.#.#',
+      '#..#..cB.#a..#',
+      '#a.##.###.##.#',
+      '#..#..#R#..#c#',
+      '#.#c#.#.#.B#.#',
+      '#.#...g....#.#',
+      '#.#.#####.##.#',
+      '#E..c#....a..#',
+      '##############',
     ],
     objective: 'fpsObjective1',
   },
@@ -63,13 +82,17 @@ export class Tunnel {
     this.mapIdx = mapIdx;
     const def = MAPS[mapIdx];
     this.def = def;
-    this.grid = def.grid.map(r => r);
+    // char arrays, not strings: secret 'D' walls mutate to '.' when clawed open
+    this.grid = def.grid.map(r => r.split(''));
     this.enemyKind = def.enemies;
     this.events = [];
     this.done = false;
-    this.result = { rescued: false, shotgun: false, loot: 0, cleared: false };
+    this.result = { rescued: false, shotgun: false, loot: 0, cleared: false, kills: 0, secrets: 0 };
     this.px = 1.5; this.py = 1.5; this.ang = 0;
     this.enemies = []; this.items = [];
+    this.torches = [];                // 'c' cells: flame landmarks along the main path
+    this.bolts = [];                  // gunner projectiles {x,y,vx,vy,t}
+    this.pops = [];                   // score popups {t,n}
     this.mittens = null; this.exit = null; this.grabCell = null;
     this.bloodWalls = new Set();      // cells whose wall turned bloody
     this.pools = [];                  // floor blood pools [x,y,r]
@@ -81,13 +104,22 @@ export class Tunnel {
         const c = this.grid[y][x];
         const cx = x + 0.5, cy = y + 0.5;
         if (c === 'P') { this.px = cx; this.py = cy; this.spawn = [cx, cy]; }
-        else if (c === 'a') this.enemies.push({ x: cx, y: cy, hx: cx, hy: cy, hp: this.enemyKind === 'rat' ? 3 : 2, st: 'hide', t: 0, atkT: 0, dead: 0, animT: 0, lungeT: 0 });
+        else if (c === 'a') this.enemies.push({ kind: 'ambush', x: cx, y: cy, hx: cx, hy: cy, hp: this.enemyKind === 'rat' ? 3 : 2, st: 'hide', t: 0, atkT: 0, dead: 0, animT: 0, lungeT: 0 });
+        // gunner: a Wolfenstein guard. Stands his post, VISIBLE from the moment
+        // you round the corner, winds up a glowing aim tell, then fires a bolt
+        // slow enough to step out of. Drops shells when he dies.
+        else if (c === 'g') this.enemies.push({ kind: 'gun', x: cx, y: cy, hp: 3, st: 'guard', t: 0, atkT: 0, dead: 0, animT: 0, aimT: 0, boltCd: 600, flash: 0 });
+        // barrel: DOOM's finest. Shootable, clawable, chain-reacts, and hurts
+        // whoever is standing next to it -- including you.
+        else if (c === 'B') this.enemies.push({ kind: 'barrel', x: cx, y: cy, hp: 2, st: 'guard', t: 0, atkT: 0, dead: 0, animT: 0, fuse: 0 });
         else if (c === 'M') this.mittens = { x: cx, y: cy };
         else if (c === 'S') this.items.push({ x: cx, y: cy, kind: 'shotgun', got: 0 });
         else if (c === 'T') this.items.push({ x: cx, y: cy, kind: 'tuna', got: 0 });
+        else if (c === 'H') this.items.push({ x: cx, y: cy, kind: 'shells', got: 0 });
         else if (c === 'R') this.items.push({ x: cx, y: cy, kind: 'raygun', got: 0 });
         else if (c === 'E') this.exit = { x: cx, y: cy };
         else if (c === 'G') this.grabCell = { x: cx, y: cy };
+        else if (c === 'c') this.torches.push({ x: cx, y: cy, ph: (x * 13 + y * 7) % 10 });
       }
     }
     for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
@@ -120,7 +152,25 @@ export class Tunnel {
   }
 
   ev(e) { this.events.push(e); }
-  solid(x, y) { return cellAt(this.grid, x | 0, y | 0) === '#'; }
+  // 'D' (secret wall) is solid until clawed open — see openSecret()
+  solid(x, y) { const c = cellAt(this.grid, x | 0, y | 0); return c === '#' || c === 'D'; }
+
+  openSecret(x, y) {
+    // flood contiguous D cells so a 2-wide secret door opens as one
+    const q = [[x, y]];
+    while (q.length) {
+      const [cx, cy] = q.pop();
+      if (cellAt(this.grid, cx, cy) !== 'D') continue;
+      this.grid[cy][cx] = '.';
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) q.push([cx + dx, cy + dy]);
+    }
+    this._navKey = null; // grid changed — recompute the compass field
+    this.result.secrets++;
+    this.pops.push({ t: 1100, n: 500 });
+    this.ev({ e: 'banner', k: 'secretFound' });
+    this.ev({ e: 'sfx', n: 'sfx_shrapnel' });
+    this.ev({ e: 'shake' });
+  }
 
   tryMove(nx, ny) {
     const R = 0.28, L = 0.2;
@@ -141,12 +191,43 @@ export class Tunnel {
     }
   }
 
+  // One damage path for everything that can hurt the player (lunges, gunner
+  // bolts, barrel blasts) so the directional arc, the splats, the death-cause
+  // hint and the respawn all fire no matter what did the hurting. Returns true
+  // if the tunnel run ended (caller must stop stepping).
+  hurtFrom(p, sx, sy, dmg) {
+    if (this.hurtT > 0) return false;
+    p.hp -= dmg; this.hurtT = 700;
+    this.ev({ e: 'fpsHurt' });
+    // v13 (Dylan: "you get attacked in the tunnel and its hard to tell where
+    // its coming from"): world-angle edge arc pinned to the attacker.
+    this.dmgDir.push({ w: Math.atan2(sy - this.py, sx - this.px), t: 1500 });
+    this.splats.push({ x: W * (0.3 + Math.random() * 0.4), y: H * (0.2 + Math.random() * 0.4), r: 60, t: 800 });
+    if (p.hp <= 0) {
+      p.deaths++; p.lives--; p.hp = CFG.hpMax;
+      if (p.lives <= 0) { p.st = 'out'; this.done = true; this.result.dead = true; return true; }
+      this.px = this.spawn[0]; this.py = this.spawn[1];
+      this.hurtT = 2000;
+      // name the killer on respawn -- the tunnel used to say nothing at all
+      this.ev({ e: 'hint', k: 'diedTunnel' });
+    }
+    return false;
+  }
+
   burst(e) { // knife cat explodes out of the wall niche
     e.st = 'burst'; e.t = 0; e.animT = 0;
     this.ev({ e: 'sfx', n: 'sfx_screech' });
     this.ev({ e: 'shake' });
     for (let i = 0; i < 10; i++) {
       this.gore.push({ x: e.x, y: e.y, z: 0.3 + Math.random() * 0.5, vx: (Math.random() - 0.5) * 2.4, vy: (Math.random() - 0.5) * 2.4, vz: 1 + Math.random() * 2, t: 700, dirt: 1 });
+    }
+  }
+
+  // clawing at a scratched-up 'D' wall within reach pops the secret open
+  checkSecret() {
+    for (const r of [0.8, 1.4]) {
+      const fx = (this.px + Math.cos(this.ang) * r) | 0, fy = (this.py + Math.sin(this.ang) * r) | 0;
+      if (cellAt(this.grid, fx, fy) === 'D') { this.openSecret(fx, fy); return; }
     }
   }
 
@@ -163,6 +244,7 @@ export class Tunnel {
     if (this.done) return;
     this.t += dt;
     const dts = dt / 1000;
+    this._p = p; // barrels lit by the player's own shots need p for the blast
     this.fireCd -= dt; this.meleeT -= dt; this.fireT -= dt; this.hurtT -= dt; this.pumpT -= dt;
     this.clawT = (this.clawT || 0) - dt; this.clawBlood = (this.clawBlood || 0) - dt;
     if (this.vignette) { this.vignette.t += dt; if (this.vignette.t > this.vignette.T) this.vignette = null; }
@@ -278,6 +360,7 @@ export class Tunnel {
         this.fireCd = 260; this.meleeT = 190; this.clawT = 190;
         this.ev({ e: 'sfx', n: 'sfx_screech' }); // angry meow -- see note in strings/audio
         if (this.melee(2, 1.75)) this.clawBlood = 2600;
+        this.checkSecret();
         this.alert(4);
       }
     }
@@ -289,6 +372,7 @@ export class Tunnel {
       this.meleeT = 210; this.clawT = 210; this.fireCd = Math.max(this.fireCd, 200);
       this.ev({ e: 'sfx', n: 'sfx_screech' });
       if (this.melee(3, 1.9)) this.clawBlood = 2600;
+      this.checkSecret();
       this.alert(5);
     }
 
@@ -298,6 +382,7 @@ export class Tunnel {
         it.got = 1;
         if (it.kind === 'shotgun') { this.hasShotgun = true; this.shells += 8; this.weap = 'shotgun'; this.result.shotgun = true; this.ev({ e: 'banner', k: 'gotShotgun' }); this.ev({ e: 'sfx', n: 'sfx_shotgun' }); }
         if (it.kind === 'tuna') { p.hp = Math.min(CFG.hpMax, p.hp + 2); this.ev({ e: 'banner', k: 'gotHealth' }); this.ev({ e: 'sfx', n: 'sfx_purr' }); }
+        if (it.kind === 'shells') { this.shells += 5; this.ev({ e: 'banner', k: 'gotShells' }); this.ev({ e: 'sfx', n: 'sfx_reload' }); }
         if (it.kind === 'raygun') { this.result.loot++; this.ev({ e: 'banner', k: 'gotRaygun' }); this.ev({ e: 'sfx', n: 'sfx_raygun' }); }
       }
     }
@@ -334,11 +419,41 @@ export class Tunnel {
       }
     }
 
-    // ---- knife enemies: hide -> burst -> stalk -> lunge ----
+    // ---- enemies: ambushers (hide -> burst -> stalk -> lunge), gunners, barrels ----
     for (const e of this.enemies) {
       if (e.dead) continue;
       e.atkT -= dt; e.animT += dt;
       const d = Math.hypot(e.x - this.px, e.y - this.py);
+      if (e.kind === 'barrel') {
+        // chain fuse: a nearby blast lights it, it pops a beat later
+        if (e.fuse > 0) { e.fuse -= dt; if (e.fuse <= 0) this.explodeBarrel(e, p); }
+        continue;
+      }
+      if (e.kind === 'gun') {
+        // Wolfenstein guard: hold the post, wind up a visible aim, fire a
+        // dodgeable bolt. Backs off if you rush him -- claws still reach.
+        if (e.flash > 0) e.flash -= dt;
+        e.boltCd -= dt;
+        if (d < 1.4) {
+          const vx = (e.x - this.px) / (d || 1), vy = (e.y - this.py) / (d || 1);
+          const nx = e.x + vx * 1.5 * dts, ny = e.y + vy * 1.5 * dts;
+          if (!this.solid(nx, e.y)) e.x = nx;
+          if (!this.solid(e.x, ny)) e.y = ny;
+        }
+        const see = d < 8.5 && this.los(e.x, e.y);
+        if (see && e.boltCd <= 0) {
+          if (!e.aiming) { e.aiming = 1; e.aimT = 0; this.ev({ e: 'sfx', n: 'sfx_reload' }); } // the click IS the tell
+          e.aimT += dt;
+          if (e.aimT > 680) {
+            e.aiming = 0; e.boltCd = 1500 + Math.random() * 600;
+            const bd = Math.max(0.2, d);
+            const spd = this.enemyKind === 'rat' ? 3.3 : 2.9;
+            this.bolts.push({ x: e.x, y: e.y, vx: (this.px - e.x) / bd * spd, vy: (this.py - e.y) / bd * spd, t: 3600 });
+            this.ev({ e: 'sfx', n: 'sfx_laser' });
+          }
+        } else if (!see) { e.aiming = 0; e.aimT = 0; }
+        continue;
+      }
       if (e.st === 'hide') {
         if (d < 1.9 && this.los(e.x, e.y)) this.burst(e);
         continue;
@@ -351,27 +466,8 @@ export class Tunnel {
         if (!this.solid(nx, e.y)) e.x = nx;
         if (!this.solid(e.x, ny)) e.y = ny;
         if (d < 0.85 && this.hurtT <= 0) {
-          p.hp -= 1; this.hurtT = 700; e.st = 'recover'; e.t = 0;
-          this.ev({ e: 'fpsHurt' });
-          // v13 (Dylan: "you get attacked in the tunnel and its hard to tell
-          // where its coming from"). Record WHERE the hit came from, relative
-          // to where the player is looking, and show an edge indicator. Without
-          // this the only feedback was a full-screen red wash, which says you
-          // were hit but nothing about which way to turn.
-          this.dmgDir.push({ w: Math.atan2(e.y - this.py, e.x - this.px), t: 1500 });
-          this.splats.push({ x: W * (0.3 + Math.random() * 0.4), y: H * (0.2 + Math.random() * 0.4), r: 60, t: 800 });
-          if (p.hp <= 0) {
-            p.deaths++; p.lives--; p.hp = CFG.hpMax;
-            if (p.lives <= 0) { p.st = 'out'; this.done = true; this.result.dead = true; return; }
-            this.px = this.spawn[0]; this.py = this.spawn[1];
-            this.hurtT = 2000;
-            // The side-scroller names your killer on respawn; the tunnel --
-            // the darkest, most confusing part of the game and the place a
-            // playtester burned eight lives without ever knowing what hit
-            // them -- said nothing at all. It also silently teleports you back
-            // to the entrance, which reads as "nothing happened" without this.
-            this.ev({ e: 'hint', k: 'diedTunnel' });
-          }
+          e.st = 'recover'; e.t = 0;
+          if (this.hurtFrom(p, e.x, e.y, 1)) return;
         }
         if (e.t > 420) { e.st = 'recover'; e.t = 0; }
         continue;
@@ -394,8 +490,51 @@ export class Tunnel {
       }
       if (e.flash > 0) e.flash -= dt;
     }
+
+    // ---- gunner bolts: visible, dodgeable, and they cook off barrels ----
+    for (const b of this.bolts) {
+      b.x += b.vx * dts; b.y += b.vy * dts; b.t -= dt;
+      if (b.t <= 0) continue;
+      if (this.solid(b.x, b.y)) {
+        b.t = 0;
+        for (let i = 0; i < 4; i++) this.gore.push({ x: b.x, y: b.y, z: 0.4, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, vz: 0.6 + Math.random(), t: 300, dirt: 1 });
+        continue;
+      }
+      for (const e of this.enemies) {
+        if (e.kind === 'barrel' && !e.dead && Math.hypot(e.x - b.x, e.y - b.y) < 0.42) { b.t = 0; this.explodeBarrel(e, p); break; }
+      }
+      if (b.t > 0 && Math.hypot(this.px - b.x, this.py - b.y) < 0.38) {
+        b.t = 0;
+        if (this.hurtFrom(p, b.x - b.vx * 0.2, b.y - b.vy * 0.2, 1)) return;
+      }
+    }
+    this.bolts = this.bolts.filter(b => b.t > 0);
+    for (const pop of this.pops) pop.t -= dt;
+    this.pops = this.pops.filter(pop => pop.t > 0);
+
     this.updateNav(dts);
     this.prevBits = bits;
+  }
+
+  explodeBarrel(e, p) {
+    if (e.dead) return;
+    e.dead = 1; e.noCorpse = 1;
+    this.ev({ e: 'sfx', n: 'sfx_explosion' });
+    this.ev({ e: 'shake' });
+    // molten cheese-oil everywhere: mixed dirt + yellow gore, scorch on the floor
+    for (let i = 0; i < 22; i++) {
+      this.gore.push({ x: e.x, y: e.y, z: 0.2 + Math.random() * 0.7, vx: (Math.random() - 0.5) * 4.4, vy: (Math.random() - 0.5) * 4.4, vz: 1.2 + Math.random() * 2.6, t: 900, dirt: i % 3 === 0 ? 1 : 0, chz: i % 3 !== 0 ? 1 : 0 });
+    }
+    this.pools.push([e.x, e.y, 0.55, 'scorch']);
+    // blast: kills enemies, lights other barrels, and does NOT spare you
+    for (const e2 of this.enemies) {
+      if (e2.dead || e2 === e) continue;
+      const dd = Math.hypot(e2.x - e.x, e2.y - e.y);
+      if (e2.kind === 'barrel') { if (dd < 1.5 && e2.fuse <= 0) e2.fuse = 140; continue; }
+      if (dd < 1.7) { if (e2.st === 'hide') this.burst(e2); this.hit(e2, 9); }
+    }
+    if (p && Math.hypot(this.px - e.x, this.py - e.y) < 1.25) this.hurtFrom(p, e.x, e.y, 1);
+    this.alert(7);
   }
 
   // v10 (Dylan: "I still don't know how to get out of the tunnel, make some
@@ -405,12 +544,12 @@ export class Tunnel {
   navTargets() {
     const targets = [];
     if (this.mapIdx === 0) {
-      if (this.grabCell) targets.push({ x: this.grabCell.x | 0, y: this.grabCell.y | 0, done: () => this.script && this.script.done });
-      for (const it of this.items) if (it.kind === 'shotgun') targets.push({ x: it.x | 0, y: it.y | 0, done: () => it.got });
-      if (this.mittens) targets.push({ x: this.mittens.x | 0, y: this.mittens.y | 0, done: () => this.result.rescued });
+      if (this.grabCell) targets.push({ x: this.grabCell.x | 0, y: this.grabCell.y | 0, label: 'DEEPER', done: () => this.script && this.script.done });
+      for (const it of this.items) if (it.kind === 'shotgun') targets.push({ x: it.x | 0, y: it.y | 0, label: 'SHOTGUN', done: () => it.got });
+      if (this.mittens) targets.push({ x: this.mittens.x | 0, y: this.mittens.y | 0, label: 'MITTENS', done: () => this.result.rescued });
     }
-    for (const it of this.items) if (it.kind === 'raygun') targets.push({ x: it.x | 0, y: it.y | 0, done: () => it.got });
-    if (this.exit) targets.push({ x: this.exit.x | 0, y: this.exit.y | 0, done: () => false });
+    for (const it of this.items) if (it.kind === 'raygun') targets.push({ x: it.x | 0, y: it.y | 0, label: 'ALIEN TECH', done: () => it.got });
+    if (this.exit) targets.push({ x: this.exit.x | 0, y: this.exit.y | 0, label: 'EXIT', done: () => false });
     return targets;
   }
 
@@ -418,6 +557,7 @@ export class Tunnel {
     const targets = this.navTargets();
     const t2 = targets.find(t => !t.done());
     if (!t2) return;
+    this._navLabel = t2.label || '';
     const key = t2.x + ',' + t2.y;
     if (this._navKey !== key) { this._navKey = key; this._navField = distField(this.grid, t2.x, t2.y); }
     const field = this._navField;
@@ -479,8 +619,14 @@ export class Tunnel {
   }
 
   hit(e, dmg, close) {
+    if (e.kind === 'barrel') {
+      e.hp -= dmg;
+      for (let i = 0; i < 3; i++) this.gore.push({ x: e.x, y: e.y, z: 0.5, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, vz: 1 + Math.random(), t: 300, chz: 1 });
+      if (e.hp <= 0) this.explodeBarrel(e, this._p);
+      return;
+    }
     e.hp -= dmg;
-    if (e.st === 'hide') this.burst(e); else e.st = e.st === 'lunge' ? 'lunge' : 'chase';
+    if (e.st === 'hide') this.burst(e); else if (e.kind !== 'gun') e.st = e.st === 'lunge' ? 'lunge' : 'chase';
     this.ev({ e: 'sfx', n: 'sfx_meow' });
     // blood flies
     const n = e.hp <= 0 ? 16 : 7;
@@ -497,6 +643,12 @@ export class Tunnel {
       if (close) for (let i = 0; i < 4; i++) this.splats.push({ x: Math.random() * W, y: Math.random() * H * 0.7, r: 50 + Math.random() * 70, t: 900 });
       this.ev({ e: 'sfx', n: 'sfx_gore' });
       this.ev({ e: 'fpsKill' });
+      // kills pay here the way they do topside -- the tunnel used to be the
+      // one mode where a kill was worth zero points and zero feedback
+      this.result.kills++;
+      this.pops.push({ t: 900, n: 100 });
+      // Wolfenstein rule: the guy with the gun drops his ammo
+      if (e.kind === 'gun') this.items.push({ x: e.x, y: e.y, kind: 'shells', got: 0 });
     }
   }
 
@@ -543,9 +695,9 @@ export class Tunnel {
           const j = (ty * 64 + tx) * 4;
           r = tex[j]; g = tex[j + 1]; b = tex[j + 2];
         } else { r = below ? 40 : 16; g = below ? 28 : 11; b = below ? 16 : 7; }
-        // flashlight cone + falloff
-        const cone = 0.22 + 0.78 * Math.max(0, Math.cos(colAng * 2.4)) ** 2;
-        let lt = Math.max(0.04, Math.min(1, (1.55 - rowDist * 0.30) * cone * flick));
+        // flashlight cone + falloff (v13.1: wider + brighter floor, see wall note)
+        const cone = 0.28 + 0.72 * Math.max(0, Math.cos(colAng * 2.1)) ** 2;
+        let lt = Math.max(0.09, Math.min(1, (1.68 - rowDist * 0.28) * cone * flick));
         if (!below) lt *= 0.7;
         px8[i] = r * lt; px8[i + 1] = g * lt; px8[i + 2] = b * lt; px8[i + 3] = 255;
       }
@@ -564,10 +716,11 @@ export class Tunnel {
       let stepX, stepY, sdx, sdy;
       if (rdx < 0) { stepX = -1; sdx = (this.px - mapX) * ddx; } else { stepX = 1; sdx = (mapX + 1 - this.px) * ddx; }
       if (rdy < 0) { stepY = -1; sdy = (this.py - mapY) * ddy; } else { stepY = 1; sdy = (mapY + 1 - this.py) * ddy; }
-      let side = 0, guard = 0;
+      let side = 0, guard = 0, hitCell = '#';
       while (guard++ < 64) {
         if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; } else { sdy += ddy; mapY += stepY; side = 1; }
-        if (cellAt(this.grid, mapX, mapY) === '#') break;
+        const cc = cellAt(this.grid, mapX, mapY);
+        if (cc === '#' || cc === 'D') { hitCell = cc; break; }
       }
       const dist = Math.max(0.05, (side === 0 ? sdx - ddx : sdy - ddy) * Math.cos(colAng));
       this.zbuf[c] = dist;
@@ -584,11 +737,24 @@ export class Tunnel {
         sc.fillStyle = side ? '#3a2a18' : '#452f1c';
         sc.fillRect(c, y0, 1.5, hgt);
       }
-      const cone = 0.24 + 0.76 * Math.max(0, Math.cos(colAng * 2.4)) ** 2;
-      let b = Math.max(0, Math.min(1, (1.8 - dist * 0.26) * cone * flick + boost));
+      // v13.1: wider cone + higher base so the tunnel is dark, not ILLEGIBLE.
+      // The old values left everything past ~3 cells as undifferentiated murk,
+      // which is most of why it played as "an unlit blurry maze".
+      const cone = 0.30 + 0.70 * Math.max(0, Math.cos(colAng * 2.1)) ** 2;
+      let b = Math.max(0, Math.min(1, (1.95 - dist * 0.24) * cone * flick + boost));
       if (side === 1) b *= 0.8;
       sc.fillStyle = `rgba(0,0,0,${(1 - b).toFixed(3)})`;
       sc.fillRect(c, y0 - 1, 1.5, hgt + 2);
+      // secret wall: three glowing claw scratches. Gold pulse = "interact",
+      // the same language the topside supply crates now use.
+      if (hitCell === 'D' && dist < 7) {
+        const inBand = (wallX > 0.30 && wallX < 0.36) || (wallX > 0.47 && wallX < 0.53) || (wallX > 0.64 && wallX < 0.70);
+        if (inBand) {
+          const pulse = 0.45 + 0.4 * Math.sin(now / 300 + mapX * 2 + mapY);
+          sc.fillStyle = `rgba(255,201,60,${(pulse * Math.min(1, b + 0.35)).toFixed(2)})`;
+          sc.fillRect(c, y0 + hgt * 0.28, 1.5, hgt * 0.44);
+        }
+      }
     }
 
     // ---- sprites (lowres, z-buffered) ----
@@ -600,11 +766,22 @@ export class Tunnel {
       return { da, d: Math.hypot(dx, dy) * Math.cos(da), raw: Math.hypot(dx, dy) };
     };
     const sprites = [];
-    for (const pl of this.pools) sprites.push({ x: pl[0], y: pl[1], kind: 'pool', r: pl[2] });
+    for (const pl of this.pools) sprites.push({ x: pl[0], y: pl[1], kind: 'pool', r: pl[2], sk: pl[3] });
     for (const e of this.enemies) {
-      if (e.st === 'hide' && !e.dead) continue; // invisible until they burst
+      if (e.kind === 'barrel') { if (!e.dead) sprites.push({ x: e.x, y: e.y, kind: 'barrel', e }); continue; }
+      if (e.st === 'hide' && !e.dead) {
+        // v13.1 fairness: a hidden ambusher within sight shows glowing eyes in
+        // the dark BEFORE it bursts. The playtest verdict on the old tunnel
+        // was "I lost 8 lives to something I never saw" -- now you see it.
+        const dHide = Math.hypot(e.x - this.px, e.y - this.py);
+        if (dHide < 6.5 && this.los(e.x, e.y)) sprites.push({ x: e.x, y: e.y, kind: 'eyes', e });
+        continue;
+      }
+      if (e.dead && e.noCorpse) continue;
       sprites.push({ x: e.x, y: e.y, kind: e.dead ? 'corpse' : 'enemy', e });
     }
+    for (const t2 of this.torches) sprites.push({ x: t2.x, y: t2.y, kind: 'torch', tc: t2 });
+    for (const b2 of this.bolts) sprites.push({ x: b2.x, y: b2.y, kind: 'bolt' });
     for (const it of this.items) if (!it.got) sprites.push({ x: it.x, y: it.y, kind: it.kind });
     if (this.mittens && !this.result.rescued) sprites.push({ x: this.mittens.x, y: this.mittens.y, kind: 'mittens' });
     if (this.exit) sprites.push({ x: this.exit.x, y: this.exit.y, kind: 'exit' });
@@ -621,16 +798,100 @@ export class Tunnel {
       const b = Math.max(0.1, Math.min(1, (1.85 - d * 0.26) * (0.3 + 0.7 * Math.max(0, Math.cos(pr.da * 2.4))) * flick));
       const floorY = HORIZON + (RH / 2) / d;
       if (s.kind === 'pool') {
-        sc.fillStyle = `rgba(110,10,8,${(0.75 * b).toFixed(2)})`;
+        sc.fillStyle = s.sk === 'scorch' ? `rgba(24,20,14,${(0.85 * b + 0.1).toFixed(2)})` : `rgba(110,10,8,${(0.75 * b).toFixed(2)})`;
         sc.beginPath(); sc.ellipse(sx, floorY - 1, (s.r * RH * 0.5) / d, (s.r * RH * 0.14) / d, 0, 0, 7); sc.fill();
         continue;
       }
       if (s.kind === 'gore') {
         if (this.zbuf[col] < d - 0.12) continue;
         const gy = HORIZON + (RH / 2) / d - (s.g.z * RH) / d;
-        sc.fillStyle = s.g.dirt ? `rgba(90,66,40,${b})` : `rgba(170,18,12,${b})`;
+        sc.fillStyle = s.g.chz ? `rgba(255,190,50,${b})` : s.g.dirt ? `rgba(90,66,40,${b})` : `rgba(170,18,12,${b})`;
         const gr = Math.max(1, 2.6 / d);
         sc.fillRect(sx - gr / 2, gy - gr / 2, gr, gr);
+        continue;
+      }
+      if (s.kind === 'eyes') {
+        // paired amber eyes floating in the dark, with a slow blink
+        const blink = ((now / 2900 + s.x * 0.37 + s.y * 0.61) % 1) > 0.93;
+        if (blink) continue;
+        const eh = HORIZON - (RH * 0.10) / d;
+        const gap = (RH * 0.055) / d, er = Math.max(0.8, (RH * 0.016) / d);
+        const gl = sc.createRadialGradient(sx, eh, 0, sx, eh, gap * 2.4);
+        gl.addColorStop(0, 'rgba(255,180,60,0.30)');
+        gl.addColorStop(1, 'rgba(255,180,60,0)');
+        sc.fillStyle = gl;
+        sc.beginPath(); sc.arc(sx, eh, gap * 2.4, 0, 7); sc.fill();
+        sc.fillStyle = 'rgba(255,196,70,0.95)';
+        sc.fillRect(sx - gap - er / 2, eh - er / 2, er, er);
+        sc.fillRect(sx + gap - er / 2, eh - er / 2, er, er);
+        continue;
+      }
+      if (s.kind === 'bolt') {
+        const by2 = HORIZON + (RH * 0.06) / d;
+        const br = Math.max(1.2, (RH * 0.035) / d);
+        const bc = this.enemyKind === 'rat' ? '140,255,60' : '255,190,80';
+        const gl = sc.createRadialGradient(sx, by2, 0, sx, by2, br * 3);
+        gl.addColorStop(0, `rgba(${bc},0.55)`);
+        gl.addColorStop(1, `rgba(${bc},0)`);
+        sc.fillStyle = gl;
+        sc.beginPath(); sc.arc(sx, by2, br * 3, 0, 7); sc.fill();
+        sc.fillStyle = `rgba(${bc},1)`;
+        sc.fillRect(sx - br / 2, by2 - br / 2, br, br);
+        sc.fillStyle = 'rgba(255,255,240,0.9)';
+        sc.fillRect(sx - br / 4, by2 - br / 4, br / 2, br / 2);
+        continue;
+      }
+      if (s.kind === 'torch') {
+        // flame landmark: flickering triangle + warm halo on a stick
+        const fh = (RH * 0.30) / d;
+        const baseY = HORIZON + (RH * 0.5) / d / 2;
+        const fl = 0.75 + 0.25 * Math.sin(now / 70 + s.tc.ph * 2.3) * Math.sin(now / 113 + s.tc.ph);
+        const gl = sc.createRadialGradient(sx, baseY - fh * 0.7, 0, sx, baseY - fh * 0.7, fh * 1.7);
+        gl.addColorStop(0, `rgba(255,180,80,${(0.34 * fl).toFixed(2)})`);
+        gl.addColorStop(1, 'rgba(255,150,60,0)');
+        sc.fillStyle = gl;
+        sc.beginPath(); sc.arc(sx, baseY - fh * 0.7, fh * 1.7, 0, 7); sc.fill();
+        sc.fillStyle = `rgba(70,50,30,${b})`;
+        sc.fillRect(sx - Math.max(1, fh * 0.05), baseY - fh * 0.55, Math.max(1.5, fh * 0.1), fh * 0.55);
+        const fw = fh * 0.22 * (0.8 + fl * 0.3);
+        sc.fillStyle = `rgba(255,140,40,${(0.9 * fl).toFixed(2)})`;
+        sc.beginPath(); sc.moveTo(sx - fw, baseY - fh * 0.55); sc.lineTo(sx + fw, baseY - fh * 0.55); sc.lineTo(sx, baseY - fh * (0.9 + 0.12 * fl)); sc.closePath(); sc.fill();
+        sc.fillStyle = `rgba(255,230,140,${(0.9 * fl).toFixed(2)})`;
+        sc.beginPath(); sc.moveTo(sx - fw * 0.45, baseY - fh * 0.55); sc.lineTo(sx + fw * 0.45, baseY - fh * 0.55); sc.lineTo(sx, baseY - fh * (0.78 + 0.1 * fl)); sc.closePath(); sc.fill();
+        continue;
+      }
+      if (s.kind === 'barrel') {
+        // gold pulsing band = shootable, same language as the topside crates
+        const bh = (RH * 0.34) / d;
+        const bw = bh * 0.72;
+        const byB = HORIZON + (RH * 0.5) / d / 2 - bh;
+        sc.fillStyle = `rgba(94,62,30,${b})`;
+        sc.beginPath(); sc.ellipse(sx, byB + bh, bw / 2, bh * 0.10, 0, 0, 7); sc.fill();
+        sc.fillRect(sx - bw / 2, byB + bh * 0.08, bw, bh * 0.92);
+        sc.beginPath(); sc.ellipse(sx, byB + bh * 0.08, bw / 2, bh * 0.10, 0, 0, 7); sc.fill();
+        sc.fillStyle = `rgba(56,36,18,${b})`;
+        sc.fillRect(sx - bw / 2, byB + bh * 0.30, bw, bh * 0.06);
+        sc.fillRect(sx - bw / 2, byB + bh * 0.68, bw, bh * 0.06);
+        const pulse = 0.5 + 0.5 * Math.sin(now / 280 + s.x * 2);
+        sc.fillStyle = `rgba(255,201,60,${(0.55 * pulse * (b + 0.3)).toFixed(2)})`;
+        sc.fillRect(sx - bw / 2, byB + bh * 0.44, bw, bh * 0.14);
+        if (s.e.fuse > 0) { // lit: it's about to go
+          sc.fillStyle = `rgba(255,255,220,${0.5 + 0.5 * Math.sin(now / 30)})`;
+          sc.fillRect(sx - bw / 2, byB, bw, bh);
+        }
+        continue;
+      }
+      if (s.kind === 'shells') {
+        const shH = (RH * 0.12) / d;
+        const shW = shH * 2.1;
+        const syB = HORIZON + (RH * 0.5) / d / 2 - shH;
+        sc.fillStyle = `rgba(50,72,40,${b})`;
+        sc.fillRect(sx - shW / 2, syB, shW, shH);
+        sc.fillStyle = `rgba(214,48,36,${b})`;
+        sc.fillRect(sx - shW / 2 + shW * 0.12, syB + shH * 0.25, shW * 0.76, shH * 0.5);
+        const pulse2 = 0.5 + 0.5 * Math.sin(now / 300);
+        sc.fillStyle = `rgba(255,201,60,${(0.4 * pulse2).toFixed(2)})`;
+        sc.fillRect(sx - shW / 2, syB - shH * 0.2, shW, shH * 0.15);
         continue;
       }
       if (s.kind === 'exit') {
@@ -668,7 +929,21 @@ export class Tunnel {
         // used to be a single static pose with zero animation — now it gets
         // the same walk/lunge/hurt state machine the VC knife enemies use.
         const walking = (s.e.animT / 220 | 0) % 2 === 0;
-        if (this.enemyKind === 'rat') {
+        if (s.e.kind === 'gun') {
+          img = this.enemyKind === 'rat' ? IMG.alien_trooper : (IMG.grunt_vc || IMG.vc_knife_a);
+          // aim windup: a red glow that swells over the tell — the "he's about
+          // to shoot" read, visible even in the dark
+          if (s.e.aiming) {
+            const k2 = Math.min(1, (s.e.aimT || 0) / 680);
+            const gy2 = HORIZON - (RH * 0.05) / d;
+            const gr2 = (RH * (0.16 + k2 * 0.22)) / d;
+            const gl2 = sc.createRadialGradient(sx, gy2, 0, sx, gy2, gr2);
+            gl2.addColorStop(0, `rgba(255,60,40,${(0.20 + 0.35 * k2).toFixed(2)})`);
+            gl2.addColorStop(1, 'rgba(255,60,40,0)');
+            sc.fillStyle = gl2;
+            sc.beginPath(); sc.arc(sx, gy2, gr2, 0, 7); sc.fill();
+          }
+        } else if (this.enemyKind === 'rat') {
           if (s.e.flash > 0 && IMG.rat_blade_hurt) img = IMG.rat_blade_hurt;
           else if (s.e.st === 'lunge') img = IMG.rat_blade_lunge || IMG.rat_blade;
           else if (s.e.st === 'burst') img = IMG.rat_blade;
@@ -908,7 +1183,36 @@ export class Tunnel {
       ctx.moveTo(0, -13); ctx.lineTo(11, 8); ctx.lineTo(0, 3); ctx.lineTo(-11, 8);
       ctx.closePath(); ctx.fill();
       ctx.restore();
+      // v13.1: name what the arrow points at. The compass existed for three
+      // versions and the round-2 playtester never once mentioned it -- an
+      // unlabeled dim chevron reads as decoration, "-> MITTENS" reads as a
+      // waypoint.
+      if (this._navLabel) {
+        ctx.save();
+        ctx.globalAlpha = 0.55 + 0.35 * pulse;
+        ctx.font = 'bold 13px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#26231c'; ctx.fillText(this._navLabel, cxp + 1, cyp + 25);
+        ctx.fillStyle = '#FFC93C'; ctx.fillText(this._navLabel, cxp, cyp + 24);
+        ctx.restore();
+      }
     }
+
+    // kill/secret score pops, rising gold — the same reward beat as topside
+    ctx.textAlign = 'center';
+    let popY = H * 0.30;
+    for (const pop of this.pops) {
+      const k = 1 - pop.t / (pop.n >= 500 ? 1100 : 900);
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (1 - k) * 1.8);
+      ctx.font = `bold ${pop.n >= 500 ? 30 : 22}px monospace`;
+      ctx.fillStyle = '#26231c'; ctx.fillText('+' + pop.n, W / 2 + 2, popY - k * 40 + 2);
+      ctx.fillStyle = pop.n >= 500 ? '#FFC93C' : '#fff3d0';
+      ctx.fillText('+' + pop.n, W / 2, popY - k * 40);
+      ctx.restore();
+      popY += 30;
+    }
+    ctx.textAlign = 'left';
   }
 
   drawViewmodel(ctx, now) {
@@ -1056,7 +1360,8 @@ function distField(grid, tx, ty) {
     const d = field.get(cx + ',' + cy);
     for (const [ddx, ddy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = cx + ddx, ny = cy + ddy, key = nx + ',' + ny;
-      if (field.has(key) || cellAt(grid, nx, ny) === '#') continue;
+      const cc = cellAt(grid, nx, ny);
+      if (field.has(key) || cc === '#' || cc === 'D') continue; // secrets are not on anyone's path
       field.set(key, d + 1);
       q.push([nx, ny]);
     }
@@ -1103,6 +1408,7 @@ export function botStep(tun, plan) {
   if (Math.abs(da) < 0.6) b |= C.UP;
   for (const e of tun.enemies) {
     if (e.dead || e.st === 'hide') continue;
+    if (e.kind === 'barrel') continue; // the bot does not claw explosives point-blank
     const d = Math.hypot(e.x - tun.px, e.y - tun.py);
     let ea = Math.atan2(e.y - tun.py, e.x - tun.px) - tun.ang;
     while (ea > Math.PI) ea -= 2 * Math.PI;

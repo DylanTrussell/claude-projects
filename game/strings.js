@@ -167,6 +167,8 @@ Object.assign(STR, {
   diedBoom: "KILLED BY A BLAST — keep clear of explosions",
   diedAbduct: "TAKEN BY A UFO — shoot it or stay out from under it",
   diedTunnel: "KILLED IN THE DARK — back to the entrance. Watch the red arc.",
+  secretFound: "★ SECRET FOUND ★",
+  gotShells: "SHELLS +5",
   ufoHint: "Tractor beams pull you up — keep moving!",
   paused: "PAUSED — tab back in to fight",
   pausedTitle: "PAUSED",
