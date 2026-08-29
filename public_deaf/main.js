@@ -567,6 +567,13 @@ function frame(now) {
     rail.render(ctx, now, drawRotor);
     drawFpsHud(ctx);
     ctx.restore();
+    // A ?tunnel=N boot never runs the side-scroller, so lastView is null: on
+    // dying out down there the canvas fell through every branch and stayed
+    // black behind the tally. Serialize once so there's always a frame to
+    // draw, whatever route got us here.
+  } else if ((mode === 'game' || mode === 'tally') && !lastView && g) {
+    lastView = serialize(g);
+    render(ctx, lastView, now, 'p1', null);
   } else if ((mode === 'game' || mode === 'tally') && lastView) {
     let dbg = null;
     if (dev) {
@@ -680,6 +687,9 @@ if (dev) {
   // dev-only: force a weapon so the flamethrower/raygun rendering can be
   // verified without hunting down the pickup first.
   window.__AMweap = (w, ammo) => { const p = g && g.players[0]; if (p) { p.weap = w; p.ammo = ammo || 999; } };
+  // dev-only: force the TUNNEL weapon, so the shotgun/claw viewmodels and
+  // their fire paths can be exercised without walking the whole level first
+  window.__AMtweap = (w, n) => { if (tunnel) { tunnel.weap = w; if (w === 'shotgun') { tunnel.hasShotgun = true; tunnel.shells = n || 8; } } };
 }
 
 // ---------- boot ----------

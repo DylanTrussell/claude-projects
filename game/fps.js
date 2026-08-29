@@ -42,18 +42,18 @@ export const MAPS = [
     enemies: 'vc',
     grid: [
       '################',
-      '#P....#...a.#TH#',
+      '#P........a.#TH#',
       '#...c....B..#DD#',
-      '#.#####.a...#..#',
-      '#.#######.###.##',
-      '#....G....###.##',
-      '#..c.########a##',
-      '#.S....g...B...#',
-      '#....#........g#',
-      '############..##',
-      '#.....a.#.a..g.#',
-      '#.#####.#B....M#',
-      '#E..c.....c....#',
+      '#######.a...c..#',
+      '########..######',
+      '##.c..a...######',
+      '##........######',
+      '##G#############',
+      '#c.........B...#',
+      '#.S.#..g......g#',
+      '############.###',
+      '#....a..#.a..g.#',
+      '#E..c....Bc...M#',
       '################',
     ],
     objective: 'fpsObjective0',
@@ -311,10 +311,25 @@ export class Tunnel {
       if (s.phase === 'appear' && s.t > 620) { s.phase = 'slap'; s.t = 0; this.ev({ e: 'sfx', n: 'sfx_knife' }); this.ev({ e: 'shake' }); this.ev({ e: 'banner', k: 'gunSlapped' }); }
       else if (s.phase === 'slap' && s.t > 460) { s.phase = 'grapple'; s.t = 0; s.meter = 12; this.weap = 'claws'; this.pistolLost = true; this.ev({ e: 'hint', k: 'grabPrompt' }); }
       else if (s.phase === 'grapple') {
-        s.meter -= 16 * dts;
-        if ((bits & C.FIRE) && !(this.prevBits & C.FIRE)) { s.meter += 13; this.ev({ e: 'sfx', n: 'sfx_meow' }); }
+        // v13.2 softlock fix, found by driving the grapple directly: the meter
+        // had NO FLOOR. Six slow seconds put it at -91, so escaping meant
+        // climbing 191 points at 13 a press -- and since the grapple bleeds
+        // you but can never kill (below), a panicking player was stuck in it
+        // forever with no way out and no death to reset them.
+        //   - meter floors at 0, so you can always start climbing
+        //   - K (claws) counts too: the prompt says RIP HIS THROAT OUT and
+        //     mashing the claw button is the obvious instinct
+        //   - holding the button still trickles, so a masher who can't keep
+        //     up with edge-presses is not punished into a dead end
+        //   - and a 12s failsafe rips free regardless. It can never hang.
+        s.meter = Math.max(0, s.meter - 16 * dts);
+        const mashBit = (bits & C.FIRE) || (bits & C.GREN);
+        const prevMash = (this.prevBits & C.FIRE) || (this.prevBits & C.GREN);
+        if (mashBit && !prevMash) { s.meter += 13; this.ev({ e: 'sfx', n: 'sfx_meow' }); }
+        else if (mashBit) s.meter += 9 * dts; // holding: slower, but never stuck
         s.hurtAcc = (s.hurtAcc || 0) + dt;
         if (s.hurtAcc > 1500) { s.hurtAcc = 0; p.hp -= 1; this.hurtT = 500; this.ev({ e: 'fpsHurt' }); if (p.hp <= 0) { p.hp = 1; } } // the grapple can bleed you but never kill
+        if (s.t > 12000) s.meter = 100; // failsafe: the cat wins on his own
         if (s.meter >= 100) {
           s.phase = 'rip'; s.t = 0;
           this.ev({ e: 'sfx', n: 'sfx_gore' });
@@ -725,12 +740,21 @@ export class Tunnel {
 
   // ---------- rendering ----------
   buildFlats() {
+    // getImageData THROWS SecurityError on a canvas tainted by cross-origin
+    // art (this game's CDN images have no CORS headers -- confirmed in-pane).
+    // Unguarded, one throw here aborts render() every frame and the tunnel is
+    // a permanent black screen with the sim still running underneath -- which
+    // is exactly the failure a playtester reported. Floor/ceiling tiles are
+    // local today so it doesn't fire, but one asset moving to the CDN would
+    // black out the level, so it must never be able to take the renderer down.
     const grab = (id, fallback) => {
       const img = IMG[id];
       if (!img) return fallback;
+      try {
       const c = document.createElement('canvas'); c.width = 64; c.height = 64;
       const x = c.getContext('2d'); x.drawImage(img, 0, 0, 64, 64);
       return x.getImageData(0, 0, 64, 64).data;
+      } catch (e) { console.warn('flat texture blocked (tainted canvas), using flat colour:', id); return fallback; }
     };
     this._flat = {
       floor: grab('tile_floor', null),
@@ -1375,7 +1399,12 @@ export class Tunnel {
     // claws and no blood at all, just the generic slash streak). Swap the
     // viewmodel to the claws sprite for the swing AND for as long as they're
     // bloodied afterward, then fall back to the held weapon.
-    const clawOverlay = (this.clawT || 0) > 0 || (this.clawBlood || 0) > 0;
+    // Blood LINGERS 2.6s, but it must not hijack the viewmodel that whole
+    // time: with the old condition, one claw hit replaced your shotgun with
+    // bloody paws for 2.6 seconds while you were still firing it. Blood only
+    // tints the claws when the claws are what's actually on screen -- i.e.
+    // mid-swipe, or claws are the equipped weapon.
+    const clawOverlay = (this.clawT || 0) > 0 || this.weap === 'claws';
     let id;
     if (clawOverlay) id = 'fps_claws';
     else if (this.weap === 'pistol') id = this.reloadT > 0 ? 'fps_pistol_reload' : this.fireT > 40 ? 'fps_pistol_fire' : 'fps_pistol';
