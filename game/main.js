@@ -619,7 +619,10 @@ function drawFpsHud(ctx) {
     // shells shown while carrying them WITHOUT the shotgun, so "SHELLS +5"
     // pickups stop reading as a no-op ("it said I got shells, but there was
     // no shotgun").
-    let line = `x${p.lives}  ${wname}  ·  CLAWS: K`;
+    // "CLAWS: K" read as a lie while a gun was out (loop 3 thought the claw
+    // was broken). Say SWIPE — K is a melee swipe on top of whatever you hold,
+    // and only becomes your weapon once the grab takes the pistol.
+    let line = `x${p.lives}  ${wname}  ·  ${tunnel.weap === 'claws' ? 'CLAWS: J' : 'SWIPE: K'}`;
     if (tunnel.weap !== 'shotgun' && tunnel.shells > 0) line += tunnel.hasShotgun ? `  ·  SHELLS ${tunnel.shells}` : `  ·  SHELLS ${tunnel.shells} (find the SHOTGUN)`;
     if (tunnel.result.kills > 0) line += `  ·  KILLS ${tunnel.result.kills}`;
     ctx.fillText(line, 16, 50);

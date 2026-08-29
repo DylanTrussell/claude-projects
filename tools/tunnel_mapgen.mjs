@@ -33,6 +33,7 @@ carve(m0, 8, 6, 9, 6);
 set(m0, 2, 7, 'G');               // the doorway itself -- nobody skips it
 carve(m0, 1, 8, 3, 9);            // chamber behind it
 set(m0, 2, 9, 'S');
+set(m0, 3, 9, 'H');               // spare shells WITH the shotgun -- you leave the grab armed
 // hall (rows 8-9, east of the chamber wall), entered from the chamber
 carve(m0, 5, 8, 14, 9);
 carve(m0, 4, 8, 4, 8);            // chamber -> hall doorway
@@ -53,6 +54,7 @@ set(m0, 12, 3, 'c');              // torch NEXT to the secret wall -- light draw
 set(m0, 3, 5, 'c');               // grab-corridor torch, lights the way west
 set(m0, 1, 8, 'c');               // chamber torch (lights the prize)
 set(m0, 7, 9, 'g'); set(m0, 11, 8, 'B'); set(m0, 14, 9, 'g'); // hall gunners + barrel
+set(m0, 5, 8, 'H');               // resupply ON the main route (loop-3: ran dry mid-hall, run was unwinnable)
 set(m0, 6, 5, 'a');               // grab-corridor lurker (before the grab: pistol still in paw)
 set(m0, 9, 12, 'B'); set(m0, 10, 11, 'a'); set(m0, 13, 11, 'g'); // prison defenders
 set(m0, 14, 12, 'M');             // Mittens' cell

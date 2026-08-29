@@ -49,8 +49,8 @@ export const MAPS = [
       '##.c..a...######',
       '##........######',
       '##G#############',
-      '#c.........B...#',
-      '#.S.#..g......g#',
+      '#c...H.....B...#',
+      '#.SH#..g......g#',
       '############.###',
       '#....a..#.a..g.#',
       '#E..c....Bc...M#',
@@ -231,10 +231,24 @@ export class Tunnel {
       // empty magazine): full mag, and any stalker camped near the entrance
       // gets sent back to its niche to recover.
       this.ammoInMag = PISTOL_MAG; this.reloadT = 0;
+      // Mercy resupply: after the grab takes your pistol, running the shotgun
+      // dry left you with claws, no shells, and ranged gunners on the only
+      // route -- a run that is over but never says so (loop 3 stalled exactly
+      // there, 34 cells from Mittens with 3 lives in hand). Dying weaponless
+      // now hands back enough to fight your way out.
+      if (this.pistolLost && this.shells <= 0) {
+        this.hasShotgun = true; this.shells = 4; this.weap = 'shotgun';
+        this.ev({ e: 'banner', k: 'gotShells' });
+      }
+      // Clear the spawn of EVERY live enemy, not just hiders (loop 3: killed
+      // 2.5s after respawning while standing still; another respawn put a
+      // knife-cat mid-lunge in my face). Hiders go home; chasers get pushed
+      // out and reset so they have to walk back in.
       for (const e2 of this.enemies) {
-        if (e2.dead || e2.kind !== 'ambush') continue;
-        if (Math.hypot(e2.x - this.px, e2.y - this.py) < 3.5) {
-          e2.x = e2.hx; e2.y = e2.hy; e2.st = 'recover'; e2.t = 0;
+        if (e2.dead || e2.kind === 'barrel') continue;
+        if (Math.hypot(e2.x - this.px, e2.y - this.py) < 4.5) {
+          if (e2.kind === 'ambush') { e2.x = e2.hx; e2.y = e2.hy; e2.st = 'hide'; }
+          e2.t = 0; e2.atkT = 1200; e2.aiming = 0; e2.burstT = 0;
         }
       }
       // name the killer on respawn, per cause -- loop-1: "all six deaths had
@@ -309,7 +323,10 @@ export class Tunnel {
       const s = this.script;
       s.t += dt;
       if (s.phase === 'appear' && s.t > 620) { s.phase = 'slap'; s.t = 0; this.ev({ e: 'sfx', n: 'sfx_knife' }); this.ev({ e: 'shake' }); this.ev({ e: 'banner', k: 'gunSlapped' }); }
-      else if (s.phase === 'slap' && s.t > 460) { s.phase = 'grapple'; s.t = 0; s.meter = 12; this.weap = 'claws'; this.pistolLost = true; this.ev({ e: 'hint', k: 'grabPrompt' }); }
+      // no 'grabPrompt' hint here: the mash meter in main.js already prints
+      // that exact string in big type above the bar, so the hint rendered it a
+      // second time at the bottom of the screen (loop 3: "renders twice")
+      else if (s.phase === 'slap' && s.t > 460) { s.phase = 'grapple'; s.t = 0; s.meter = 12; this.weap = 'claws'; this.pistolLost = true; }
       else if (s.phase === 'grapple') {
         // v13.2 softlock fix, found by driving the grapple directly: the meter
         // had NO FLOOR. Six slow seconds put it at -91, so escaping meant
@@ -937,17 +954,33 @@ export class Tunnel {
         // paired amber eyes floating in the dark, with a slow blink
         const blink = ((now / 2900 + s.x * 0.37 + s.y * 0.61) % 1) > 0.93;
         if (blink) continue;
-        const eh = HORIZON - (RH * 0.10) / d;
+        // Sit the eyeshine on the HEAD. Enemy sprites draw from
+        // y0 = HORIZON - (RH*0.49)/d at height (RH*0.74)/d, so eye level is
+        // about 18% down from the top of the sprite -- the old constant put
+        // the glow on the cat's chest, which read as buttons up close.
+        const eh = HORIZON - (RH * 0.36) / d;
         const gap = (RH * 0.055) / d, er = Math.max(0.8, (RH * 0.016) / d);
-        const ec = this.enemyKind === 'rat' ? '140,255,60' : '255,196,70';
-        const gl = sc.createRadialGradient(sx, eh, 0, sx, eh, gap * 2.4);
-        gl.addColorStop(0, `rgba(${ec},0.30)`);
+        // v13.3: amber-on-brown was invisible (loop 3 spotted GREEN rat eyes at
+        // range but never once saw the amber VC eyes across five deaths --
+        // amber sat on the same hue as the dirt walls). Both kinds now use a
+        // cold cyan-white core that shares no hue with the tunnel, sit on a
+        // dark backing disc so they pop against torchlight too, and pulse.
+        const ec = this.enemyKind === 'rat' ? '150,255,90' : '150,240,255';
+        const tw = 0.75 + 0.25 * Math.sin(now / 220 + s.x * 3);
+        sc.fillStyle = 'rgba(0,0,0,0.55)';
+        sc.beginPath(); sc.arc(sx, eh, gap * 1.5, 0, 7); sc.fill();
+        const gl = sc.createRadialGradient(sx, eh, 0, sx, eh, gap * 3.0);
+        gl.addColorStop(0, `rgba(${ec},${(0.5 * tw).toFixed(2)})`);
         gl.addColorStop(1, `rgba(${ec},0)`);
         sc.fillStyle = gl;
-        sc.beginPath(); sc.arc(sx, eh, gap * 2.4, 0, 7); sc.fill();
-        sc.fillStyle = `rgba(${ec},0.95)`;
-        sc.fillRect(sx - gap - er / 2, eh - er / 2, er, er);
-        sc.fillRect(sx + gap - er / 2, eh - er / 2, er, er);
+        sc.beginPath(); sc.arc(sx, eh, gap * 3.0, 0, 7); sc.fill();
+        const er2 = er * 1.35;
+        sc.fillStyle = `rgba(${ec},1)`;
+        sc.fillRect(sx - gap - er2 / 2, eh - er2 / 2, er2, er2);
+        sc.fillRect(sx + gap - er2 / 2, eh - er2 / 2, er2, er2);
+        sc.fillStyle = 'rgba(255,255,255,0.9)';
+        sc.fillRect(sx - gap - er2 / 4, eh - er2 / 4, er2 / 2, er2 / 2);
+        sc.fillRect(sx + gap - er2 / 4, eh - er2 / 4, er2 / 2, er2 / 2);
         continue;
       }
       if (s.kind === 'bolt') {
@@ -1320,7 +1353,11 @@ export class Tunnel {
       if (Math.abs(rel) > 2.6) rel = (this._navSide || (rel >= 0 ? 1 : -1)) * Math.abs(rel);
       else this._navSide = rel >= 0 ? 1 : -1;
       const cxp = W / 2 + Math.max(-1, Math.min(1, rel / (FOV * 0.7))) * (W * 0.34);
-      const cyp = H - 46;
+      // Compass moved to the TOP of the screen. At the bottom it sat directly
+      // behind the weapon sprite, so it was legible only while you were facing
+      // the WRONG way -- it vanished at the exact moment it said "you're
+      // aimed right" (loop 3). Nothing occludes the top strip.
+      const cyp = 86;
       const pulse = 0.6 + 0.4 * Math.sin(now / 260);
       ctx.save();
       ctx.translate(cxp, cyp);
