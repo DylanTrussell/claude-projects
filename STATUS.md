@@ -97,7 +97,7 @@ Currently **16/16** and **12/12** on repeat sweeps.
 
 ## Playtest round: 10 testers
 
-Seven have reported. What they found that was real, and fixed:
+All ten reported. What they found that was real, and fixed:
 
 - **The game looked crashed on window blur** — the PAUSED overlay was drawn in an
   animation frame that a blurred tab never runs. Two testers reported it as a
@@ -144,3 +144,35 @@ does not fix the run — the three "now" rows are the same build measured three
 times. Roughly ±2 on any cell. The shape is the signal: skilled players finish
 reliably, novices rarely, and the game is no longer unwinnable at every level,
 which is where it started.
+
+### The last two testers (a Metal Slug purist and a QA hunt)
+
+- **Every impact system in the engine was switched off for the gun you hold 90%
+  of the time.** `hitPauseMs`, `flashMs`, `shakeHit` were gated behind
+  `if (big)` inside the explosion branch, and `drawImgHit` — the white flash on a
+  hit enemy — was only ever called from `rails.js`. So the vehicle sections had
+  better hit feedback than the main mode, and shooting a rat produced no
+  reaction on the rat at all until it died. Shot kills now emit their own
+  impact beat and enemies flash white on every bullet.
+- **The two hardest ground enemies attacked with no visual warning.** The "!"
+  tell was drawn for grunts and plain aliens only; `ratbig` (a 330px/s charger)
+  and `ratmech` (40 HP, five-rocket salvo) telegraphed through a *sound effect*
+  and nothing else — silent, played muted, which is how most people play.
+- **The CONTINUE I added this morning was actively harmful.** It replayed the
+  opening cinematic (six seconds of dead input), teleported you ~456px backwards,
+  and at the tunnel checkpoint dropped you into a pit before you could press a
+  key. It re-ran already-finished rail and tunnel sections. Its "snapshot" stored
+  live object references, so it restored your *death* state, not the checkpoint.
+  Its record guard never fired. And continues were unlimited and free, so the
+  game could not be lost.
+- **The PAUSED overlay I "fixed" was still missing in the tunnel and the rails** —
+  the two sections where the screen keeps animating while every key is ignored.
+- **Dylan's "weird blue square"** was fixed in `render.js` and missed in
+  `rails.js`, where an unconditional teal debug rect was still drawing under the
+  rat line in the door-gun section.
+
+### What they tried hard and could NOT break
+
+Zero uncaught exceptions across ~37 scripted sessions. Conflicting inputs, a 1×1
+canvas resize, reload and history navigation, cutscene skip races, and a CDN
+blackout (the tunnel degrades to bundled art) all held.
