@@ -125,8 +125,13 @@ runs only started once the harness itself was trustworthy.
 |---|---|---|---|---|
 | first run, seed 7 only | LOSS | LOSS | LOSS | LOSS |
 | 6 seeds, mid-session | 0/6 | 1/6 | 2/6 | 3/6 |
-| 6 seeds, now | 3/6 | 4/6 | 5/6 | 4/6 |
+| now, sweep 1 | 0/6 | 2/6 | 6/6 | 5/6 |
+| now, sweep 2 | 2/6 | 4/6 | 5/6 | 5/6 |
+| now, sweep 3 | 1/6 | 3/6 | 5/6 | 5/6 |
 
-The first row is one seed, not six — every skill level lost that run, which is
-what prompted the investigation. n=6 cannot separate good from expert; the shape
-of the curve is the signal, not the individual cells.
+**Read these as noisy.** The harness is not deterministic: `sim.js` and
+`rails.js` call unseeded `Math.random()` for spawns and jitter, so a fixed seed
+does not fix the run — the three "now" rows are the same build measured three
+times. Roughly ±2 on any cell. The shape is the signal: skilled players finish
+reliably, novices rarely, and the game is no longer unwinnable at every level,
+which is where it started.
