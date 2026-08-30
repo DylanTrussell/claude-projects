@@ -105,7 +105,7 @@ export function makeGame(seed, seats) {
     boss: null, bossDone: false,
     heliEvac: null,
     events: [],
-    banners: { A: false, tunnel: false, B: false, boss: false, cheeseDrop: false, cheeseHint: false, trapHint: false, ufoHint: false, standby: false },
+    banners: { A: false, tunnel: false, B: false, boss: false, cheeseDrop: false, cheeseHint: false, trapHint: false, ufoHint: false, standby: false, pitHint: false },
     // scripted opening
     phase: 'insertion', phaseT: 0, phaseStep: 0,
     pinned: false, airSupport: 'none', airT: 0,
@@ -697,6 +697,19 @@ export function step(g, dt, inputs) {
   // Never bank one mid-fight: g.camLock >= 0 means a wave has the camera held,
   // and checkpointing there would hand a continue straight back into the
   // encounter that just killed the player, with the wave still live.
+  // v13.3: warn about the FIRST pit before the player is standing in it. The
+  // only pit guidance in the game was a death message, which is guidance that
+  // arrives one life too late -- and falls are ~80% of all ground deaths at
+  // every skill level.
+  if (!g.banners.pitHint) {
+    for (const [pa] of LEVEL.pits) {
+      if (camMid > pa - 520 && camMid < pa) {
+        g.banners.pitHint = true;
+        evPush(g, { e: 'hint', k: 'pitHint' });
+        break;
+      }
+    }
+  }
   if (g.camLock < 0 && camMid > g.checkpoint + 900) {
     const roll = Math.floor(camMid / 900) * 900;
     if (roll > g.checkpoint) g.checkpoint = roll;

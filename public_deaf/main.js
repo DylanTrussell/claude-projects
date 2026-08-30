@@ -78,7 +78,10 @@ function bindTouch(id, bit) {
   el.addEventListener('pointerleave', off);
 }
 ['tL:1', 'tR:2', 'tU:4', 'tD:8', 'tJ:16', 'tF:32', 'tG:64', 'tC:128'].forEach(s => { const [id, b] = s.split(':'); bindTouch(id, +b); });
-if (matchMedia('(pointer: coarse)').matches) $('touch').style.display = 'flex';
+// v13.3: a desktop tester had the translucent D-pad drawn over the game eating
+// a third of the screen -- some environments report a coarse pointer even with a
+// mouse present. Require coarse AND the absence of a fine pointer.
+if (matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches) $('touch').style.display = 'flex';
 
 // ---------- app state ----------
 let mode = 'boot'; // boot|title|brief|game|tally

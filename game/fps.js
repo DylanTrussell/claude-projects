@@ -480,6 +480,7 @@ export class Tunnel {
       return;
     }
     this.t += dt;
+    if (this.mittensFreed > 0) this.mittensFreed -= dt;   // the freeing beat
     const dts = dt / 1000;
     this._p = p; // barrels lit by the player's own shots need p for the blast
     for (const bl of this.blasts) bl.t += dt;
@@ -680,6 +681,14 @@ export class Tunnel {
       // the level's whole reason for existing gets a real beat: hitch, white
       // pop, screen shake -- the same punctuation a boss kill gets.
       this.hitStop = 140; this.flash = 300; this.ev({ e: 'shake' });
+      // v13.3: THREE separate playtesters independently said the same thing --
+      // "he vanishes instantly, replaced by a banner", "no face, no meow, no
+      // animation", "the emotional core of the level is a text popup". He was
+      // deleted from the sprite list the frame you touched him. He now stays on
+      // screen, stands up, and meows at you: a two-second beat where the thing
+      // the whole level exists for is actually visible happening.
+      this.mittensFreed = 2000;
+      this.ev({ e: 'sfx', n: 'meow_c' });
       // Mittens kept your pistol. Closes the "once the grab takes the gun I
       // could never get a gun again" hole (Dylan hit it when he missed the
       // shotgun) with a story beat instead of a floor pickup: rescuing your
@@ -1227,7 +1236,10 @@ export class Tunnel {
     for (const b2 of this.bolts) sprites.push({ x: b2.x, y: b2.y, kind: 'bolt' });
     for (const bl of this.blasts) if (bl.t >= 0) sprites.push({ x: bl.x, y: bl.y, kind: 'blast', bl });
     for (const it of this.items) if (!it.got) sprites.push({ x: it.x, y: it.y, kind: it.kind });
-    if (this.mittens && !this.result.rescued) sprites.push({ x: this.mittens.x, y: this.mittens.y, kind: 'mittens' });
+    // keep him on screen through the freeing beat, not just until the trigger
+    if (this.mittens && (!this.result.rescued || this.mittensFreed > 0)) {
+      sprites.push({ x: this.mittens.x, y: this.mittens.y, kind: 'mittens' });
+    }
     if (this.exit) sprites.push({ x: this.exit.x, y: this.exit.y, kind: 'exit' });
     for (const g of this.gore) sprites.push({ x: g.x, y: g.y, kind: 'gore', g });
     for (const s of sprites) s.dd = Math.hypot(s.x - this.px, s.y - this.py);
@@ -1476,7 +1488,10 @@ export class Tunnel {
       // down the corridor, and it brightens as you close so "getting warmer"
       // is visible rather than only a compass label.
       if (s.kind === 'mittens' && img) {
-        const glow = 0.45 + (this.mittensGlow || 0) * 0.55;
+        // during the freeing beat the halo blows out and he rises, so the
+        // rescue is something you WATCH rather than a banner over roots
+        const freeK = Math.max(0, (this.mittensFreed || 0)) / 2000;
+        const glow = 0.45 + (this.mittensGlow || 0) * 0.55 + freeK * 1.6;
         const pulse = 0.82 + Math.sin(now / 320) * 0.18;
         const my = y0 + size * 0.5;
         const gr = sc.createRadialGradient(sx, my, 0, sx, my, size * 1.15);

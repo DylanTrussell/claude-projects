@@ -204,6 +204,7 @@ Object.assign(STR, {
   diedShot: "KILLED BY ENEMY FIRE",
   diedTrap: "KILLED BY A PUNJI TRAP — jump the disturbed earth",
   diedPit: "FELL INTO THE SPIKES — jump the gaps",
+  pitHint: "SPIKE PIT AHEAD — SPACE TO JUMP IT",
   diedBoom: "KILLED BY A BLAST — keep clear of explosions",
   diedAbduct: "TAKEN BY A UFO — shoot it or stay out from under it",
   diedTunnel: "GUTTED IN THE DARK — watch for the eyeshine",

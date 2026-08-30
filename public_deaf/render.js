@@ -291,6 +291,31 @@ function drawGround(ctx, cam, inv) {
       ctx.moveTo(sx - cam, H - 4); ctx.lineTo(sx + 9 - cam, H - 64); ctx.lineTo(sx + 18 - cam, H - 4);
       ctx.fill();
     }
+    // v13.3: the pits are the single biggest killer in the game -- a teenage
+    // playtester finished two runs with 10 and 19 deaths and told me not one of
+    // them was to an enemy, "the level's main antagonist is the ground" -- and
+    // measurement agreed: ~80% of ground deaths at EVERY skill level are falls.
+    // The jump itself is not the problem (it clears even 200ms late); nothing
+    // warned you a hole was coming, and "FELL INTO THE SPIKES -- jump the gaps"
+    // only ever appeared AFTER it killed you. Hazard chevrons on both lips make
+    // the edge legible before you are standing on it.
+    for (const lip of [a, b]) {
+      const dir = lip === a ? 1 : -1;
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      for (let i = 0; i < 3; i++) {
+        const ex = lip - cam + dir * (6 + i * 13);
+        ctx.fillStyle = i === 0 ? '#FFC93C' : PAL.outline;
+        ctx.beginPath();
+        ctx.moveTo(ex, y0 + 3);
+        ctx.lineTo(ex + dir * 9, y0 + 12);
+        ctx.lineTo(ex, y0 + 21);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = '#FFC93C';
+      ctx.fillRect(lip - cam - (dir > 0 ? 0 : 4), y0, 4, 26);
+      ctx.restore();
+    }
   }
   if (inv) { ctx.fillStyle = 'rgba(60,140,80,0.10)'; ctx.fillRect(0, y0, W, H - y0); }
 }
