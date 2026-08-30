@@ -220,7 +220,19 @@ export async function loadAll(onProgress) {
   audio.ensure();
   for (const [id, file] of Object.entries(MANIFEST.audio || {})) {
     total++;
-    jobs.push(loadSound(audio.ctx, './assets/' + file).then(b => { SND[id] = b; tick(); }));
+    // v13.3: a single missing or mid-rebuild audio file used to reject here,
+    // Promise.all rejected with it, and the WHOLE GAME failed to boot on an
+    // "ASSET FAILURE: asset 404" screen. A playtester hit exactly that from one
+    // sfx_shrapnel.mp3 while the build directory was being rewritten underneath
+    // them. A sound that will not load is a missing sound effect, not a reason
+    // the game cannot start -- and sfx() already no-ops on an absent buffer
+    // (see `if (!SND[name]) return`). Log it and carry on.
+    jobs.push(
+      loadSound(audio.ctx, './assets/' + file)
+        .then(b => { SND[id] = b; })
+        .catch(e => { console.warn('sound failed, continuing without it:', id, e && e.message); })
+        .then(tick)
+    );
   }
   await Promise.all(jobs);
 }
