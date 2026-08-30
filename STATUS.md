@@ -83,8 +83,17 @@ contact in the dark was literally undodgeable.
 
 ## Gate
 
-`node tools/simtest.mjs` must print `RESULT: VICTORY`. It does, currently at
-~320s with 12/12 waves and the tunnel reporting `rescued=true`.
+```bash
+bash tools/gate.sh 12
+```
+
+**Do not trust a single `simtest` run.** It is non-deterministic — `sim.js` and
+`rails.js` call unseeded `Math.random()` for spawns, jitter and wave
+composition — and it sat at **7 passes in 12** for part of this session while
+every commit message quoted one green run. Three real softlocks were hiding in
+that noise. `tools/gate.sh` runs it N times and fails if any run fails.
+
+Currently **16/16** and **12/12** on repeat sweeps.
 
 ## Playtest round: 10 testers
 
