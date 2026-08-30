@@ -100,6 +100,10 @@ export const STR = {
   gotLife: "+1 LIFE",
   powFreed: "POW RESCUED!",
   bossWarning: "WARNING: BIG UGLY INCOMING",
+  // v13.3: the three new rats shipped with no player-facing explanation at all
+  teachRatjet: "ROCKET RATS — THEY FLY. HOLD W AND SHOOT UP",
+  teachRatbig: "BRUISER RAT — IT CHARGES FASTER THAN YOU RUN. JUMP IT",
+  teachRatmech: "RAT MECH — ARMOURED. GRENADES, OR RUN",
   // v11: PT-boat / surf / Chancellor Grimtail — game/boat.js and boss2.js
   // referenced these keys since v8/v9 but they were never added here (part
   // of why this content was never actually reachable — see changelog).

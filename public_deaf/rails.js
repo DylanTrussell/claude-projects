@@ -506,10 +506,17 @@ export class DoorGun extends RailBase {
 // ============================ SKYRAIDER ============================
 export class Skyraider extends RailBase {
   constructor() {
+    // v13.3 quota 34 -> 20. 34 was still unreachable: with the quota lifted and
+    // the full 52s run out, eight runs averaged 22.1 kills and PEAKED at 30, so
+    // the exit condition never once fired and the section was a flat 52-second
+    // ride for every player at every skill -- the longest single block in the
+    // game, and the one where skill bought nothing. 20 is hit around 25-35s by
+    // someone shooting well, so accuracy now buys real time; the 52s timer
+    // stays as the ceiling for everyone else.
     // quota 42 -> 34: with napalm halved below, 42 is out of reach (a naive
     // run now lands 22-30) and the section always ran its full timer again.
     // 34 sits just above a no-aim run, so it's the gun that gets you out early.
-    super(52000, 34);
+    super(52000, 20);
     this.py = 260; this.spd = 340;
     this.pips = 3; this.pipsMax = 3;
     // napalm 8 -> 4: measured, the dominant Skyraider strategy was to NOT fly

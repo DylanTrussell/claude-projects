@@ -43,7 +43,13 @@ export const LEVEL = {
   // the rifle for more than ~25s, and each special runs dry in 10-16s.
   crates: [ // breakable crates with pickups: x, kind
     [560, 'grenades'], [1180, 'shot'], [2100, 'tuna'], [2720, 'rocket'],
-    [3240, 'shot'], [4350, 'flame'], [4820, 'skip'], [5320, 'tuna'],
+    [3240, 'shot'], [4350, 'flame'], [4820, 'skip'],
+    // v13.3: the escalation block from 4200 to 6900 is where every measured
+    // game over happens, and the game's only spare life came from the POW at
+    // x=6700 -- i.e. AFTER the gauntlet that eats everyone's lives. A resource
+    // that arrives once it can no longer help is not a resource. One life
+    // crate now sits at the mouth of the ramp instead.
+    [4980, 'life'], [5320, 'tuna'],
     [5770, 'rocket'], [6080, 'grenades'], [6620, 'shot'], [7420, 'skip'],
   ],
 };
@@ -70,8 +76,13 @@ const WAVES = [
   { x: 4800, lock: 1, spawn: [['alien', 3, 'right'], ['ufo', 1, 'sky']] },
   { x: 5200, lock: 1, spawn: [['ratbig', 1, 'right']] },                                        // teach: the charger, solo
   { x: 5600, lock: 1, spawn: [['alien', 3, 'right'], ['ratjet', 2, 'sky'], ['alien', 2, 'left']] },
-  { x: 6050, lock: 1, spawn: [['ratmech', 1, 'right'], ['alien', 2, 'left']] },                  // teach: the mech
-  { x: 6450, lock: 1, spawn: [['alien', 3, 'right'], ['ufo', 2, 'sky'], ['ratbig', 1, 'left']] }, // exam B
+  // v13.3: this comment claimed a solo teaching wave and shipped a mech PLUS
+  // two aliens flanking from the left. The mech is the biggest HP jump in the
+  // game (40 against the previous hardest at 14) and it is the first thing you
+  // meet after 52 seconds of flying a plane -- it gets the clean introduction
+  // the ratjet and ratbig already got. The aliens move to the wave after.
+  { x: 6050, lock: 1, spawn: [['ratmech', 1, 'right']] },                                        // teach: the mech, SOLO
+  { x: 6450, lock: 1, spawn: [['alien', 3, 'right'], ['ufo', 2, 'sky'], ['ratbig', 1, 'left'], ['alien', 2, 'left']] }, // exam B (+ the pair moved off the mech's intro)
   { x: 6900, lock: 1, spawn: [['ratmech', 2, 'right'], ['ratjet', 3, 'sky']] },                  // the mech is now a mook
 ];
 
@@ -716,11 +727,21 @@ export function step(g, dt, inputs) {
       }
       if (w.lock) g.camLock = w.x + W * 0.55 + W * 0.45; // lock right edge ~ trigger + screen
       w.done = true;
-      if (w.x === 4800 && !g.banners.ufoHint) {
+      // v13.3: "HOLD W -- AIM UP" fired at wave 4800, but the first FLYING
+      // enemy is the ratjet at 4650 -- so the game taught you how to shoot
+      // upward one wave AFTER it first needed you to. Teach it at the ratjet,
+      // and keep the UFO line for the UFO.
+      if (w.x === 4650 && !g.banners.ufoHint) {
         g.banners.ufoHint = true;
-        evPush(g, { e: 'hint', k: 'ufoHint' });
         evPush(g, { e: 'hint', k: 'ctlAimUp' });
+        evPush(g, { e: 'hint', k: 'teachRatjet' });
       }
+      if (w.x === 4800) evPush(g, { e: 'hint', k: 'ufoHint' });
+      // Each new rat gets a line naming what it is and how it kills you. The
+      // ratmech is a 40hp unit against the 14 of the next hardest and the 3 of
+      // an alien, and had NO player-facing explanation anywhere in the game.
+      if (w.x === 5200) evPush(g, { e: 'hint', k: 'teachRatbig' });
+      if (w.x === 6050) evPush(g, { e: 'hint', k: 'teachRatmech' });
       if (w.x === 6450 && !g.banners.cheeseDrop) { // the cheese MISSION: one supply drop, used with intent
         // Two fixes here. (1) This used to set g.banners.cheeseHint, which is
         // the SAME flag applyPickup tests before firing the "throw it" hint --
