@@ -1,7 +1,7 @@
 // Boot, screens, input, and the fixed-timestep loop — single-player build.
 // (The co-op relay server and net client live in the repo for a future version.)
 import { CFG, C, BIND, PADBIND, W, H } from './config.js';
-import { STR, SUBS } from './strings.js';
+import { STR, SUBS, CUT_MEOWS } from './strings.js';
 
 // runtime subtitle driver: cues live in strings.js, never baked into the video
 function attachSubs(vid, subEl, cues) {
@@ -230,10 +230,24 @@ function playCutscene(which, then) {
   vid.src = VIDEO_URLS[which] || './assets/video/intro.mp4';
   vid.currentTime = 0;
   attachSubs(vid, $('cutsub'), SUBS[which]);
+  // Meow track: the cats' dialogue was subtitled but SILENT. Fire the meow
+  // samples off the video clock so they land on their lines, each at its own
+  // playbackRate so the two cats sound like different animals. Visuals
+  // untouched -- Dylan asked only for the sound.
+  const meows = (CUT_MEOWS[which] || []).map(m => ({ t: m[0], n: m[1], r: m[2], done: false }));
+  const meowTick = () => {
+    const now2 = vid.currentTime;
+    for (const m of meows) {
+      if (!m.done && now2 >= m.t && now2 < m.t + 1.2) { m.done = true; audio.sfx(m.n, 1.0, m.r); }
+    }
+  };
+  vid.addEventListener('timeupdate', meowTick);
+  vid._meowTick = meowTick;
   vid.play().catch(() => {});
   const done = () => {
     if (!cutsceneActive) return;
     cutsceneActive = false;
+    if (vid._meowTick) { vid.removeEventListener('timeupdate', vid._meowTick); vid._meowTick = null; }
     $('cutscene').style.display = 'none';
     touchPad(true);
     vid.pause();

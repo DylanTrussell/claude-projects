@@ -40,7 +40,7 @@ export class RailBase {
   hurt(p, amt) {
     this._p = p; // v13: draw() needs hull state for the damage smoke/flash
     if (this.hurtT > 0) return;
-    p.hp -= amt; this.hurtT = 900; this.shake = 14;
+    p.hp -= amt; this.hurtT = 900; this.flashT = 130; this.shake = 14;
     this.ev({ e: 'fpsHurt' }); this.ev({ e: 'sfx', n: 'sfx_explosion' });
     if (p.hp <= 0) {
       p.deaths++; p.lives--; p.hp = CFG.hpMax;
@@ -63,6 +63,7 @@ export class RailBase {
   stepCommon(dt, p) {
     if (p) this._p = p;
     this.t += dt; this.hurtT -= dt; this.fireT -= dt;
+    if (this.flashT > 0) this.flashT -= dt; // short hit pulse, separate from i-frames
     if (this.hsmoke) { for (const q of this.hsmoke) q.t += dt; this.hsmoke = this.hsmoke.filter(q => q.t < q.T); }
     this.shake = Math.max(0, this.shake - dt * 0.05);
     for (const b of this.booms) b.t += dt;
@@ -284,7 +285,13 @@ export class DoorGun extends RailBase {
       // feedback for taking a hit was the same red screen wash every mode uses,
       // so the aircraft itself looked untouched right up to death.
       // hurtT is set by RailBase.hurt(); p.hp/CFG.hpMax is the hull state.
-      const hurtK = Math.max(0, this.hurtT) / 900;
+      // Dylan: "when you get shot, the helicopter turns white. Make it so it
+      // turns colored the same way enemies do." The flash was tied to the
+      // 900ms INVULNERABILITY window, so a 190px airframe sat as a ~92%-opaque
+      // white cutout for nearly a second. Flash is now its own short timer
+      // (flashT, 130ms) like the enemies' 150ms, so the i-frames stay long
+      // while the visual is a quick pulse.
+      const hurtK = Math.max(0, this.flashT || 0) / 130;
       const hpK = Math.max(0, Math.min(1, (this._p ? this._p.hp : CFG.hpMax) / CFG.hpMax));
       // engine smoke below 60% hull, thickening as it drops
       if (hpK < 0.6) {

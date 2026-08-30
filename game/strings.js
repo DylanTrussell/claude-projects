@@ -134,6 +134,30 @@ export const SUBS = {
   victory: [],
 };
 
+// v13.3 (Dylan: "the long sentence that the American cat says in the cut scene
+// -- just make better meow sound effects... really funny ones with different
+// pitches"). The cats' dialogue is subtitled but silent; these are meows fired
+// under each line so they're actually SAYING it. [time, sfx, playbackRate].
+// Rates give each speaker a voice: Whiskers low-ish, Charlie higher.
+export const CUT_MEOWS = {
+  truce: [
+    [13.45, 'meow_a', 1.35],   // "What the hell is that?"  -- startled, high
+    [14.30, 'meow_c', 1.55],
+    [15.45, 'meow_a', 0.92],   // "Looks like we got a rat problem." -- deadpan
+    [16.40, 'meow_d', 0.85],
+    [17.55, 'meow_c', 1.15],   // "Well I know how to set traps."
+    [18.50, 'meow_a', 1.05],
+    // the long speech: a run of meows with a rising, ranting cadence
+    [19.95, 'meow_a', 0.88],
+    [20.75, 'meow_c', 1.10],
+    [21.45, 'meow_d', 0.95],
+    [22.10, 'meow_a', 1.22],
+    [22.85, 'meow_c', 1.40],
+    [23.45, 'meow_b', 0.80],   // "...Hell." -- the long warbling one
+    [24.45, 'meow_c', 1.62],   // "I'm in." -- squeaky little agreement
+  ],
+};
+
 Object.assign(STR, {
   controlsTitle: "CONTROLS",
   controlsMove: "LEFT HAND — Move: A/D · Aim up: hold W · Crouch / aim down: S · Jump: SPACE",

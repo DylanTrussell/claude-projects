@@ -51,6 +51,10 @@
   "sheet_hero_vc_run": "sheet_hero_vc_run_f9_173x150_g3x3_fps10_loop.png"
  },
  "audio": {
+  "meow_a": "meow_a.mp3",
+  "meow_b": "meow_b.mp3",
+  "meow_c": "meow_c.mp3",
+  "meow_d": "meow_d.mp3",
   "music_gunner": "music_gunner.mp3",
   "music_invasion": "music_invasion.mp3",
   "music_ratpatrol": "music_ratpatrol.mp3",

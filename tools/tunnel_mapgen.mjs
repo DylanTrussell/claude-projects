@@ -57,7 +57,10 @@ set(m0, 10, 1, 'a'); set(m0, 8, 3, 'a');   // fight room ambushers (seen across)
 // make it so the barrel explodes if you shoot it, and the enemy catches
 // fire." Barrel is now adjacent to the corner ambusher at (10,1), so one
 // shot at the drum cooks the cat lurking beside it.
-set(m0, 11, 1, 'B');
+// Dylan: "put multiple barrels, two or three, to make sure you hit at least
+// one." Three in the fight room, flanking BOTH ambushers, so almost any shot
+// down the room cooks something.
+set(m0, 11, 1, 'B'); set(m0, 9, 2, 'B'); set(m0, 7, 3, 'B');
 set(m0, 13, 1, 'T'); set(m0, 14, 1, 'H');  // secret loot
 set(m0, 12, 3, 'c');              // torch NEXT to the secret wall -- light draws the eye
 set(m0, 3, 5, 'c');               // grab-corridor torch, lights the way west

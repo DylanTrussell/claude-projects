@@ -272,7 +272,13 @@ function hurtPlayer(g, p, why, dmg) {
   evPush(g, { e: 'shake', m: CFG.shakeHit });
 }
 
-function killEnemy(g, e, big) {
+// cause: 'bullet' (default) | 'blast'. v13 made EVERY death play the 16-frame
+// explosion sheet -- Dylan: "when people get shot, they shouldn't blow up. The
+// rats should blow up into green blood and goo, and the regular soldiers
+// should just blow up into blood because they're getting shot." Shot enemies
+// now bleed and leave a body; only blasts detonate. Vehicles always detonate
+// because they are machines.
+function killEnemy(g, e, big, cause) {
   e.st = 'gone';
   const pts = e.k === 'boss' ? 5000 : e.k === 'ufo' ? 300 : e.k === 'heli' ? 800 : 100;
   g.score += pts;
@@ -280,8 +286,18 @@ function killEnemy(g, e, big) {
   // HUD, which on a phone is a couple of CSS pixels tall, so a good firefight
   // and a bad one felt identical. Float the points off the body instead.
   evPush(g, { e: 'score', x: e.x, y: e.y - 50, n: pts });
-  evPush(g, { e: 'boom', x: e.x, y: e.y - 30, big: big ? 1 : 0 });
-  evPush(g, { e: 'sfx', n: 'sfx_explosion' });
+  const machine = e.k === 'heli' || e.k === 'ufo' || e.k === 'boss';
+  const green = e.side === 'alien' && !machine;   // rat troopers bleed green
+  if (cause === 'blast' || machine) {
+    evPush(g, { e: 'boom', x: e.x, y: e.y - 30, big: big ? 1 : 0 });
+    evPush(g, { e: 'sfx', n: 'sfx_explosion' });
+    evPush(g, { e: 'gib', x: e.x, y: e.y - 40, green: green ? 1 : 0, n: 22, blast: 1 });
+  } else {
+    // shot: a wet burst and a body, no fireball
+    evPush(g, { e: 'gib', x: e.x, y: e.y - 40, green: green ? 1 : 0, n: 15, blast: 0, face: e.face || 1 });
+    evPush(g, { e: 'sfx', n: green ? 'sfx_gore' : 'sfx_shot' });
+    evPush(g, { e: 'blood', x: e.x, y: e.y - 30, big: 1, green: green ? 1 : 0 });
+  }
   // drops: their weapons, not their lunch — cheese is mission-issued, not confetti
   if (!g.rideOn) {
     if (e.k === 'alien' && g.rng() < 0.18) {
@@ -446,7 +462,7 @@ export function step(g, dt, inputs) {
         if (b2) { b2.p = CFG.raygunPierce; b2.lh = -1; }
         if (--p.ammo <= 0) p.weap = 'rifle';
         evPush(g, { e: 'sfx', n: 'sfx_raygun' });
-        evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng });
+        evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng, w: 'raygun' });
       } else if (p.weap === 'flame') { // short-range fire hose
         p.fireCd = CFG.flameCd;
         const [vx2, vy2] = aim(CFG.flameSpd, (g.rng() - 0.5) * 110);
@@ -463,7 +479,7 @@ export function step(g, dt, inputs) {
         fireBullet(g, mzX, mzY, vx2, vy2, p.weap === 'gatling' ? 2 : 1, 1);
         if (p.weap === 'gatling' && --p.ammo <= 0) { p.weap = 'rifle'; }
         evPush(g, { e: 'sfx', n: 'sfx_shot' });
-        evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng });
+        evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng, w: p.weap === 'gatling' ? 'gatling' : 'rifle' });
       }
     }
     if ((bits & C.GREN) && !(p.prevC & C.GREN) && p.grenCd <= 0 && p.gren > 0) {
@@ -743,7 +759,7 @@ export function step(g, dt, inputs) {
     e2.molten -= dt;
     e2.mTick = (e2.mTick || 0) - dt;
     if (e2.mTick <= 0) { e2.mTick = 300; e2.hp -= 1; evPush(g, { e: 'cheesecoat', x: e2.x, y: e2.y - 40 }); }
-    if (e2.molten <= 0 || e2.hp <= 0) { e2.molten = 0; if (e2.st !== 'gone') killEnemy(g, e2, 1); }
+    if (e2.molten <= 0 || e2.hp <= 0) { e2.molten = 0; if (e2.st !== 'gone') killEnemy(g, e2, 1, 'blast'); } // molten cheese cooks them
   }
   for (const f of g.fires) {
     f.t -= dt; f.tick -= dt;
@@ -755,7 +771,7 @@ export function step(g, dt, inputs) {
         if (Math.abs(e2.x - f.x) < 40 && Math.abs(e2.y - f.y) < 96) {
           e2.hp -= 1;
           evPush(g, { e: 'hit', x: e2.x, y: e2.y - 40 });
-          if (e2.hp <= 0) killEnemy(g, e2, 0);
+          if (e2.hp <= 0) killEnemy(g, e2, 0, 'bullet'); // allied grunt gunfire
         }
       }
     }
@@ -839,7 +855,7 @@ export function step(g, dt, inputs) {
             e2.hp -= dmg;
             evPush(g, { e: 'hit', x: b.x, y: b.y });
             if (e2.hp <= 0) {
-              if (e2.k === 'boss') winBoss(g, e2); else killEnemy(g, e2, e2.k === 'heli' || e2.k === 'ufo');
+              if (e2.k === 'boss') winBoss(g, e2); else killEnemy(g, e2, e2.k === 'heli' || e2.k === 'ufo', 'bullet');
             }
             if (--b.p <= 0) { b.on = 0; break; }
             continue;
@@ -848,7 +864,7 @@ export function step(g, dt, inputs) {
           e2.hp -= dmg;
           evPush(g, { e: 'hit', x: b.x, y: b.y });
           if (e2.hp <= 0) {
-            if (e2.k === 'boss') winBoss(g, e2); else killEnemy(g, e2, e2.k === 'heli' || e2.k === 'ufo');
+            if (e2.k === 'boss') winBoss(g, e2); else killEnemy(g, e2, e2.k === 'heli' || e2.k === 'ufo', 'bullet');
           }
           break;
         }
@@ -1014,7 +1030,7 @@ function explode(g, x, y, fromPlayer) {
         continue;
       }
       if (Math.abs(e2.x - x) < R && Math.abs(e2.y - y) < R) {
-        e2.hp -= 6; if (e2.hp <= 0) killEnemy(g, e2, 1);
+        e2.hp -= 6; if (e2.hp <= 0) killEnemy(g, e2, 1, 'blast'); // caught in a grenade/barrel blast
       }
     }
     for (const cr of g.crates) {
@@ -1122,14 +1138,30 @@ function stepEnemy(g, e2, dt, dts) {
       const dist = Math.abs(tx - e2.x);
       if (dist > 240 && !e2.tell) e2.x += e2.face * CFG.gruntSpd * dts;
       else if (e2.fireCd <= 0 && !e2.tell) e2.tell = CFG.aimTellMs; // visible aim-up before the shot
+      // BURST FIRE (Dylan: "they should be shooting automatic fire... there
+      // should be more bullets flying your way"). One round per 2.1s became a
+      // 4-round burst at 90ms. It stays fair because the aim vector is LOCKED
+      // when the telegraph starts and never re-solves: moving during the tell
+      // always works. Rounds 2-4 walk vertically like real recoil climb, so
+      // the burst reads as a rising line rather than random spray.
+      if (e2.burst > 0 && e2.burstCd <= 0) {
+        e2.burst--; e2.burstCd = 90;
+        const climb = [0, -6, 7, -3][3 - Math.min(3, e2.burst)] || 0;
+        const b3 = fireBullet(g, e2.x + e2.face * 26, e2.y - 52 + climb, e2.face * CFG.gruntBulletSpd, 0, 1, e2.burstFrom);
+        if (b3) b3.vy = (climb < 0 ? -22 : climb > 0 ? 22 : 0);
+        evPush(g, { e: 'sfx', n: 'sfx_shot' });
+        evPush(g, { e: 'muzzle', x: e2.x + e2.face * 28, y: e2.y - 52, up: 0, f: e2.face });
+      } else if (e2.burstCd > 0) e2.burstCd -= dt;
       if (e2.tell > 0) {
         e2.tell -= dt;
         if (e2.tell <= 0) {
           e2.tell = 0;
-          e2.fireCd = CFG.gruntFireCd + (g.rng() * 500);
-          fireBullet(g, e2.x + e2.face * 26, e2.y - 52, e2.face * CFG.gruntBulletSpd, 0, 1, shootPlayer ? 0 : 9);
-          evPush(g, { e: 'muzzle', x: e2.x + e2.face * 28, y: e2.y - 52, up: 0, f: e2.face });
-          evPush(g, { e: 'sfx', n: 'sfx_shot' });
+          e2.fireCd = CFG.gruntFireCd + (g.rng() * 600);
+          // concurrency cap: at most 3 grunts mid-burst on screen, so a big
+          // firefight can't produce an undodgeable wall of lead
+          const firing = g.enemies.filter(q => q.burst > 0 && q.st !== 'gone').length;
+          if (firing >= 3) { e2.fireCd = 400 + g.rng() * 400; }
+          else { e2.burst = 4; e2.burstCd = 0; e2.burstFrom = shootPlayer ? 0 : 9; }
         }
       }
       e2.y = groundAt(e2.x) === CFG.groundY ? CFG.groundY : e2.y; // grunts don't fall in pits (path around)

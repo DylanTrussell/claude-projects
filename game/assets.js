@@ -74,12 +74,15 @@ export const audio = {
     arr.push(now + 0.35); // approx one-shot length; good enough for thinning purposes
     return mult;
   },
-  sfx(name, vol = 1) {
+  // rate: playback speed = pitch. Lets one meow sample voice several cats at
+  // different pitches (see CUT_MEOWS in strings.js).
+  sfx(name, vol = 1, rate = 1) {
     if (!this.ctx || !SND[name]) return;
     const thin = this._voiceGain(name);
     if (thin == null) return; // past the concurrency cap for this sound — drop it, don't stack
     const s = this.ctx.createBufferSource();
     s.buffer = SND[name];
+    if (rate !== 1) s.playbackRate.value = rate;
     const g = this.ctx.createGain();
     g.gain.value = CFG.gainSfx * vol * thin;
     s.connect(g).connect(this.masterSfxGain);

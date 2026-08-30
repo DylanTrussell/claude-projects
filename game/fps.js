@@ -4,7 +4,7 @@
 // ambushers that burst out of the walls, DOOM gore, a scripted throat-rip
 // setpiece, and a light-shaft exit with a crawl-out animation.
 import { CFG, C, PAL, W, H } from './config.js';
-import { IMG, drawImg } from './assets.js';
+import { IMG, SHEET, drawImg } from './assets.js';
 
 const FOV = 66 * Math.PI / 180;
 const RW = 320, RH = 180;       // internal retro resolution
@@ -43,8 +43,8 @@ export const MAPS = [
     grid: [
       '################',
       '#P........aB#TH#',
-      '#...c.......#DD#',
-      '#######.a...c..#',
+      '#...c....B..#DD#',
+      '#######Ba...c..#',
       '########..######',
       '##.c..a..c######',
       '##c.......######',
@@ -100,6 +100,9 @@ export class Tunnel {
     this.torches = [];                // 'c' cells: flame landmarks along the main path
     this.bolts = [];                  // gunner projectiles {x,y,vx,vy,t}
     this.pops = [];                   // score popups {t,n}
+    this.blasts = [];                 // explosion-sheet billboards {x,y,t,s,z}
+    this.flash = 0;                   // white bloom after a blast
+    this.hitStop = 0;                 // brief freeze on impact
     this.mittens = null; this.exit = null; this.grabCell = null;
     this.bloodWalls = new Set();      // cells whose wall turned bloody
     this.pools = [];                  // floor blood pools [x,y,r]
@@ -118,7 +121,10 @@ export class Tunnel {
         else if (c === 'g') this.enemies.push({ kind: 'gun', x: cx, y: cy, hp: 3, st: 'guard', t: 0, atkT: 0, dead: 0, animT: 0, aimT: 0, boltCd: 600, flash: 0 });
         // barrel: DOOM's finest. Shootable, clawable, chain-reacts, and hurts
         // whoever is standing next to it -- including you.
-        else if (c === 'B') this.enemies.push({ kind: 'barrel', x: cx, y: cy, hp: 2, st: 'guard', t: 0, atkT: 0, dead: 0, animT: 0, fuse: 0 });
+        // hp 1: Dylan shot a barrel and "it didn't explode, it just turned into
+        // little sparks" -- it had 2hp against a 1-damage pistol, so a single
+        // hit only ever chipped it. One shot pops it now.
+        else if (c === 'B') this.enemies.push({ kind: 'barrel', x: cx, y: cy, hp: 1, st: 'guard', t: 0, atkT: 0, dead: 0, animT: 0, fuse: 0 });
         else if (c === 'M') this.mittens = { x: cx, y: cy };
         else if (c === 'S') this.items.push({ x: cx, y: cy, kind: 'shotgun', got: 0 });
         else if (c === 'T') this.items.push({ x: cx, y: cy, kind: 'tuna', got: 0 });
@@ -297,9 +303,20 @@ export class Tunnel {
 
   step(bits, dt, p) {
     if (this.done) return;
+    // hit-stop: freeze the sim for a few frames on a blast so the impact
+    // reads, the way Metal Slug does. Effects keep animating.
+    if (this.hitStop > 0) {
+      this.hitStop -= dt;
+      for (const bl of this.blasts) bl.t += dt;
+      if (this.flash > 0) this.flash -= dt;
+      return;
+    }
     this.t += dt;
     const dts = dt / 1000;
     this._p = p; // barrels lit by the player's own shots need p for the blast
+    for (const bl of this.blasts) bl.t += dt;
+    this.blasts = this.blasts.filter(bl => bl.t < 620);
+    if (this.flash > 0) this.flash -= dt;
     this.fireCd -= dt; this.meleeT -= dt; this.fireT -= dt; this.hurtT -= dt; this.pumpT -= dt;
     this.clawT = (this.clawT || 0) - dt; this.clawBlood = (this.clawBlood || 0) - dt;
     if (this.vignette) { this.vignette.t += dt; if (this.vignette.t > this.vignette.T) this.vignette = null; }
@@ -643,6 +660,16 @@ export class Tunnel {
     e.dead = 1; e.noCorpse = 1;
     this.ev({ e: 'sfx', n: 'sfx_explosion' });
     this.ev({ e: 'shake' });
+    // A REAL fireball, using the same 16-frame sheet the rest of the game
+    // uses -- Dylan: "there's a big explosion that looks cool and looks like
+    // the other explosions in the game". The tunnel previously had no
+    // explosion at all: it only sprayed gore particles, which is why a shot
+    // barrel read as "little sparks". Staggered triple burst so it blooms.
+    this.blasts.push({ x: e.x, y: e.y, t: 0, s: 2.6, z: 0.45 });
+    this.blasts.push({ x: e.x - 0.22, y: e.y + 0.18, t: -110, s: 1.7, z: 0.75 });
+    this.blasts.push({ x: e.x + 0.24, y: e.y - 0.15, t: -190, s: 1.9, z: 0.25 });
+    this.flash = 420;                     // white-hot screen bloom
+    this.hitStop = 90;                    // brief freeze so the hit lands
     // molten cheese-oil everywhere: mixed dirt + yellow gore, scorch on the floor
     for (let i = 0; i < 22; i++) {
       this.gore.push({ x: e.x, y: e.y, z: 0.2 + Math.random() * 0.7, vx: (Math.random() - 0.5) * 4.4, vy: (Math.random() - 0.5) * 4.4, vz: 1.2 + Math.random() * 2.6, t: 900, dirt: i % 3 === 0 ? 1 : 0, chz: i % 3 !== 0 ? 1 : 0 });
@@ -968,6 +995,7 @@ export class Tunnel {
     }
     for (const t2 of this.torches) sprites.push({ x: t2.x, y: t2.y, kind: 'torch', tc: t2 });
     for (const b2 of this.bolts) sprites.push({ x: b2.x, y: b2.y, kind: 'bolt' });
+    for (const bl of this.blasts) if (bl.t >= 0) sprites.push({ x: bl.x, y: bl.y, kind: 'blast', bl });
     for (const it of this.items) if (!it.got) sprites.push({ x: it.x, y: it.y, kind: it.kind });
     if (this.mittens && !this.result.rescued) sprites.push({ x: this.mittens.x, y: this.mittens.y, kind: 'mittens' });
     if (this.exit) sprites.push({ x: this.exit.x, y: this.exit.y, kind: 'exit' });
@@ -1027,6 +1055,28 @@ export class Tunnel {
         sc.fillStyle = 'rgba(255,255,255,0.9)';
         sc.fillRect(sx - gap - er2 / 4, eh - er2 / 4, er2 / 2, er2 / 2);
         sc.fillRect(sx + gap - er2 / 4, eh - er2 / 4, er2 / 2, er2 / 2);
+        continue;
+      }
+      if (s.kind === 'blast') {
+        // the game's own 16-frame explosion sheet, billboarded into the
+        // raycaster so a tunnel blast looks like every other blast
+        const es = SHEET.sheet_explosion;
+        const size = (RH * 0.95 * s.bl.s) / d;
+        const cy2 = HORIZON + (RH * 0.5) / d - (s.bl.z * RH) / d;
+        if (es) {
+          const fr = Math.min(es.frames - 1, Math.floor(s.bl.t / (1000 / es.fps)));
+          const sxs = (fr % es.cols) * es.cw, sys = Math.floor(fr / es.cols) * es.ch;
+          try { sc.drawImage(es.img, sxs, sys, es.cw, es.ch, sx - size / 2, cy2 - size / 2, size, size); } catch (_) {}
+        } else {
+          const k2 = Math.min(1, s.bl.t / 500);
+          const r2 = size * 0.5 * (0.25 + k2 * 0.75);
+          const gr2 = sc.createRadialGradient(sx, cy2, 0, sx, cy2, r2);
+          gr2.addColorStop(0, `rgba(255,${(240 - k2 * 150) | 0},180,${(1 - k2).toFixed(2)})`);
+          gr2.addColorStop(0.6, `rgba(255,${(140 - k2 * 90) | 0},40,${(0.8 * (1 - k2)).toFixed(2)})`);
+          gr2.addColorStop(1, 'rgba(120,40,10,0)');
+          sc.fillStyle = gr2;
+          sc.beginPath(); sc.arc(sx, cy2, r2, 0, 7); sc.fill();
+        }
         continue;
       }
       if (s.kind === 'bolt') {
@@ -1278,6 +1328,13 @@ export class Tunnel {
       return; // no viewmodel/hud during the exit
     }
 
+    // blast bloom: a hot white wash that decays fast, so an explosion lights
+    // the whole corridor for an instant
+    if (this.flash > 0) {
+      const k = this.flash / 420;
+      ctx.fillStyle = `rgba(255,236,190,${(0.55 * k * k).toFixed(3)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
     // ---- screen blood splats ----
     for (const sp of this.splats) {
       ctx.fillStyle = `rgba(150,12,8,${Math.min(0.55, sp.t / 1200)})`;

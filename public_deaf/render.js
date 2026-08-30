@@ -42,6 +42,31 @@ export function fxEvent(ev) {
     case 'score':
       FX.scores.push({ x: ev.x, y: ev.y, n: ev.n | 0, t: 0, T: 850 });
       break;
+    // v13.3 death matter. Shot = a directional wet burst that leaves the body;
+    // blast = fast radial gibs that outrun the fireball. Rats throw GREEN goo
+    // that hangs (low gravity, high drag) and glows; cats throw red blood that
+    // falls fast. The two read differently by motion, not just colour.
+    case 'gib': {
+      const green = !!ev.green, blast = !!ev.blast;
+      const n = Math.min(30, ev.n | 0);
+      for (let i = 0; i < n; i++) {
+        const a = blast
+          ? Math.random() * Math.PI * 2                       // radial
+          : (ev.face >= 0 ? -0.6 : Math.PI + 0.6) + (Math.random() - 0.5) * 1.2; // cone along the shot
+        const sp = blast ? 220 + Math.random() * 340 : 140 + Math.random() * 280;
+        FX.parts.push({
+          on: 1, x: ev.x, y: ev.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - (blast ? 120 : 40),
+          g: green ? 400 : 900,                                // goo hangs, blood drops
+          drag: green ? 0.85 : 1,
+          r: green ? 3 + Math.random() * 4 : 2.5 + Math.random() * 3,
+          t: green ? 550 + Math.random() * 350 : 380 + Math.random() * 240,
+          T: green ? 900 : 620,
+          kind: green ? 4 : 3,                                 // 4 = glowing goo, 3 = blood
+        });
+      }
+      break;
+    }
     case 'boom': {
       const big = ev.big | 0;
       const n = big === 2 ? 44 : big ? 26 : 12;
@@ -85,7 +110,15 @@ export function fxEvent(ev) {
       // ang comes from sim.js (radians; 0 = facing right). Fall back to the old
       // up/f-derived guess for any caller that hasn't been updated to send it.
       const ang = ev.ang != null ? ev.ang : (ev.up ? -Math.PI / 2 : (ev.f < 0 ? Math.PI : 0));
-      FX.flashes.push({ x: ev.x, y: ev.y, ang, t: 90, T: 90 });
+      // per-weapon size/shape: the shotgun is short and WIDE (you see the
+      // spread in the flash), the gatling is small and flickery, the rifle is
+      // the baseline. w comes from sim.js where the shot is fired.
+      const W_ = ev.w || 'rifle';
+      const spec = W_ === 'shotgun' ? { len: 62, core: 20, wide: 1, T: 100 }
+        : W_ === 'gatling' ? { len: 34, core: 11, wide: 0, T: 50 }
+        : W_ === 'pistol' ? { len: 30, core: 10, wide: 0, T: 70 }
+        : { len: 46, core: 14, wide: 0, T: 84 };
+      FX.flashes.push({ x: ev.x, y: ev.y, ang, t: spec.T, T: spec.T, len: spec.len, core: spec.core, wide: spec.wide, seed: Math.random() * 6.28 });
       // embers kicking out along the barrel axis, plus a little scatter
       for (let i = 0; i < 5; i++) {
         const spread = (Math.random() - 0.5) * 0.9;
@@ -177,7 +210,9 @@ export function fxUpdate(dt) {
     if (!p.on) continue;
     p.t -= dt;
     if (p.t <= 0) { p.on = 0; continue; }
-    p.vy += (p.kind === 2 ? -20 : 900) * dt / 1000;
+    // per-particle gravity/drag: smoke rises, goo hangs, blood falls
+    p.vy += (p.kind === 2 ? -20 : (p.g !== undefined ? p.g : 900)) * dt / 1000;
+    if (p.drag) { const d2 = Math.pow(p.drag, dt / 100); p.vx *= d2; p.vy *= d2; }
     p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000;
   }
   FX.shake = Math.max(0, FX.shake - dt * 0.02);
@@ -993,41 +1028,94 @@ export function render(ctx, view, t, myPid, dbg) {
   for (const p of view.pl || []) drawPlayerEnt(ctx, p, cam, t, myPid);
   for (const b of view.bl || []) drawBullet(ctx, b, cam);
 
-  // muzzle flashes — bright core + 8-point star burst + forward-biased cone,
-  // all oriented along the barrel via ang. Metal-Slug-inspired: punchy, brief,
-  // reads instantly even at 60fps.
+  // Muzzle flashes. v13.3 (Dylan: "the muzzle flashes are really weak, they're
+  // little circles"). The old version was a flat 50%-alpha triangle, two hard
+  // filled diamonds and a 7px white dot -- fixed size for every weapon, and it
+  // emitted no light. Now: a light BLEED onto the scene, a gradient cone, a
+  // long-axis star, and a hot core, on a white->cream->amber->ember ramp so
+  // frame 0 is near-white and the last frame is nearly dead.
   for (const fl of FX.flashes) {
-    const k = fl.t / fl.T; // 1 -> 0 over the flash's life
+    const k = Math.max(0, fl.t / fl.T);          // 1 -> 0
+    const f = 1 - k;                              // 0 -> 1 through the life
+    const L = fl.len || 46;                       // flash length, per weapon
+    const core = fl.core || 14;
+    const x0 = fl.x - cam, y0 = fl.y;
+    // colour ramp
+    const ramp = [
+      ['#ffffff', '#fff3d0', 1.00],
+      ['#fffbe6', '#ffd27a', 0.95],
+      ['#ffe8a8', '#ff9a3c', 0.72],
+      ['#ffb85c', '#e0641a', 0.42],
+      ['#e07a24', '#8a3208', 0.16],
+    ];
+    const seg = Math.min(ramp.length - 1, Math.floor(f * ramp.length));
+    const [cCore, cTip, cA] = ramp[seg];
     ctx.save();
-    ctx.translate(fl.x - cam, fl.y);
-    ctx.rotate(fl.ang);
-    const s = (0.55 + 0.45 * (1 - k)) * (0.6 + 0.4 * k); // quick punch-in then shrink
-    ctx.globalAlpha = Math.max(0, k);
-    // forward cone (translucent, biased down the barrel axis)
-    ctx.fillStyle = 'rgba(255,224,138,0.5)';
-    ctx.beginPath();
-    ctx.moveTo(2, 0);
-    ctx.lineTo(30 * s + 14, -16 * s);
-    ctx.lineTo(30 * s + 14, 16 * s);
-    ctx.closePath(); ctx.fill();
-    // 8-point star burst (two overlapping 4-point diamonds, one rotated 45°)
-    ctx.fillStyle = PAL.boom2;
-    for (let rot = 0; rot < 2; rot++) {
-      ctx.save();
-      ctx.rotate(rot * Math.PI / 4);
-      ctx.beginPath();
-      ctx.moveTo(20 * s, 0); ctx.lineTo(4 * s, 4 * s);
-      ctx.lineTo(0, 20 * s); ctx.lineTo(-4 * s, 4 * s);
-      ctx.lineTo(-20 * s, 0); ctx.lineTo(-4 * s, -4 * s);
-      ctx.lineTo(0, -20 * s); ctx.lineTo(4 * s, -4 * s);
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
+    // 1. LIGHT BLEED -- a warm pool on the scene, first ~2 frames only. This is
+    //    what makes the flash emit light instead of sitting on top of it.
+    if (f < 0.4) {
+      const br = L * 3.2, ba = 0.30 * (1 - f / 0.4);
+      const bg = ctx.createRadialGradient(x0, y0, 0, x0, y0, br);
+      bg.addColorStop(0, `rgba(255,190,90,${ba.toFixed(3)})`);
+      bg.addColorStop(1, 'rgba(255,190,90,0)');
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.arc(x0, y0, br, 0, 7); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
     }
-    // hot white core
-    ctx.fillStyle = '#fff3d0';
-    ctx.beginPath(); ctx.arc(0, 0, 7 * s, 0, 7); ctx.fill();
+    ctx.translate(x0, y0);
+    ctx.rotate(fl.ang);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = cA;
+    // 2. FLAME CONE -- gradient down the barrel axis, not a flat triangle
+    const grow = 0.55 + 0.75 * Math.sin(Math.min(1, f * 1.6) * Math.PI * 0.5);
+    const cl = L * grow, ch = (fl.wide ? 0.62 : 0.34) * cl;
+    const cg = ctx.createLinearGradient(0, 0, cl, 0);
+    cg.addColorStop(0, cCore);
+    cg.addColorStop(0.45, cTip);
+    cg.addColorStop(1, 'rgba(180,60,10,0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.moveTo(0, -core * 0.42);
+    ctx.quadraticCurveTo(cl * 0.55, -ch, cl, 0);
+    ctx.quadraticCurveTo(cl * 0.55, ch, 0, core * 0.42);
+    ctx.closePath(); ctx.fill();
+    // 3. TONGUES -- per-shot randomised so no two flashes are identical
+    const seed = fl.seed || 0;
+    for (let i = 0; i < (fl.wide ? 6 : 4); i++) {
+      const a2 = (i / (fl.wide ? 6 : 4) - 0.5) * (fl.wide ? 1.25 : 0.72) + Math.sin(seed + i * 2.7) * 0.10;
+      const tl = cl * (0.55 + 0.45 * Math.abs(Math.sin(seed * 1.7 + i)));
+      ctx.fillStyle = cTip;
+      ctx.globalAlpha = cA * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a2) * tl, Math.sin(a2) * tl);
+      ctx.lineTo(Math.cos(a2 + 0.13) * tl * 0.55, Math.sin(a2 + 0.13) * tl * 0.55);
+      ctx.closePath(); ctx.fill();
+    }
+    // 4. STAR -- long down the barrel, short across it (a real flash is far
+    //    longer than it is tall; the old equal-length star read as a decal)
+    if (f < 0.55) {
+      const sa = cA * (1 - f / 0.55);
+      ctx.globalAlpha = sa;
+      ctx.strokeStyle = 'rgba(255,246,214,0.85)';
+      ctx.lineWidth = 3 * (1 - f / 0.55) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(-L * 0.30, 0); ctx.lineTo(L * 0.85, 0);
+      ctx.moveTo(0, -L * 0.40); ctx.lineTo(0, L * 0.40);
+      ctx.stroke();
+    }
+    // 5. CORE
+    ctx.globalAlpha = cA;
+    const cr = core * (1 - f * 0.55);
+    const cgr = ctx.createRadialGradient(0, 0, 0, 0, 0, cr);
+    cgr.addColorStop(0, cCore);
+    cgr.addColorStop(1, 'rgba(255,180,80,0)');
+    ctx.fillStyle = cgr;
+    ctx.beginPath(); ctx.arc(0, 0, cr, 0, 7); ctx.fill();
     ctx.restore();
   }
+  ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
 
   // melee slashes
@@ -1106,10 +1194,30 @@ export function render(ctx, view, t, myPid, dbg) {
   for (const p of FX.parts) {
     if (!p.on) continue;
     const a = Math.max(0, p.t / p.T);
+    // kind 3 = blood, kind 4 = alien goo. Both stay fat as they fly (they're
+    // matter, not sparks) and goo gets an additive glow pass so it reads as
+    // luminous slime rather than green dots.
+    if (p.kind === 3 || p.kind === 4) {
+      const rr = p.r * (0.55 + a * 0.45);
+      if (p.kind === 4) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = a * 0.30;
+        ctx.fillStyle = '#8CFF3B';
+        ctx.beginPath(); ctx.arc(p.x - cam, p.y, rr * 1.7, 0, 7); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.globalAlpha = Math.min(1, a * 1.4);
+      ctx.fillStyle = p.kind === 4
+        ? (p.r > 5 ? '#5fd41f' : '#2f7d12')
+        : (p.r > 4 ? '#c8372d' : '#8e1f18');
+      ctx.beginPath(); ctx.arc(p.x - cam, p.y, rr, 0, 7); ctx.fill();
+      continue;
+    }
     ctx.globalAlpha = p.kind === 2 ? a * 0.6 : a;
     ctx.fillStyle = p.col;
     ctx.beginPath(); ctx.arc(p.x - cam, p.y, p.r * (p.kind === 2 ? 1.6 - a * 0.6 : a), 0, 7); ctx.fill();
   }
+  ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
 
   // v11 REMOVED (Dylan, twice now: "the screen is dark AFTER LEAVING THE
