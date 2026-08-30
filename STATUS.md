@@ -85,3 +85,42 @@ contact in the dark was literally undodgeable.
 
 `node tools/simtest.mjs` must print `RESULT: VICTORY`. It does, currently at
 ~320s with 12/12 waves and the tunnel reporting `rescued=true`.
+
+## Playtest round: 10 testers
+
+Seven have reported. What they found that was real, and fixed:
+
+- **The game looked crashed on window blur** — the PAUSED overlay was drawn in an
+  animation frame that a blurred tab never runs. Two testers reported it as a
+  crash.
+- **You could walk through walls in the tunnel** on a long frame, into a sealed
+  secret and across the only corridor joining its two halves. Movement is swept
+  now: the old code went through all 48 one-thick walls, the new through none.
+- **The compass never advanced.** `done: () => this.script && this.script.done`
+  returns *null* when script is null, which is falsy — so the first waypoint
+  could never be satisfied. A tester watched it read "GUN, THEN MITTENS · 16"
+  *after* rescuing Mittens, counting up as they walked away. Verified: the chain
+  now walks grab corner → shotgun → MITTENS → EXIT.
+- **The touch build was broken on every current iPhone.** The 2×2 button grid was
+  gated at 820px; an iPhone 14/15/16 in landscape is 844. And `.panel` had no
+  border-box, so the briefing rendered 706px wide inside a 667px phone with GO GO
+  GO! below the fold — a phone player could not start the game.
+- **The rotate gate had no escape**, so anyone with rotation lock on was stuck at
+  the front door permanently.
+- **My chroma cleanup missed `assets/sheets/` entirely** — 8,619 magenta rim
+  pixels on the explosion sheet, a purple corona on every blast in the game.
+  `assemble.sh` now checks the whole tree.
+- **Colour-only signals**: the automap's Mittens and exit pips differed only by
+  two colours that are 1.10:1 apart under deuteranopia; the health meter's
+  warning tier was invisible for the same reason; Act II's green bolts on a green
+  sky killed the reviewer twice unseen.
+- **The dodge window was below the reaction floor** at 380ms while the tunnel
+  already used 560ms and called it honest.
+
+Skill-ladder win rate across six seeds, before and after this session:
+
+| | novice | casual | good | expert |
+|---|---|---|---|---|
+| start of session | 0/6 | 0/6 | 0/6 | 0/6 (unwinnable) |
+| after balance work | 0/6 | 1/6 | 2/6 | 3/6 |
+| now | 3/6 | 4/6 | 5/6 | 4/6 |
