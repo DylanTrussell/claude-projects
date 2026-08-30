@@ -486,7 +486,13 @@ export class Tunnel {
     for (const bl of this.blasts) bl.t += dt;
     this.blasts = this.blasts.filter(bl => bl.t < 620);
     if (this.flash > 0) this.flash -= dt;
-    this.fireCd -= dt; this.meleeT -= dt; this.fireT -= dt; this.hurtT -= dt; this.pumpT -= dt;
+    // v13.3 QA: these counted down forever with no floor -- fireT was measured
+    // at -93386 after 90 seconds of standing still. Harmless in practice, but
+    // they feed divisions in the viewmodel (fireT / 70) and there is no reason
+    // to carry unbounded negatives around. Floor them.
+    const dec = (v) => Math.max(-1000, v - dt);
+    this.fireCd = dec(this.fireCd); this.meleeT = dec(this.meleeT); this.fireT = dec(this.fireT);
+    this.hurtT = dec(this.hurtT); this.pumpT = dec(this.pumpT);
     this.clawT = (this.clawT || 0) - dt; this.clawBlood = (this.clawBlood || 0) - dt;
     if (this.vignette) { this.vignette.t += dt; if (this.vignette.t > this.vignette.T) this.vignette = null; }
     for (const d2 of this.dmgDir) d2.t -= dt;

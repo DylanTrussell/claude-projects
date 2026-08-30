@@ -148,7 +148,9 @@ function stepBike(g, p, bits, dt, dts) {
   if (jp && p.onG) { p.vy = CFG.bikeJumpVy; p.onG = false; }
   p.vy += CFG.gravity * dts;
   p.x += p.vx * dts; p.y += p.vy * dts;
-  p.x = Math.max(g.cam + 30, Math.min(p.x, CFG.worldLen - 30));
+  // v13.3 QA: the camera bound was applied OUTSIDE the world bound, so it
+  // could shove the player past worldLen into empty space. World wins.
+  p.x = Math.min(Math.max(g.cam + 30, Math.min(p.x, CFG.worldLen - 30)), CFG.worldLen - 30);
   p.onG = false;
   const gy = groundAt(p.x);
   if (p.y >= gy) { p.y = gy; p.vy = 0; p.onG = true; }
@@ -306,7 +308,11 @@ function platformUnder(g, x, y, vy) {
 //
 // A respawn point now has to carry RUN_UP of clear ground ahead of it, which
 // is what makes the very next jump possible.
-function safeGroundX(g, want) {
+function safeGroundX(g, want, fellInto) {
+  // v13.3 QA: "falling into the long gap skips it" -- the +/-520px search from a
+  // death inside the 5100-5600 chasm found ground at ~5610, i.e. PAST the whole
+  // floating-island sequence. Dying was a faster way across than playing it.
+  // When we know which pit swallowed the player, respawn strictly before it.
   const RUN_UP = 150;   // enough to be at full run before the lip (run 260px/s)
   const clearAhead = x => {
     for (let a = 0; a <= RUN_UP; a += 25) if (groundAt(x + a) !== CFG.groundY) return false;
@@ -317,6 +323,7 @@ function safeGroundX(g, want) {
       for (const s of d === 0 ? [1] : [1, -1]) {
         const x = want + d * s;
         if (x < 40 || x > CFG.worldLen - 40) continue;
+        if (fellInto && x > fellInto[0]) continue;      // never land past the pit you fell in
         if (groundAt(x) !== CFG.groundY) continue;
         if (g.traps.some(tr => tr.armed && Math.abs(tr.x - x) < 60)) continue;
         if (needRunway && !clearAhead(x)) continue;
@@ -427,7 +434,11 @@ export function step(g, dt, inputs) {
           // edge of a 1280-wide camera, half-cropped and often right on top of
           // whatever just killed you. Playtesters twice lost track of their own
           // character on respawn.
-          p.x = safeGroundX(g, Math.max(g.cam + 260, g.checkpoint + 100)); p.y = 100; p.vx = 0; p.vy = 0;
+          // if a pit killed them, hand safeGroundX the pit so it cannot
+          // respawn them on the FAR side of it (see the note in safeGroundX)
+          const fellInto = p.deathKind === 'pit'
+            ? LEVEL.pits.find(([a2, b2]) => p.x >= a2 - 40 && p.x <= b2 + 40) : null;
+          p.x = safeGroundX(g, Math.max(g.cam + 260, g.checkpoint + 100), fellInto); p.y = 100; p.vx = 0; p.vy = 0;
           // Tell the player what killed them. deathKind has been set since v13
           // but ONLY ever picked a ragdoll animation -- the player was never
           // actually told, so repeated deaths taught nothing. Both playtesters
@@ -473,7 +484,7 @@ export function step(g, dt, inputs) {
 
     p.vy += CFG.gravity * dts;
     p.x += p.vx * dts; p.y += p.vy * dts;
-    p.x = Math.max(g.cam + 30, Math.min(p.x, g.camLock > 0 ? g.camLock - 30 : CFG.worldLen - 30));
+    p.x = Math.min(Math.max(g.cam + 30, Math.min(p.x, g.camLock > 0 ? g.camLock - 30 : CFG.worldLen - 30)), CFG.worldLen - 30);
 
     // ground / platforms (incl. bobbing islands — snap while riding them)
     const wasG = p.onG;
@@ -1297,7 +1308,11 @@ function stepEnemy(g, e2, dt, dts) {
   // y=1120, 500px below the world, while the player racked up 100 deaths
   // against a locked camera. This made the BUILD GATE ITSELF fail 5 runs in 12.
   // Anything that leaves the world is gone, whatever kind it is.
-  if (e2.st !== 'gone' && e2.y > H + 260) { e2.st = 'gone'; return; }
+  // groundY + 240, not H + 260: a FLYER hovering low over the chasm sat at
+  // y=924 -- below the visible screen but above the old threshold -- where the
+  // player could never reach it, so it held its wave open exactly like the
+  // falling ones did. Nothing should ever be that far below the floor.
+  if (e2.st !== 'gone' && e2.y > CFG.groundY + 240) { e2.st = 'gone'; return; }
   // ...and the mirror of it. Ground enemies never touch their own `y` while
   // walking -- they rely entirely on being spawned at ground level. One that
   // ends up airborne (beamed down by a saucer that drifted over a pit, or

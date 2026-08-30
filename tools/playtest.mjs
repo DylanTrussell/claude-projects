@@ -111,7 +111,7 @@ while (simMs < MAXMS && !victory && !gameover) {
     // made EXPERT die at a pit that NOVICE cleared, purely because hesitation
     // re-phased it. Now each pit gets exactly one committed press edge, fired
     // 40px before its lip, tracked so it cannot re-fire mid-flight.
-    const grounded = p.y >= CFG.groundY - 2;
+    const grounded = !!p.onG;   // sim's own grounded flag; y>=groundY is false on an island
     // A pit wider than a jump (228px) is crossed by hopping the bobbing
     // islands over it, not by one leap -- LEVEL.islands puts two across the
     // 500px chasm at 5100-5600. Without knowing that, the proxy took one jump

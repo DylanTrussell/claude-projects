@@ -64,7 +64,11 @@ while (simMs < MAXMS && !victory && !gameover) {
     // 5 runs in 12 -- a flaky gate, not a flaky game. Over a wide pit, jump
     // again on every landing, because every landing is an island.
     const widePit = LEVEL.pits.find(([a, b]) => b - a > 240 && p.x > a - 50 && p.x < b);
-    const onGround = p.y >= CFG.groundY - 2;
+    // p.onG is the sim's own "standing on something" flag. `y >= groundY` only
+    // means "at ground LEVEL", which is false while you are on a floating
+    // island -- so the bot climbed onto the first island over the chasm and
+    // then never jumped off it again.
+    const onGround = !!p.onG;
     const nearPit = LEVEL.pits.some(([a, b]) => ahead > a - 30 && p.x < b);
     const nearTrap = g.traps.some(t => t.armed && Math.abs(t.x - ahead) < 60);
     jumpT -= 16.67;
