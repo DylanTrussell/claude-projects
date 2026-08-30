@@ -264,8 +264,15 @@ export class Tunnel {
     ctx.fillStyle = '#0b0d08';
     ctx.fillRect(10, H - 42, 300, 30);
     ctx.fillStyle = '#f3e9c8';
-    ctx.fillText('W FORWARD · SPACE SPRINT · S BACK · A/D TURN', 16, H - 29);
-    ctx.fillText('J FIRE · K CLAWS · L WEAPON · M MAP', 16, H - 17);
+    // device-correct legend: the keyboard card was the only thing a phone
+    // player ever saw, so nothing told them which button walks
+    if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) {
+      ctx.fillText('▲ FORWARD · JUMP = SPRINT · ◀▶ TURN', 16, H - 29);
+      ctx.fillText('FIRE · CLAWS · SWAP WEAPON', 16, H - 17);
+    } else {
+      ctx.fillText('W FORWARD · SPACE SPRINT · S BACK · A/D TURN', 16, H - 29);
+      ctx.fillText('J FIRE · K CLAWS · L WEAPON · M MAP', 16, H - 17);
+    }
     ctx.restore();
     ctx.textAlign = 'left';
     if (!this.mapOn || !this.seen || !this.seen.size) return;
@@ -275,7 +282,11 @@ export class Tunnel {
     // at a glance without eating the play area.
     const box = 240, pad = 14;
     const cs = Math.min(box / gw, box / gh);
-    const ox = W - box - pad, oy = H - box - pad;
+    // v13.3: on a phone the right-hand touch cluster covered ~85% of this map,
+    // and M (the only way to move it) does not exist on a touchscreen. On a
+    // coarse pointer the map moves up out of the thumb zone instead.
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    const ox = W - box - pad, oy = coarse ? pad + 34 : H - box - pad;
     ctx.save();
     ctx.globalAlpha = 0.82;
     ctx.fillStyle = 'rgba(12,14,10,0.72)';

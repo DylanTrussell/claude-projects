@@ -405,6 +405,9 @@ let manualPause = false;
 function setPauseMenu(on) {
   manualPause = on;
   $('screen-pause').style.display = on ? 'flex' : 'none';
+  // v13.3: touchPad(false) only ran for cutscenes, so on a phone all eight
+  // control buttons sat ON TOP of the pause menu, flanking RESUME.
+  if (mode === 'game') touchPad(!on);
   if (!on) last = performance.now(); // avoid a big dt jump on resume, same trick as the focus handler
 }
 function togglePause() {
@@ -494,9 +497,20 @@ addEventListener('focus', () => { paused = false; last = performance.now(); });
 // (index.html #rotate) -- otherwise the player keeps taking hits behind it.
 const portraitQ = matchMedia('(max-aspect-ratio: 1/1) and (pointer: coarse)');
 let rotateBlocked = portraitQ.matches;
+// v13.3: the rotate gate had no way past it, so anyone playing with rotation
+// lock on -- which is most people, on a couch or in bed -- was hard-stuck at
+// the front door and could never start the game at all. PLAY ANYWAY dismisses
+// it for the session; the gate still comes back on a real orientation change
+// only if they have not opted out.
+let rotateOptOut = false;
 portraitQ.addEventListener('change', (e) => {
-  rotateBlocked = e.matches;
+  rotateBlocked = e.matches && !rotateOptOut;
   if (!e.matches) last = performance.now(); // no dt spike on the way back in
+});
+$('btn-rotskip')?.addEventListener('click', () => {
+  rotateOptOut = true; rotateBlocked = false;
+  $('rotate').style.display = 'none';
+  last = performance.now();
 });
 
 function frame(now) {
