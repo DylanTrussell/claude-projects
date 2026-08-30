@@ -612,6 +612,23 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
   if (st === 'out' || st === 'riding') return; // riding: he's aboard the heli
   const sx = x - cam;
   if (invulnT > 0 && Math.floor(t / 90) % 2 === 0 && st === 'alive') return; // blink
+  // v13.3 (first-time playtester: "I could not tell which cat was me. There
+  // were four cats on the ground and a fifth riding a helicopter"). Buddies,
+  // POWs, allied grunts and the hero are all cats of similar size, and after
+  // the ceasefire even the enemies are. A small bobbing chevron over the local
+  // player, and nobody else, answers it without touching the art.
+  if (pid === myPid && st === 'alive') {
+    const my = y - CFG.heroH - 26 + Math.sin(t / 260) * 3;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = PAL.outline;
+    ctx.beginPath(); ctx.moveTo(sx, my + 11); ctx.lineTo(sx - 8, my - 3); ctx.lineTo(sx + 8, my - 3);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = PAL.cheese;
+    ctx.beginPath(); ctx.moveTo(sx, my + 8); ctx.lineTo(sx - 6, my - 2); ctx.lineTo(sx + 6, my - 2);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
   // v11 (Dylan: "he should fall into it when he goes in, and pop out of it
   // when he comes out") — shrink-and-sink on the way into the tunnel door,
   // grow-and-rise on the way back out. Only applied to the local player,

@@ -15,7 +15,7 @@ function attachSubs(vid, subEl, cues) {
   update();
 }
 import { loadAll, audio, IMG, ensureChunk, prefetchChunk } from './assets.js';
-import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish } from './sim.js';
+import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState } from './sim.js';
 import { render, fxEvent, fxUpdate, FX, drawRotor, TUNNEL_TRANS_MS } from './render.js';
 import { Tunnel } from './fps.js';
 import { VIDEO_URLS } from './chunks.js';
@@ -83,6 +83,7 @@ let tunnel = null; // active first-person tunnel section
 let rail = null;   // active vehicle rail section (door gun / skyraider)
 let loadingChunk = false; // v10: freezes the sim while a lazy CDN chunk fetches
 let hudShown = false; // tracks #hudbtns (pause/music) visibility, only touched on change
+let ckptSnap = null, lastCkptX = -1; // v13.3: last checkpoint world-state, for CONTINUE
 let directTunnel = false; // ?tunnel=N boot: skip the sink-into-the-ground beat (there's no topside to sink from)
 const dev = new URLSearchParams(location.search).has('dev');
 
@@ -164,6 +165,9 @@ function endGame(won) {
   mode = 'tally';
   audio.stopMusic(); audio.hum(false); audio.eng(false);
   const v = lastView || {};
+  const canContinue = !won && !!ckptSnap;
+  $('btn-continue').style.display = canContinue ? '' : 'none';
+  $('btn-continue').textContent = STR.continueRun;
   $('t-result').textContent = won ? STR.victory : STR.gameOver;
   $('t-result').style.color = won ? '#8CFF3B' : '#c8372d';
   // Read the LIVE game state, not lastView. lastView is only re-serialized by
@@ -182,7 +186,9 @@ function endGame(won) {
   // target you can name ("I got a B, I want an A").
   let best = 0;
   try { best = +(localStorage.getItem('am_best') || 0) || 0; } catch (_) {}
-  const isRecord = score > best;
+  // A continued run is not a clean run: it bought extra lives at a checkpoint,
+  // so it does not get to set the best-score record. It still shows its score.
+  const isRecord = score > best && !(g && g.continued);
   if (isRecord) { try { localStorage.setItem('am_best', String(score)); } catch (_) {} }
   // Rank rewards score, rewards optional rescues heavily, and punishes deaths
   // -- so the safest possible run (die freely, skip POWs) can't earn an S.
@@ -348,7 +354,21 @@ $('btn-start').addEventListener('click', () => {
   $('titlevid').pause();
 });
 $('btn-go').addEventListener('click', () => startGame());
-$('btn-again').addEventListener('click', () => startGame());
+$('btn-again').addEventListener('click', () => { ckptSnap = null; lastCkptX = -1; startGame(); });
+// CONTINUE: same run, from the last checkpoint, with the life count restored.
+// Score is kept but the continue is recorded, so a continued run cannot quietly
+// pass itself off as a clean one on the best-score board.
+$('btn-continue').addEventListener('click', () => {
+  if (!ckptSnap) { startGame(); return; }
+  g = restoreState(ckptSnap, [{ pid: 'p1', hero: 'us' }]);
+  for (const p of g.players) { p.lives = CFG.lives; p.hp = CFG.hpMax; p.st = 'alive'; p.invulnT = 2200; }
+  g.over = false; g.won = false;
+  g.continued = (g.continued || 0) + 1;
+  tunnel = null; rail = null; lastView = null;
+  mode = 'game'; show(null);
+  audio.ensure(); audio.music('music_rock', 800);
+  fxEvent({ e: 'banner', k: 'continued' });
+});
 // no start screen: the film cuts straight to the chopper coming down in gameplay
 $('btn-skip').addEventListener('click', () => { $('intro').style.display = 'none'; touchPad(true); $('introvid').pause(); startGame(); });
 $('introvid').addEventListener('ended', () => { $('intro').style.display = 'none'; touchPad(true); startGame(); });
@@ -485,6 +505,16 @@ function frame(now) {
   dt = Math.min(dt, 250);
   fxUpdate(dt);
 
+  // v13.3 CONTINUE. checkpointState/restoreState have existed in sim.js the
+  // whole time and nothing ever called them: running out of lives threw you
+  // back to the opening film and the PLAY button. A first-time playtester who
+  // had just spent nine lives called that "the moment I would have closed the
+  // tab for good", and the game is hard enough that a novice reaches it. Snap
+  // the world each time the sim passes a checkpoint so we can hand it back.
+  if (mode === 'game' && g && g.checkpoint !== lastCkptX) {
+    lastCkptX = g.checkpoint;
+    try { ckptSnap = checkpointState(g); } catch (_) { ckptSnap = null; }
+  }
   if (mode === 'game' && g && !cutsceneActive && !paused && !manualPause && !loadingChunk && !rotateBlocked) {
     if (tunnel) { // first-person underworld
       const p = g.players[0];
