@@ -258,11 +258,17 @@ export class Tunnel {
     // that flashes once during the fall-in. A first-time playtester never saw
     // it, spent a minute pressing keys, and asked for exactly this: "don't
     // flash them for four seconds, put a small permanent legend in a corner."
+    // v13.3: this shipped at 11px and 42% alpha -- about 8.6 CSS px, which a
+    // colour-vision reviewer could not read at all, calling it a grey smear.
+    // It is the PERMANENT legend, added because a first-time player could not
+    // find the controls, so it has to be legible: 14px, opaque, on a plate.
     ctx.save();
-    ctx.globalAlpha = 0.42;
-    ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 14px monospace'; ctx.textAlign = 'left';
     ctx.fillStyle = '#0b0d08';
-    ctx.fillRect(10, H - 42, 300, 30);
+    ctx.fillRect(10, H - 48, 372, 38);
+    ctx.strokeStyle = 'rgba(243,233,200,0.25)'; ctx.lineWidth = 1;
+    ctx.strokeRect(10, H - 48, 372, 38);
     ctx.fillStyle = '#f3e9c8';
     // device-correct legend: the keyboard card was the only thing a phone
     // player ever saw, so nothing told them which button walks
@@ -288,8 +294,8 @@ export class Tunnel {
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     const ox = W - box - pad, oy = coarse ? pad + 34 : H - box - pad;
     ctx.save();
-    ctx.globalAlpha = 0.82;
-    ctx.fillStyle = 'rgba(12,14,10,0.72)';
+    ctx.globalAlpha = 1;                        // was 0.82 over an already-dark panel
+    ctx.fillStyle = 'rgba(8,10,7,0.94)';
     ctx.fillRect(ox - 6, oy - 6, box + 12, box + 12);
     ctx.strokeStyle = 'rgba(243,233,200,0.35)'; ctx.lineWidth = 1;
     ctx.strokeRect(ox - 6, oy - 6, box + 12, box + 12);
@@ -300,7 +306,9 @@ export class Tunnel {
         // 'D' is a secret wall: it must read as solid until it is opened, or
         // the map gives every secret away for free.
         const wall = c === '#' || c === 'D';
-        ctx.fillStyle = wall ? 'rgba(96,88,66,0.85)' : 'rgba(28,34,24,0.9)';
+        // wall-vs-floor measured ~1.9:1 and read as a near-black rectangle with
+        // faint smudges. Solid khaki on near-black is ~7:1.
+        ctx.fillStyle = wall ? '#b9a06a' : '#14180f';
         ctx.fillRect(ox + x * cs, oy + y * cs, Math.ceil(cs), Math.ceil(cs));
       }
     }
@@ -314,13 +322,28 @@ export class Tunnel {
     }
     // objective pip, but only once you have seen its part of the map -- it
     // marks a place you can already navigate to, it does not reveal one.
-    const pip = (tx, ty, col) => {
+    // v13.3: these two pips were the same function, same radius, and differed
+    // ONLY by colour -- and the two colours are PAL.cheese and PAL.acid, which
+    // a deuteranopic reviewer measured at 1.10:1 against each other, i.e. the
+    // same swatch. "Rescue Mittens here" and "the way out is here" were one
+    // indistinguishable dot. Shape first, letter second, colour last.
+    const pip = (tx, ty, col, glyph, hollow) => {
       if (!this.seen.has((ty | 0) * 1000 + (tx | 0))) return;
-      ctx.fillStyle = col;
-      ctx.beginPath(); ctx.arc(ox + tx * cs, oy + ty * cs, Math.max(2.5, cs * 0.42), 0, 7); ctx.fill();
+      const px = ox + tx * cs, py = oy + ty * cs, r = Math.max(3, cs * 0.44);
+      ctx.lineWidth = 2;
+      if (hollow) {                              // EXIT: hollow square
+        ctx.strokeStyle = col;
+        ctx.strokeRect(px - r, py - r, r * 2, r * 2);
+      } else {                                   // MITTENS: filled circle
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(px, py, r, 0, 7); ctx.fill();
+      }
+      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
+      ctx.fillStyle = '#0b0d08'; ctx.fillText(glyph, px + r + 2, py + 4);
+      ctx.fillStyle = col; ctx.fillText(glyph, px + r + 1, py + 3);
     };
-    if (this.mittens && !this.result.rescued) pip(this.mittens.x, this.mittens.y, '#FFC93C');
-    if (this.exit) pip(this.exit.x, this.exit.y, '#8CFF3B');
+    if (this.mittens && !this.result.rescued) pip(this.mittens.x, this.mittens.y, '#FFC93C', 'M', false);
+    if (this.exit) pip(this.exit.x, this.exit.y, '#3FD6FF', 'E', true);
     // the player: a triangle, so the map tells you which way you are facing
     ctx.save();
     ctx.translate(ox + this.px * cs, oy + this.py * cs);
@@ -329,8 +352,8 @@ export class Tunnel {
     ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, 5); ctx.lineTo(-5, -5);
     ctx.closePath(); ctx.fill();
     ctx.restore();
-    ctx.globalAlpha = 0.5;
-    ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+    ctx.globalAlpha = 1;                        // was 10px at 0.5 -> illegible
+    ctx.font = 'bold 13px monospace'; ctx.textAlign = 'right';
     ctx.fillStyle = '#f3e9c8'; ctx.fillText('M — MAP', ox + box, oy - 11);
     ctx.restore();
     ctx.textAlign = 'left';
@@ -898,7 +921,19 @@ export class Tunnel {
       // first-time playtester who spent a dozen lives on it and never reached
       // him both did exactly that. The waypoint still routes you via the gun,
       // because you need it, but it now says what it is on the way to.
-      if (this.grabCell) targets.push({ x: this.grabCell.x | 0, y: this.grabCell.y | 0, label: 'GUN, THEN MITTENS', done: () => this.script && this.script.done });
+      // v13.3 COMPASS NEVER ADVANCED. `done` was `() => this.script &&
+      // this.script.done`, and with script === null that returns NULL, which is
+      // falsy -- so this target was never satisfied and the compass stayed
+      // pinned to it for the whole level. A playtester watched it still read
+      // "GUN, THEN MITTENS · 16" AFTER "PVT. MITTENS RESCUED!", counting UP as
+      // they walked away, with no idea where the exit was. That is precisely
+      // the failure the compass was added to prevent, and precisely what Dylan
+      // hit: "I got lost. I couldn't find Mittens." It is a real boolean now,
+      // and anything that means you are past this stage satisfies it.
+      if (this.grabCell) targets.push({
+        x: this.grabCell.x | 0, y: this.grabCell.y | 0, label: 'GUN, THEN MITTENS',
+        done: () => !!(this.script && this.script.done) || !!this.result.shotgun || !!this.result.rescued,
+      });
       for (const it of this.items) if (it.kind === 'shotgun') targets.push({ x: it.x | 0, y: it.y | 0, label: 'GUN, THEN MITTENS', done: () => it.got });
       if (this.mittens) targets.push({ x: this.mittens.x | 0, y: this.mittens.y | 0, label: 'MITTENS', done: () => this.result.rescued });
     }
@@ -1234,7 +1269,14 @@ export class Tunnel {
         // amber sat on the same hue as the dirt walls). Both kinds now use a
         // cold cyan-white core that shares no hue with the tunnel, sit on a
         // dark backing disc so they pop against torchlight too, and pulse.
-        const ec = this.enemyKind === 'rat' ? '150,255,90' : '150,240,255';
+        // v13.3: rat eyeshine at rgb(150,255,90) simulates to #e7e760 under
+        // deuteranopia and torchlight simulates to #d8d84b -- 1.16:1, i.e. the
+        // same colour. A reviewer had a rat's eyes and two wall torches on
+        // screen at the same height and could not tell which was the ambusher.
+        // The CAT eyeshine below already solves this with a cold blue that
+        // shares no hue with anything else down here; the rats now get the same
+        // treatment, shifted violet so the two species still read apart.
+        const ec = this.enemyKind === 'rat' ? '190,150,255' : '150,240,255';
         const tw = 0.75 + 0.25 * Math.sin(now / 220 + s.x * 3);
         sc.fillStyle = 'rgba(0,0,0,0.55)';
         sc.beginPath(); sc.arc(sx, eh, gap * 1.5, 0, 7); sc.fill();

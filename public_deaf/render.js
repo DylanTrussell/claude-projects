@@ -1111,11 +1111,25 @@ function drawAirWar(ctx, t, inv) {
 }
 
 // ---------- HUD ----------
+// v13.3 (colour-vision review, with sampled contrast figures): this called
+// itself an outline and was a +2/+2 DROP SHADOW -- the top and left edges of
+// every glyph sat bare against the background, which is the side the eye
+// tracks. Acid-green hints measured 2.64:1 against Act II's green sky, and the
+// boss instruction "GET UNDER IT -- SHOOT UP (W) WHEN THE HATCH OPENS" was
+// barely visible at all. A real stroked outline puts every glyph against the
+// dark outline colour regardless of what is behind it, which rescues every
+// green-on-green hint in the game in one place. bigText 1.3x -> 1.6x: at 1.3
+// it was too weak to be worth finding.
 function hudText(ctx, txt, x, y, size, align, col) {
-  ctx.font = `bold ${FX.opts.bigText ? size * 1.3 : size}px monospace`;
+  ctx.font = `bold ${FX.opts.bigText ? size * 1.6 : size}px monospace`;
   ctx.textAlign = align || 'left';
-  ctx.fillStyle = PAL.outline;
-  ctx.fillText(txt, x + 2, y + 2);
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.lineWidth = Math.max(3, size * 0.28);
+  ctx.strokeStyle = PAL.outline;
+  ctx.strokeText(txt, x, y);
+  ctx.restore();
   ctx.fillStyle = col || PAL.hud;
   ctx.fillText(txt, x, y);
 }

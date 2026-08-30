@@ -37,6 +37,12 @@ function resize() {
   scale = Math.min(innerWidth / W, innerHeight / H);
   offX = (innerWidth - W * scale) / 2; offY = (innerHeight - H * scale) / 2;
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
+  // v13.3: the side-scroller left smoothing ON, so every sprite took two
+  // stacked non-integer bilinear resamples (logical -> CSS -> device pixels).
+  // That softened all the pixel art AND smeared the chroma fringe wider than a
+  // pixel, which is why the halos read so strongly in motion. The tunnel
+  // already sets this false; the main renderer never did.
+  ctx.imageSmoothingEnabled = false;
 }
 addEventListener('resize', resize); addEventListener('orientationchange', resize); resize();
 

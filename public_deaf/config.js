@@ -81,7 +81,11 @@ export const PAL = {
   duskSky: '#7d5a3a', night: 'rgba(10,12,8,0.55)',
   hud: '#f3e9c8', hudDim: 'rgba(243,233,200,0.65)',
   tracer: '#ffe08a', ray: '#8CFF3B',
-  blood: '#c8372d', dirt: '#5d4a2e',
+  // v13.3: blood was byte-identical to redAccent, so gore was the exact same
+  // colour as the hero's bandana, his armbands and the HUD accent -- spray on
+  // hero_us was indistinguishable from his costume, and it read orange rather
+  // than red. Darker, deeper crimson separates it from the UI and the uniform.
+  blood: '#8e1f1a', dirt: '#5d4a2e',
 };
 
 // Command bit flags (input as command objects; carries over the wire for guests)

@@ -35,6 +35,16 @@ print('manifest:', len(imgs), 'images,', len(sheets), 'sheets,', len(audio), 'au
 EOF
 echo assembled.
 
+# ---- chroma residue gate. The magenta key eats dark pixels and leaves a rim;
+# the first cleanup pass ran over assets/sprites/ ONLY and silently missed
+# assets/sheets/, where sheet_explosion carried 8,619 rim pixels -- a purple
+# corona on every explosion in the game. Fail loudly rather than ship it again.
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 tools/dematte.py assets/sprites/*.png assets/sheets/*.png 2>/dev/null | grep -q "^dematte: 0 of"; then
+    echo "WARNING: chroma residue found in assets/ -- run: python3 tools/dematte.py --write assets/sprites/*.png assets/sheets/*.png"
+  fi
+fi
+
 # ---- deaf twin for automated playtesting (Dylan: "mute while you simulate",
 # said three times before this existed). public_deaf/ is public/ with the
 # audio DESTINATION nulled before any module runs: every AudioContext routes
