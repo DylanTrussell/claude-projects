@@ -39,7 +39,14 @@ export const CFG = {
   grenadeRadius: 160, shrapnelN: 9, shrapnelSpd: 540, shrapnelLife: 340,
   meleeRange: 58, meleeCd: 320, meleeDmg: 3,
   cheeseVx: 300, cheeseVy: -360, cheeseLife: 6000, cheeseRadius: 260,
-  aimTellMs: 380,         // enemies visibly aim before firing — dodge window
+  // v13.3: 380ms was below the reaction floor. A typical simple visual
+  // reaction is ~250ms and a slower player needs 400-600ms, so the tell
+  // expired before they had moved -- and at close range (a grunt walks to
+  // ~150px before firing) the whole tell-plus-travel budget collapsed to about
+  // 850ms. The TUNNEL already uses 560ms and its own comment calls that "an
+  // honest dodge window", which is the tell that 380 was never scrutinised.
+  // 600 matches it and clears the floor.
+  aimTellMs: 600,         // enemies visibly aim before firing — dodge window
   // enemies (slower, rarer, telegraphed shots = dodgeable)
   gruntHp: 2, gruntSpd: 70, gruntFireCd: 1800, gruntBulletSpd: 320,
   alienHp: 3, alienSpd: 85, alienFireCd: 1500, rayBulletSpd: 380,

@@ -192,10 +192,11 @@ Object.assign(STR, {
   connected: "connected",
   disconnected: "away",
   goalBanner: "PUSH EAST. RESCUE POWS. SHOOT EVERYTHING ELSE.",
+  standBy: "STAND BY — COMING IN HOT",
   // Includes W and L on purpose: the game later demands both ("HOLD W — AIM
   // UP", "PRESS L — CALL IN AIR SUPPORT") and the first version of this line
   // taught neither.
-  ctlBasics: "A/D MOVE · W AIM UP · SPACE JUMP · J FIRE · K GRENADE · L SPECIAL",
+  ctlBasics: "A/D MOVE · W AIM UP · S CROUCH · SPACE JUMP · J FIRE · K GRENADE · L SPECIAL",
   goalBoss: "GET UNDER IT — SHOOT UP (W) WHEN THE HATCH OPENS",
   cheeseHint: "Aliens can't resist cheese. Throw it. (L / Y button)",
   trapHint: "Disturbed earth hides traps. Jump it.",

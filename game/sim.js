@@ -105,7 +105,7 @@ export function makeGame(seed, seats) {
     boss: null, bossDone: false,
     heliEvac: null,
     events: [],
-    banners: { A: false, tunnel: false, B: false, boss: false, cheeseDrop: false, cheeseHint: false, trapHint: false, ufoHint: false },
+    banners: { A: false, tunnel: false, B: false, boss: false, cheeseDrop: false, cheeseHint: false, trapHint: false, ufoHint: false, standby: false },
     // scripted opening
     phase: 'insertion', phaseT: 0, phaseStep: 0,
     pinned: false, airSupport: 'none', airT: 0,
@@ -163,6 +163,17 @@ function stepBike(g, p, bits, dt, dts) {
 function stepInsertion(g, dt, dts) {
   g.phaseT += dt;
   const t = g.phaseT, lift = g.lift;
+  // v13.3: the opening is six seconds where input does NOTHING, and the game
+  // said so nowhere. Two independent first-time playtesters spent that whole
+  // window mashing keys and concluded the build was broken -- one wrote "I
+  // genuinely thought the build was broken", the other "I sat pressing keys
+  // for a full minute". Say STAND BY, and print the controls DURING the ride
+  // instead of ten seconds later, so they are read before they are needed.
+  if (!g.banners.standby) {
+    g.banners.standby = true;
+    evPush(g, { e: 'banner', k: 'standBy' });
+    evPush(g, { e: 'hint', k: 'ctlBasics' });
+  }
   if (lift && lift.st === 'insert') {
     if (t < 2600) { // fly in and flare down onto LZ CATNIP
       const k = Math.min(1, t / 2400);
