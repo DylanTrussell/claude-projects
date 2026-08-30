@@ -28,8 +28,19 @@ export const LEVEL = {
     [9400, 9540], [10300, 10440], // act III road washouts (jump the bike)
   ],
   islands: [ // floating platforms over the long gap: x(left), baseY(top), w, bobAmp, bobPeriodMs, phase, loot
-    { x: 5140, y: 500, w: 150, amp: 22, per: 2600, ph: 0, loot: 'raygun' },
-    { x: 5365, y: 475, w: 150, amp: 26, per: 3100, ph: 1.7, loot: null },
+    // v13.3: this pair is the only way across a 500px lethal gap against a
+    // 228px jump -- the hardest traversal in the game, and pits are already its
+    // biggest killer by a wide margin (a teenage tester: "the level's main
+    // antagonist is the ground"). The GAPS were never the problem: at 40, 75
+    // and 85px they are trivial against a 228px jump. The BOB was. Two decks
+    // swinging 22 and 26px out of phase meant the landing target moved while
+    // you were in the air, so the same jump landed or missed depending on
+    // where the platforms happened to be. Halving the amplitude fixed the
+    // build gate outright -- it went from 7 passes in 12 to 16 in 16 -- with
+    // the deck sizes and the gaps left exactly as they were, so the set piece
+    // keeps its challenge and stops being a coin flip.
+    { x: 5140, y: 500, w: 150, amp: 10, per: 2600, ph: 0, loot: 'raygun' },
+    { x: 5365, y: 478, w: 150, amp: 12, per: 3100, ph: 1.7, loot: null },
   ],
   traps: [ // hidden punji traps under disturbed earth (x center) — revealed on trigger
     [1180], [2350], [2700], [4700], [5790],
@@ -1265,6 +1276,27 @@ function winBoss(g, b) {
 }
 
 function stepEnemy(g, e2, dt, dts) {
+  // v13.3 CAMERA SOFTLOCK. The out-of-world cull lived inside ONE enemy case,
+  // so a GROUND enemy that walked into the 500px chasm at 5100-5600 fell
+  // forever: it never died, it stayed in its wave's `alive` list, and the wave
+  // therefore never cleared -- which meant its camera lock never released and
+  // the run was over. Caught it in a failing simtest with a ratbig sitting at
+  // y=1120, 500px below the world, while the player racked up 100 deaths
+  // against a locked camera. This made the BUILD GATE ITSELF fail 5 runs in 12.
+  // Anything that leaves the world is gone, whatever kind it is.
+  if (e2.st !== 'gone' && e2.y > H + 260) { e2.st = 'gone'; return; }
+  // ...and the mirror of it. Ground enemies never touch their own `y` while
+  // walking -- they rely entirely on being spawned at ground level. One that
+  // ends up airborne (beamed down by a saucer that drifted over a pit, or
+  // spawned across one) then WALKS THROUGH THE AIR forever, out of the player's
+  // reach, holding its wave open and its camera lock with it. Same softlock as
+  // the falling one, from the opposite direction. Pin them to the ground.
+  const GROUND_KIND = e2.k === 'alien' || e2.k === 'gruntUS' || e2.k === 'gruntVC' ||
+                      e2.k === 'ratbig' || e2.k === 'ratmech';
+  if (GROUND_KIND && e2.st !== 'beam' && e2.st !== 'drag' && e2.st !== 'gone') {
+    const gy = groundAt(e2.x);
+    if (gy === CFG.groundY && e2.y !== gy) e2.y = gy;   // never snap them INTO a pit
+  }
   e2.t -= dt; e2.fireCd -= dt;
   const ap = alivePlayers(g);
   const near = (x) => ap.length ? ap.reduce((a, p) => Math.abs(p.x - x) < Math.abs(a.x - x) ? p : a) : null;

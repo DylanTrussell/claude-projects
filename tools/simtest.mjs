@@ -56,11 +56,25 @@ while (simMs < MAXMS && !victory && !gameover) {
     if (flyer || (g.boss && Math.abs(g.boss.x - p.x) < 120)) bits |= C.UP;
     // jump over pits & traps ahead — TAP jump (edge-triggered), don't hold it
     const ahead = p.x + 90;
+    // v13.3: a pit wider than one jump (228px) is crossed by hopping the
+    // bobbing islands over it -- LEVEL.islands puts two across the 500px chasm
+    // at 5100-5600. This bot did not know that: it took one leap at the lip and
+    // fell in, over and over, until the run timed out with the camera still
+    // locked behind an uncleared wave. That is why THE BUILD GATE ITSELF failed
+    // 5 runs in 12 -- a flaky gate, not a flaky game. Over a wide pit, jump
+    // again on every landing, because every landing is an island.
+    const widePit = LEVEL.pits.find(([a, b]) => b - a > 240 && p.x > a - 50 && p.x < b);
+    const onGround = p.y >= CFG.groundY - 2;
     const nearPit = LEVEL.pits.some(([a, b]) => ahead > a - 30 && p.x < b);
     const nearTrap = g.traps.some(t => t.armed && Math.abs(t.x - ahead) < 60);
     jumpT -= 16.67;
     const tap = (Math.floor(simMs / (1000 / 60)) % 22) < 8; // rhythmic taps create press edges
-    if ((nearPit || nearTrap || jumpT < -2400) && tap) { bits |= C.JUMP; if (jumpT < -2400) jumpT = 0; }
+    // `tap` is the rhythmic on/off that creates the press EDGES the sim needs --
+    // holding JUMP down is one jump, not many. Over a wide pit, tap while
+    // GROUNDED (i.e. standing on an island) so each landing launches the next
+    // hop; everywhere else, the original single-leap behaviour.
+    const wantJump = widePit ? (onGround && tap) : ((nearPit || nearTrap || jumpT < -2400) && tap);
+    if (wantJump) { bits |= C.JUMP; if (jumpT < -2400) jumpT = 0; }
     // grenades at the boss / heli
     if ((g.boss || flyer) && (simMs % 900) < 20) bits |= C.GREN;
     inputs[p.pid] = bits;
