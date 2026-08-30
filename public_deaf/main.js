@@ -714,6 +714,18 @@ if (dev) {
   if (tunnelMode === 1 || tunnelMode === 2) {
     if (IMG.logo) { $('t-logo').src = IMG.logo.src; $('t-logo').style.display = 'block'; $('t-title').style.display = 'none'; }
     directTunnel = true; // loop-1: ?tunnel=2 booted to ~3s of raw black -- skip the topside fall beat
+    // A browser keeps the AudioContext SUSPENDED until a real user gesture.
+    // The normal route unlocks it when you click SKIP on the opening film;
+    // booting straight to ?tunnel=N had no gesture at all, so the whole level
+    // played silent -- "the gun sounds aren't working on the tunnel level".
+    // One click gate, which is also where the controls get taught.
+    await new Promise(res => {
+      const g0 = $('tunnelgate');
+      g0.style.display = 'flex';
+      const go = () => { g0.style.display = 'none'; audio.ensure(); res(); };
+      g0.addEventListener('click', go, { once: true });
+      window.addEventListener('keydown', go, { once: true });
+    });
     startGame();
     const p0 = g.players[0];
     p0.x = tunnelMode === 1 ? LEVEL.fpsDoors.main : LEVEL.fpsDoors.nest;

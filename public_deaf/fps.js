@@ -42,17 +42,17 @@ export const MAPS = [
     enemies: 'vc',
     grid: [
       '################',
-      '#P........a.#TH#',
-      '#...c....B..#DD#',
+      '#P........aB#TH#',
+      '#...c.......#DD#',
       '#######.a...c..#',
       '########..######',
-      '##.c..a...######',
-      '##........######',
+      '##.c..a..c######',
+      '##c.......######',
       '##G#############',
-      '#c...H.....B...#',
+      '#c...H.....B.c.#',
       '#.SH#..g......g#',
       '############.###',
-      '#....a..#.a..g.#',
+      '#c...a..#.a..g.#',
       '#E..c....Bc...M#',
       '################',
     ],
@@ -126,7 +126,18 @@ export class Tunnel {
         else if (c === 'R') this.items.push({ x: cx, y: cy, kind: 'raygun', got: 0 });
         else if (c === 'E') this.exit = { x: cx, y: cy };
         else if (c === 'G') this.grabCell = { x: cx, y: cy };
-        else if (c === 'c') this.torches.push({ x: cx, y: cy, ph: (x * 13 + y * 7) % 10 });
+        else if (c === 'c') {
+          // Mount the torch ON THE WALL (Dylan: "the torches are in the middle
+          // of the hallway... should be on the wall"). Torch cells are floor,
+          // so shove the billboard 0.44 toward whichever neighbouring cell is
+          // solid; it then renders flush against that wall face instead of
+          // hovering in the middle of the corridor.
+          let ox = 0, oy = 0;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            if (cellAt(def.grid, x + dx, y + dy) === '#') { ox = dx * 0.44; oy = dy * 0.44; break; }
+          }
+          this.torches.push({ x: cx + ox, y: cy + oy, ph: (x * 13 + y * 7) % 10 });
+        }
       }
     }
     for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
@@ -500,6 +511,18 @@ export class Tunnel {
     for (const e of this.enemies) {
       if (e.dead) continue;
       e.atkT -= dt; e.animT += dt;
+      // burning: ticks damage, throws embers, and the sprite lights up (see
+      // the enemy draw). Set by explodeBarrel().
+      if (e.burn > 0) {
+        e.burn -= dt; e.burnTick = (e.burnTick || 0) + dt;
+        if (e.burnTick > 380) {
+          e.burnTick = 0;
+          for (let i = 0; i < 3; i++) {
+            this.gore.push({ x: e.x, y: e.y, z: 0.3 + Math.random() * 0.6, vx: (Math.random() - 0.5) * 1.2, vy: (Math.random() - 0.5) * 1.2, vz: 1.4 + Math.random(), t: 520, chz: 1 });
+          }
+          if (!e.dead) { this.ev({ e: 'sfx', n: 'sfx_screech' }); this.hit(e, 1); }
+        }
+      }
       const d = Math.hypot(e.x - this.px, e.y - this.py);
       if (e.kind === 'barrel') {
         // chain fuse: a nearby blast lights it, it pops a beat later
@@ -630,7 +653,14 @@ export class Tunnel {
       if (e2.dead || e2 === e) continue;
       const dd = Math.hypot(e2.x - e.x, e2.y - e.y);
       if (e2.kind === 'barrel') { if (dd < 1.5 && e2.fuse <= 0) e2.fuse = 140; continue; }
-      if (dd < 1.7) { if (e2.st === 'hide') this.burst(e2); this.hit(e2, 9); }
+      if (dd < 1.9) {
+        if (e2.st === 'hide') this.burst(e2);
+        // Dylan: "the enemy catches fire". Anything caught in the blast burns
+        // for ~2.2s -- it keeps taking damage, lights itself up, trails flame
+        // and screams -- instead of just silently taking a chunk of HP.
+        e2.burn = 2200; e2.burnTick = 0;
+        this.hit(e2, 5);
+      }
     }
     if (p && Math.hypot(this.px - e.x, this.py - e.y) < 1.25) this.hurtFrom(p, e.x, e.y, 1, 'boom');
     this.alert(7);
@@ -881,13 +911,29 @@ export class Tunnel {
       // secret wall: three glowing claw scratches. Gold pulse = "interact",
       // the same language the topside supply crates now use.
       if (hitCell === 'D' && dist < 9) {
-        // wider, brighter (loop-1: 35 minutes, secret never spotted). The
-        // torch placed beside every secret wall does the rest.
-        const inBand = (wallX > 0.27 && wallX < 0.37) || (wallX > 0.45 && wallX < 0.55) || (wallX > 0.63 && wallX < 0.73);
-        if (inBand) {
-          const pulse = 0.60 + 0.35 * Math.sin(now / 300 + mapX * 2 + mapY);
-          sc.fillStyle = `rgba(255,201,60,${(pulse * Math.min(1, b + 0.5)).toFixed(2)})`;
-          sc.fillRect(c, y0 + hgt * 0.26, 1.5, hgt * 0.48);
+        // v13.3: these were three flat gold RECTANGLES that pulsed -- Dylan
+        // screenshotted them as "ugly stripes on the wall, and they breathe".
+        // They're meant to be CLAW MARKS, so draw claw marks: three gashes
+        // raked diagonally, tapering to a point at each end, torn through to
+        // a hot core rather than painted on. Subtle at rest, unmistakable
+        // once the torch beside them catches it.
+        // Each gash runs ACROSS the wall (x from X0..X1) with its THICKNESS in
+        // y -- a rake, not a bar. The first attempt made them thin in x, which
+        // at any close range just draws three fat vertical stripes: exactly
+        // the "ugly stripes that breathe" in Dylan's screenshot.
+        const X0 = 0.16, X1 = 0.84;
+        if (wallX > X0 && wallX < X1) {
+          const u = (wallX - X0) / (X1 - X0);            // 0..1 along the gash
+          const taper = Math.sin(Math.PI * u) ** 0.6;    // points at both ends
+          const glow = 0.55 + 0.2 * Math.sin(now / 420 + mapX * 2 + mapY);
+          for (let k = 0; k < 3; k++) {
+            const yc = y0 + hgt * (0.30 + k * 0.115 + u * 0.30); // parallel, raking down-right
+            const th = Math.max(1, hgt * 0.022 * taper);
+            sc.fillStyle = `rgba(18,10,5,${(0.9 * taper).toFixed(2)})`;      // torn-open shadow
+            sc.fillRect(c, yc - th, 1.5, th * 2);
+            sc.fillStyle = `rgba(255,196,80,${(glow * taper * Math.min(1, b + 0.4)).toFixed(2)})`;
+            sc.fillRect(c, yc - th * 0.35, 1.5, th * 0.7); // hot core inside the gash
+          }
         }
       }
     }
@@ -1177,7 +1223,9 @@ export class Tunnel {
         const sw = size * asp;
         const drawH = useCorpseSprite ? size * 0.5 : size;
         const drawY = useCorpseSprite ? y0 + size * 0.5 : y0;
-        if (s.e && s.e.flash > 0) sc.filter = 'brightness(1.7) saturate(1.5)';
+        // burning enemies glow hot and flicker while they cook
+        if (s.e && s.e.burn > 0) sc.filter = `brightness(${(1.5 + 0.5 * Math.random()).toFixed(2)}) saturate(2.2) hue-rotate(-18deg)`;
+        else if (s.e && s.e.flash > 0) sc.filter = 'brightness(1.7) saturate(1.5)';
         sc.globalAlpha = 1;
         try { sc.drawImage(img, sx - sw / 2, drawY, sw, drawH); } catch (_) {}
         sc.filter = 'none';

@@ -34,13 +34,18 @@ set(m0, 2, 7, 'G');               // the doorway itself -- nobody skips it
 carve(m0, 1, 8, 3, 9);            // chamber behind it
 set(m0, 2, 9, 'S');
 set(m0, 3, 9, 'H');               // spare shells WITH the shotgun -- you leave the grab armed
-// hall (rows 8-9, east of the chamber wall), entered from the chamber
+// THE GREAT HALL (rows 8-9, full width): the level's landmark. DOOM E1M1's
+// navigability comes from one big room you keep re-entering from different
+// sides, so you always re-orient the moment you step into it. Every branch
+// below hangs off this hall, it is torch-lit at both ends, and it is
+// straight, so from anywhere in it you can see where you came in.
 carve(m0, 5, 8, 14, 9);
 carve(m0, 4, 8, 4, 8);            // chamber -> hall doorway
-// prison arena (south-east)
+// prison arena (south-east), entered from the hall's east end
 carve(m0, 9, 11, 14, 12);
 carve(m0, 12, 10, 12, 10);        // hall -> prison doorway
-// exit corridor west from the prison, loop-back feel
+// exit corridor runs back WEST beneath the hall and surfaces beside the
+// entry, so the level closes a loop instead of dead-ending somewhere new
 carve(m0, 1, 11, 7, 12);
 carve(m0, 8, 12, 8, 12);          // prison -> exit corridor
 set(m0, 1, 12, 'E');
@@ -48,7 +53,11 @@ set(m0, 1, 12, 'E');
 set(m0, 1, 1, 'P');
 set(m0, 4, 2, 'c');               // entry torch
 set(m0, 10, 1, 'a'); set(m0, 8, 3, 'a');   // fight room ambushers (seen across)
-set(m0, 9, 2, 'B');               // fight room barrel
+// Dylan: "put the barrel next to the enemy that's in the corner, and then
+// make it so the barrel explodes if you shoot it, and the enemy catches
+// fire." Barrel is now adjacent to the corner ambusher at (10,1), so one
+// shot at the drum cooks the cat lurking beside it.
+set(m0, 11, 1, 'B');
 set(m0, 13, 1, 'T'); set(m0, 14, 1, 'H');  // secret loot
 set(m0, 12, 3, 'c');              // torch NEXT to the secret wall -- light draws the eye
 set(m0, 3, 5, 'c');               // grab-corridor torch, lights the way west
@@ -60,6 +69,14 @@ set(m0, 9, 12, 'B'); set(m0, 10, 11, 'a'); set(m0, 13, 11, 'g'); // prison defen
 set(m0, 14, 12, 'M');             // Mittens' cell
 set(m0, 4, 12, 'c'); set(m0, 5, 11, 'a');  // exit corridor: torch + one last lurker
 set(m0, 10, 12, 'c');             // prison torch
+// A torch at EVERY junction and at both ends of the great hall. Dylan got
+// lost and one room read as pointless; light is the cheapest wayfinding
+// there is -- each junction becomes a place you recognise on the way back,
+// which is exactly how E1M1 keeps you oriented without a map.
+set(m0, 13, 8, 'c');              // hall east end (by the prison door)
+set(m0, 9, 5, 'c');               // top of the shaft down from the fight room
+set(m0, 2, 6, 'c');               // grab-corridor west end, right above the G doorway
+set(m0, 1, 11, 'c');              // where the exit corridor turns for the light
 
 // ---------------- MAP 1 — the rat nest ----------------
 const W1 = 14, H1 = 13;
