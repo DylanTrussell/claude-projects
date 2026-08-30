@@ -200,7 +200,11 @@ Object.assign(STR, {
   diedBoom: "KILLED BY A BLAST — keep clear of explosions",
   diedAbduct: "TAKEN BY A UFO — shoot it or stay out from under it",
   diedTunnel: "GUTTED IN THE DARK — watch for the eyeshine",
-  diedTunnelShot: "SHOT DOWN — sidestep the glowing bolts",
+  // v13.3: this told the player to SIDESTEP. There is no sidestep down here --
+  // the tunnel has eight inputs and A/D turn you in place. A first-time
+  // playtester went looking for the key and reported that the game had asked
+  // for something it does not let you do. Name a control that exists.
+  diedTunnelShot: "SHOT DOWN — break line of sight, W past the corner",
   diedTunnelBoom: "CAUGHT IN A BLAST — barrels kill you too",
   secretFound: "★ SECRET FOUND ★",
   gotShells: "SHELLS +5",

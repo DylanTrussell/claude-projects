@@ -225,9 +225,29 @@ export class Tunnel {
   // Doubling back is the thing players actually lose track of down here, so
   // the recent path is drawn on top of the rooms.
   drawAutomap(ctx, now) {
+    // v13.3: a PERMANENT control legend, drawn BEFORE the map's early-out so
+    // hiding the map with M cannot take the controls with it. The tunnel
+    // rebinds keys the side-scroller already taught -- W walks instead of
+    // aiming, A/D turn instead of moving -- and the card that says so is a hint
+    // that flashes once during the fall-in. A first-time playtester never saw
+    // it, spent a minute pressing keys, and asked for exactly this: "don't
+    // flash them for four seconds, put a small permanent legend in a corner."
+    ctx.save();
+    ctx.globalAlpha = 0.42;
+    ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#0b0d08';
+    ctx.fillRect(10, H - 42, 268, 30);
+    ctx.fillStyle = '#f3e9c8';
+    ctx.fillText('W FORWARD · S BACK · A/D TURN', 16, H - 29);
+    ctx.fillText('J FIRE · K CLAWS · L WEAPON · M MAP', 16, H - 17);
+    ctx.restore();
+    ctx.textAlign = 'left';
     if (!this.mapOn || !this.seen || !this.seen.size) return;
     const gh = this.grid.length, gw = this.grid[0].length;
-    const box = 168, pad = 14;
+    // 168 was about an inch across on a laptop -- a first-time playtester
+    // called it too small to navigate with and never used it. 240 is readable
+    // at a glance without eating the play area.
+    const box = 240, pad = 14;
     const cs = Math.min(box / gw, box / gh);
     const ox = W - box - pad, oy = H - box - pad;
     ctx.save();
@@ -269,7 +289,7 @@ export class Tunnel {
     ctx.translate(ox + this.px * cs, oy + this.py * cs);
     ctx.rotate(this.ang);
     ctx.fillStyle = '#f3e9c8';
-    ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-3.5, 3.5); ctx.lineTo(-3.5, -3.5);
+    ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-5, 5); ctx.lineTo(-5, -5);
     ctx.closePath(); ctx.fill();
     ctx.restore();
     ctx.globalAlpha = 0.5;
@@ -811,8 +831,14 @@ export class Tunnel {
       // the grab corner IS the road to the shotgun -- label it as the prize,
       // not "DEEPER" (loop-1: compass said DEEPER the whole level, never
       // SHOTGUN; the surprise on the way stays a surprise)
-      if (this.grabCell) targets.push({ x: this.grabCell.x | 0, y: this.grabCell.y | 0, label: 'SHOTGUN', done: () => this.script && this.script.done });
-      for (const it of this.items) if (it.kind === 'shotgun') targets.push({ x: it.x | 0, y: it.y | 0, label: 'SHOTGUN', done: () => it.got });
+      // v13.3: the compass read plain "SHOTGUN" for the whole first half of
+      // the level, so players followed it believing the shotgun WAS the
+      // objective -- Dylan ("I got lost. I couldn't find Mittens") and a
+      // first-time playtester who spent a dozen lives on it and never reached
+      // him both did exactly that. The waypoint still routes you via the gun,
+      // because you need it, but it now says what it is on the way to.
+      if (this.grabCell) targets.push({ x: this.grabCell.x | 0, y: this.grabCell.y | 0, label: 'GUN, THEN MITTENS', done: () => this.script && this.script.done });
+      for (const it of this.items) if (it.kind === 'shotgun') targets.push({ x: it.x | 0, y: it.y | 0, label: 'GUN, THEN MITTENS', done: () => it.got });
       if (this.mittens) targets.push({ x: this.mittens.x | 0, y: this.mittens.y | 0, label: 'MITTENS', done: () => this.result.rescued });
     }
     for (const it of this.items) if (it.kind === 'raygun') targets.push({ x: it.x | 0, y: it.y | 0, label: 'ALIEN TECH', done: () => it.got });

@@ -449,7 +449,26 @@ addEventListener('keydown', (e) => {
 // ---------- main loop ----------
 let acc = 0, last = performance.now(), paused = false;
 let frames = 0, fpsAt = last, fps = 0;
-addEventListener('blur', () => { paused = true; });
+// v13.3: the auto-pause overlay was drawn inside the animation frame, and
+// browsers throttle or stop rAF on a blurred tab -- so the frame that would
+// have said PAUSED never ran. A first-time playtester hit this twice and
+// reported the game as CRASHED both times: the helicopter hung mid-air, a
+// banner froze on screen, and no key did anything. Paint the overlay from the
+// blur handler itself, while we still get to run.
+addEventListener('blur', () => {
+  paused = true;
+  try {
+    if (mode === 'game' && !manualPause && ctx) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(canvas.width / W, canvas.height / H);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+      ctx.font = 'bold 28px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#f3e9c8';
+      ctx.fillText(STR.paused, W / 2, H / 2);
+      ctx.restore();
+    }
+  } catch (e) { /* never let a paint failure block the pause itself */ }
+});
 addEventListener('focus', () => { paused = false; last = performance.now(); });
 // Freeze the sim while the portrait "turn your phone" overlay covers the screen
 // (index.html #rotate) -- otherwise the player keeps taking hits behind it.
