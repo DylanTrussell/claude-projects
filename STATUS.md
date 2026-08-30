@@ -56,6 +56,31 @@ and flashes like a boss kill.
 turret; four armour pips absorb hits ahead of the hull and losing pip 2 shoots
 the turret back off.
 
+**Two balance bugs that made the game unwinnable, found by measurement.** The
+Skyraider killed the reference bot five times a run against the door gun's one;
+an ablation pinned it on treeline flak (5.0 → 1.2 deaths with it removed). And
+`safeGroundX` respawned you ten pixels from a pit lip with no run-up, so a
+low-skill player died in the same hole nine times with no enemy involved. Both
+fixed. Neither was visible to `simtest`, which forces `lives = 99`.
+
+**Onboarding, from a real first-time playtester.** The game looked *crashed*
+when it auto-paused on blur (the PAUSED overlay was drawn in an animation frame
+that a blurred tab never runs). A death hint told players to "sidestep" with no
+sidestep key. The tunnel compass said "SHOTGUN" so players followed it instead
+of looking for Mittens — the same wall Dylan hit. Running out of lives threw you
+back to the opening film; there is a CONTINUE FROM CHECKPOINT now. And the
+tunnel lunge had no wind-up at all despite a comment claiming one, so first
+contact in the dark was literally undodgeable.
+
+## Tools added
+
+- `tools/playtest.mjs` — the same run as simtest at four skill levels with the
+  real life count. `--skill=novice|casual|good|expert [--seed=N]`. This is what
+  found both balance bugs.
+- `tools/dematte.py` — strips chroma-key residue from sprites; idempotent.
+- `tools/serve.py` — now serves by absolute path, so a rebuild no longer kills
+  the server out from under a running playtest.
+
 ## Gate
 
 `node tools/simtest.mjs` must print `RESULT: VICTORY`. It does, currently at
