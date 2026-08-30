@@ -456,8 +456,17 @@ export class DoorGun extends RailBase {
         // Anchor follows the repaint: pivot at 34%/50% of the art puts the
         // receiver in his paws at every angle, and the gun is 84px so it reads
         // at the helicopter's 150px scale.
+        // v13.3: the M60 fired without moving a pixel, which is why a burst
+        // read as a flash appearing next to a prop. Real recoil now: the gun
+        // slams back along its own barrel axis and the muzzle climbs, both
+        // decaying over the 70ms shot timer, so at 95ms cadence it judders
+        // continuously while you hold the trigger.
+        const rk = Math.max(0, this.fireT) / 70;
         const gw = 84, gh = gw * (m60.height / m60.width);
-        ctx.drawImage(m60, -gw * 0.34, -gh * 0.50, gw, gh);
+        ctx.save();
+        ctx.rotate(-rk * 0.09);                       // muzzle climb
+        ctx.drawImage(m60, -gw * 0.34 - rk * 7, -gh * 0.50 + rk * 2, gw, gh);
+        ctx.restore();
       } else { // fallback: the old procedural barrel
         ctx.fillStyle = '#3a3a32'; ctx.fillRect(-12, -4, 46, 8);
         ctx.fillStyle = '#55554a'; ctx.fillRect(-12, -4, 46, 2);
