@@ -40,6 +40,21 @@ export class RailBase {
   hurt(p, amt) {
     this._p = p; // v13: draw() needs hull state for the damage smoke/flash
     if (this.hurtT > 0) return;
+    // Armour pips absorb the hit first, and losing pip 2 SHOOTS OFF your
+    // highest upgrade -- Metal Slug's rule that your gear is stripped before
+    // the machine dies, so the loss is gradual and visible rather than sudden.
+    if (this.pips !== undefined && this.pips > 0) {
+      this.pips--;
+      this.flashT = 130; this.shake = 14;
+      this.ev({ e: 'fpsHurt' }); this.ev({ e: 'sfx', n: 'sfx_explosion' });
+      if (this.pips === 2 && this.tier > 1) {
+        this.tier--;                                   // the chin turret blows off
+        this.ev({ e: 'banner', k: 'heliStripped' });
+        for (let i = 0; i < 3; i++) this.boom(280 + i * 30, this.hy + 60, 0);
+      }
+      if (this.pips === 1) this.ev({ e: 'banner', k: 'heliCritical' });
+      if (this.pips > 0) { this.hurtT = 900; return; }  // survived on armour
+    }
     p.hp -= amt; this.hurtT = 900; this.flashT = 130; this.shake = 14;
     this.ev({ e: 'fpsHurt' }); this.ev({ e: 'sfx', n: 'sfx_explosion' });
     if (p.hp <= 0) {
@@ -139,6 +154,16 @@ export class DoorGun extends RailBase {
     this.hy = 300;              // heli altitude
     this.gunCd = 0;
     this.started = false;
+    // v13.3 UPGRADE LIFECYCLE (Dylan: "make it so the helicopter can get
+    // upgraded... everything can get upgraded and then get blown up, and you
+    // lose it"). Metal Slug's SV-001 rule: the machine visibly gains hardware,
+    // visibly LOSES that hardware as it takes damage, and dying in it is a
+    // screen-clearing event rather than a quiet failure.
+    this.tier = 1;              // 1 stock -> 2 gunship -> 3 warthog
+    this.pips = 4;              // armour, independent of the player's lives
+    this.upgradeAt = [12000, 26000]; // supply pallets arrive on the clock
+    this.upIdx = 0;
+    this.turretCd = 0;
     this.aimA = 0;               // v11 (Dylan: "you need to be able to aim it") — A/D sweeps the M60 barrel independent of altitude
   }
   step(bits, dt, p) {
@@ -186,9 +211,20 @@ export class DoorGun extends RailBase {
     if ((bits & C.FIRE) && this.gunCd <= 0) {
       this.gunCd = 95; this.fireT = 70;
       this.ev({ e: 'sfx', n: 'sfx_shot' });
-      const gx = 277, gyy = this.hy + 107;
+      const gx = 277, gyy = this.hy + 100;
       const ang = 0.598 + this.aimA, spd = 990;
       this.shots.push({ x: gx, y: gyy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, t: 1400 });
+      // T2 rocket pods ripple two rounds off the stub wing alongside the M60,
+      // so the upgrade changes how the gun FEELS and not just how it looks.
+      if ((this.tier || 1) >= 2) {
+        this.podT = (this.podT || 0) + 1;
+        if (this.podT % 3 === 0) {
+          for (const off of [-0.075, 0.075]) {
+            this.shots.push({ x: 210, y: this.hy + 118, vx: Math.cos(ang + off) * spd * 0.92,
+              vy: Math.sin(ang + off) * spd * 0.92, t: 1400, pod: 1 });
+          }
+        }
+      }
     }
     for (const s of this.shots) { s.x += s.vx * dts; s.y += s.vy * dts; s.t -= dt; }
     this.shots = this.shots.filter(s => s.t > 0 && s.y < H + 40);
@@ -241,6 +277,22 @@ export class DoorGun extends RailBase {
     }
     this.flak = this.flak.filter(fk => fk.y > -80 && fk.y < H + 200 && fk.x > -100 && fk.x < W + 200);
 
+    // supply pallet: the Huey visibly bolts on hardware mid-mission
+    if (this.upIdx < this.upgradeAt.length && this.t > this.upgradeAt[this.upIdx]) {
+      this.upIdx++; this.tier = Math.min(3, this.tier + 1);
+      this.ev({ e: 'banner', k: this.tier === 2 ? 'heliT2' : 'heliT3' });
+      this.ev({ e: 'sfx', n: 'sfx_purr' });
+    }
+    // T3 chin turret: auto-fires at the nearest foe, so the upgrade is felt
+    // and not just seen
+    if (this.tier >= 3) {
+      this.turretCd -= dt;
+      if (this.turretCd <= 0 && this.foes.length) {
+        this.turretCd = 220;
+        const tgt = this.foes.reduce((a, b) => (a && a.x < b.x ? a : b), null);
+        if (tgt) { tgt.hp--; tgt.flash = 120; if (tgt.hp <= 0) { this.kills++; this.boom(tgt.x, tgt.y - 16, 0); } }
+      }
+    }
     if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'doorgunDone' }); }
     this.prevBits = bits;
   }
@@ -317,6 +369,26 @@ export class DoorGun extends RailBase {
       if (hpK < 0.3) ctx.rotate(0.05 + Math.sin(now / 40) * 0.02 * (1 - hpK));
       else ctx.rotate(0.05);
       ctx.drawImage(hi, -hw / 2, -hh / 2, hw, hh);
+      // v13.3 upgrade hardware, drawn INSIDE the airframe transform so it
+      // banks and judders with the hull. Bolted on at the drop, gone again
+      // when a hit strips a tier -- the whole point is that you can see what
+      // you have and see it taken away.
+      if ((this.tier || 1) >= 2) {
+        // stub wing + 7-shot rocket pod under the belly
+        ctx.fillStyle = '#3a3f30'; ctx.fillRect(-hw * 0.10, hh * 0.22, hw * 0.30, hh * 0.05);
+        ctx.fillStyle = '#4a5140';
+        ctx.beginPath(); ctx.ellipse(hw * 0.06, hh * 0.30, hw * 0.13, hh * 0.055, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = '#1c1f18';
+        for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(hw * 0.16, hh * 0.285 + (i - 1.5) * hh * 0.022, hh * 0.011, 0, 7); ctx.fill(); }
+      }
+      if ((this.tier || 1) >= 3) {
+        // chin turret: a stubby minigun cluster that tracks with a slow sweep
+        const sw = Math.sin(now / 260) * 0.22;
+        ctx.save(); ctx.translate(-hw * 0.30, hh * 0.16); ctx.rotate(sw);
+        ctx.fillStyle = '#2e332a'; ctx.beginPath(); ctx.arc(0, 0, hh * 0.075, 0, 7); ctx.fill();
+        ctx.fillStyle = '#191c15'; ctx.fillRect(-hw * 0.10, -hh * 0.018, hw * 0.11, hh * 0.036);
+        ctx.restore();
+      }
       // hit flash: same source-atop silhouette trick the enemies use, so the
       // aircraft itself blows out white then settles to red as the hull drops.
       if (hurtK > 0.02) {
@@ -355,7 +427,7 @@ export class DoorGun extends RailBase {
       // height 150 = 104 ~= 107. That is why the old procedural line and the
       // shot origin both used it. We pivot the barrel about the same anchor so
       // it stays welded to the gunner's paws at every aim angle.
-      const gx = 277, gy2 = this.hy + 107 + bobY;
+      const gx = 277, gy2 = this.hy + 100 + bobY;
       const ang = 0.598 + this.aimA;
       // v13.2 (Dylan, with M60D reference photos: "the gun that aims looks
       // like a separate entity... the cat should be manning the gun, and it
@@ -370,8 +442,22 @@ export class DoorGun extends RailBase {
       ctx.translate(gx, gy2);
       ctx.rotate(ang);
       if (m60) {
-        const gw = 76, gh = gw * (m60.height / m60.width);
-        ctx.drawImage(m60, -gw * 0.28, -gh * 0.62, gw, gh);
+        // v13.3 (Dylan: "the gun on the helicopter got a weird ghost image on
+        // it"). Two causes, both now fixed in the ART rather than here.
+        // 1. m60_doorgun.png was a broken matte: the gun's dark body had been
+        //    keyed out along with the background, leaving a HOLLOW magenta
+        //    outline you could see the helicopter through -- literally a ghost
+        //    gun. Body refilled with a gunmetal ramp, halo replaced with the
+        //    real outline colour.
+        // 2. huey_doorgun.png has a second gun painted into it, so the
+        //    articulated M60 slid off a fixed one every time you aimed. That
+        //    baked-in gun is painted out; the door frame behind it reads as a
+        //    shadowed recess and the gunner's paws now hold only this sprite.
+        // Anchor follows the repaint: pivot at 34%/50% of the art puts the
+        // receiver in his paws at every angle, and the gun is 84px so it reads
+        // at the helicopter's 150px scale.
+        const gw = 84, gh = gw * (m60.height / m60.width);
+        ctx.drawImage(m60, -gw * 0.34, -gh * 0.50, gw, gh);
       } else { // fallback: the old procedural barrel
         ctx.fillStyle = '#3a3a32'; ctx.fillRect(-12, -4, 46, 8);
         ctx.fillStyle = '#55554a'; ctx.fillRect(-12, -4, 46, 2);
@@ -380,7 +466,7 @@ export class DoorGun extends RailBase {
       }
       ctx.restore();
       if (this.fireT > 0) {
-        drawMuzzleBurst(ctx, gx + cA * 52, gy2 + sA * 52, ang, this.fireT / 70);
+        drawMuzzleBurst(ctx, gx + cA * 62, gy2 + sA * 62, ang, this.fireT / 70);
       }
     }
     this.drawBooms(ctx);
@@ -389,6 +475,14 @@ export class DoorGun extends RailBase {
     // timer bar
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(W / 2 - 200, 14, 400, 10);
     ctx.fillStyle = PAL.cheese; ctx.fillRect(W / 2 - 200, 14, 400 * Math.min(1, this.t / this.dur), 10);
+    // armour pips + current airframe tier: the upgrade you can lose, readable
+    // at a glance so the strip-a-tier hit lands as a loss and not a mystery.
+    ctx.font = 'bold 20px monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = this.pips <= 1 ? PAL.redAccent : PAL.hud;
+    ctx.fillText('HULL ' + '▮'.repeat(Math.max(0, this.pips)) + '▯'.repeat(Math.max(0, 4 - this.pips)), 24, 86);
+    const tn = ['', 'HUEY', 'HUEY + PODS', 'HUEY GUNSHIP'][this.tier || 1];
+    ctx.fillStyle = (this.tier || 1) > 1 ? PAL.cheese : PAL.hudDim;
+    ctx.fillText(tn, 24, 112);
   }
 }
 

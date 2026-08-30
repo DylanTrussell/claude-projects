@@ -19,6 +19,14 @@ export const CFG = {
   // weapons
   rifleCd: 160, rifleSpd: 760,
   gatlingCd: 66, gatlingAmmo: 200,
+  // v13.3 Metal Slug weapon set. Tuned to the series' rule that every special
+  // lands in a ~10-18s active-use band, against the rifle's 6.25 DPS baseline.
+  // TRENCH BROOM: 7 pellets in a cone, huge close DPS, falls off with range.
+  shotCd: 420, shotAmmo: 30, shotPellets: 7, shotSpread: 0.46, shotSpd: 900, shotRange: 300,
+  // LAW TUBE: slow, heavy, splash. The commitment weapon.
+  rocketCd: 700, rocketAmmo: 30, rocketSpd: 620, rocketSplash: 88, rocketDmg: 8,
+  // SKIPPER: bouncing napalm canisters that leave fire pools.
+  skipCd: 550, skipAmmo: 30, skipSpd: 380, skipBounce: 0.72, skipSplash: 90,
   raygunCd: 210, raygunSpd: 700, raygunAmmo: 60, raygunDmg: 2, raygunPierce: 3,
   // v13 (Dylan: "flamethrower is weak"). Faster cadence = a continuous stream
   // rather than a dotted line of puffs; a touch more reach and life so the

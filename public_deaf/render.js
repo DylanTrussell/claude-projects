@@ -350,10 +350,19 @@ function drawPlatforms(ctx, cam, crates, t) {
     if (c.hp <= 0) continue;
     const x = c.x - cam;
     if (x < -60 || x > W + 60) continue;
-    ctx.fillStyle = PAL.mud1; ctx.fillRect(x - 24, CFG.groundY - 48, 48, 48);
-    ctx.fillStyle = PAL.cheese; ctx.fillRect(x - 24, CFG.groundY - 48, 48, 8);
-    o(ctx); ctx.strokeRect(x - 24, CFG.groundY - 48, 48, 48);
-    ctx.beginPath(); ctx.moveTo(x - 24, CFG.groundY - 48); ctx.lineTo(x + 24, CFG.groundY); ctx.stroke();
+    // Sit the crate ON its platform. Every crate in LEVEL.crates is inside a
+    // LEVEL.platforms footprint, but they all drew at CFG.groundY -- so on the
+    // raised sandbags the box rendered THROUGH the platform and read as a
+    // floating slab next to the hero. That's the artifact Dylan circled on the
+    // first jumpable platform, and the "shadow on his gun".
+    let top = CFG.groundY;
+    for (const [px, py, pw] of LEVEL.platforms) {
+      if (c.x >= px && c.x <= px + pw && py < top) top = py;
+    }
+    ctx.fillStyle = PAL.mud1; ctx.fillRect(x - 24, top - 48, 48, 48);
+    ctx.fillStyle = PAL.cheese; ctx.fillRect(x - 24, top - 48, 48, 8);
+    o(ctx); ctx.strokeRect(x - 24, top - 48, 48, 48);
+    ctx.beginPath(); ctx.moveTo(x - 24, top - 48); ctx.lineTo(x + 24, top); ctx.stroke();
     // Mark crates as SHOOTABLE. They're now the only source of the
     // flamethrower and of every heal in the game, but they're drawn in the
     // same muted mud/khaki as the scenery they sit among, so a playtester
@@ -364,8 +373,8 @@ function drawPlatforms(ctx, cam, crates, t) {
     ctx.save();
     ctx.globalAlpha = pulse * 0.9;
     ctx.fillStyle = '#FFC93C';
-    ctx.fillRect(x - 16, CFG.groundY - 30, 32, 5);
-    ctx.fillRect(x - 3, CFG.groundY - 41, 6, 6);
+    ctx.fillRect(x - 16, top - 30, 32, 5);
+    ctx.fillRect(x - 3, top - 41, 6, 6);
     ctx.restore();
   }
 }
@@ -439,6 +448,21 @@ function drawPickup(ctx, x, y, kind, t) {
       ctx.fillStyle = PAL.jungle2; ctx.fillRect(-16, -12, 30, 18);
       ctx.fillStyle = PAL.cheese; ctx.fillRect(-16, -4, 30, 5); ctx.strokeRect(-16, -12, 30, 18);
     }
+  } else if (kind === 'shot') {           // TRENCH BROOM
+    ctx.fillStyle = '#6b4a24'; ctx.fillRect(-20, -5, 20, 10);
+    ctx.fillStyle = '#8d8d84'; ctx.fillRect(0, -4, 22, 8);
+    ctx.fillStyle = '#c8372d'; ctx.fillRect(18, -4, 5, 8);
+    ctx.strokeRect(-20, -5, 43, 10);
+  } else if (kind === 'rocket') {         // LAW TUBE
+    ctx.fillStyle = '#4d5b34'; ctx.fillRect(-22, -7, 44, 14);
+    ctx.fillStyle = '#c8372d'; ctx.fillRect(16, -7, 8, 14);
+    ctx.fillStyle = PAL.cheese; ctx.fillRect(-22, -2, 44, 4);
+    ctx.strokeRect(-22, -7, 44, 14);
+  } else if (kind === 'skip') {           // SKIPPER canisters
+    ctx.fillStyle = '#6d5a24';
+    ctx.beginPath(); ctx.ellipse(-8, 0, 10, 12, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(9, 2, 8, 10, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#FFC93C'; ctx.fillRect(-18, -2, 20, 4); ctx.fillRect(2, 0, 15, 3);
   } else if (kind === 'gatling') {
     ctx.fillStyle = '#5a5a52'; ctx.fillRect(-18, -8, 30, 14);
     ctx.fillStyle = PAL.cheese; ctx.fillRect(8, -5, 14, 8);
@@ -461,14 +485,18 @@ function drawPickup(ctx, x, y, kind, t) {
 
 const SIZES = { // draw heights per kind (relative_scale contract, hero=96)
   gruntUS: 92, gruntVC: 92, alien: 88, ufo: 96, heli: 190, pow: 76, boss: 460, buddy: 92,
+  ratbig: 190, ratjet: 96, ratmech: 300,   // v13.3 escalation: same sprite, bigger silhouettes
 };
-const SPRITE_FOR = { gruntUS: 'grunt_us', gruntVC: 'grunt_vc', alien: 'alien_trooper', ufo: 'ufo_small', heli: 'heli_us', boss: 'boss_mothership', pow: 'hero_vc', buddy: 'grunt_us' };
+const SPRITE_FOR = { gruntUS: 'grunt_us', gruntVC: 'grunt_vc', alien: 'alien_trooper', ufo: 'ufo_small', heli: 'heli_us', boss: 'boss_mothership', pow: 'hero_vc', buddy: 'grunt_us',
+  ratbig: 'alien_trooper', ratjet: 'alien_trooper', ratmech: 'alien_trooper' };
 // Native facing of each generated sprite (+1 = drawn facing right). Flip when entity faces the other way.
-const BASE_FACE = { gruntUS: 1, gruntVC: 1, alien: -1, ufo: 1, heli: 1, boss: 1, pow: 1, buddy: 1 };
+const BASE_FACE = { gruntUS: 1, gruntVC: 1, alien: -1, ufo: 1, heli: 1, boss: 1, pow: 1, buddy: 1, ratbig: -1, ratjet: -1, ratmech: -1 };
 
 function drawEntity(ctx, e2, cam, t, inv) {
-  const [id, k, x, y, face, st, hp, beam, open, ph, flyer] = e2;
-  const sx = x - cam;
+  const [id, k, x, y, face, st, hp, beam, open, ph, flyer, kick, burning] = e2;
+  // recoil shove: a firing squadmate/grunt rocks back along its facing so the
+  // body reads as shooting instead of a static sprite with a flash pinned on
+  const sx = x - cam - (kick || 0) * face;
   if (sx < -260 || sx > W + 260) return;
   const hgt = SIZES[k] || 90;
 
@@ -536,7 +564,20 @@ function drawEntity(ctx, e2, cam, t, inv) {
     const fr = Math.floor(t / (1000 / s.fps)) % s.frames;
     drawSheet(ctx, 'sheet_alien_walk', fr, sx - w2 / 2, drawY, w2, hgt, flip);
   } else if (!drawImg(ctx, sprId, sx - w2 / 2, drawY, w2, hgt, flip)) {
-    ctx.fillStyle = PAL.teal; ctx.fillRect(sx - 20, y - hgt, 40, hgt);
+    // Dylan: "found a weird blue square on some of the rats." That was THIS --
+    // a bright PAL.teal debug rectangle drawn whenever a sprite hadn't loaded
+    // (a chunk still in flight, or a frame id that doesn't resolve). Fall back
+    // to a real sprite first, and if there's genuinely nothing, draw a dark
+    // silhouette that reads as a shadowed enemy rather than a debug box.
+    if (!drawImg(ctx, k === 'alien' ? 'alien_trooper' : 'grunt_vc', sx - w2 / 2, drawY, w2, hgt, flip)) {
+      ctx.save();
+      ctx.globalAlpha = 0.72;
+      ctx.fillStyle = '#241f18';
+      ctx.beginPath();
+      ctx.ellipse(sx, drawY + hgt * 0.32, w2 * 0.26, hgt * 0.30, 0, 0, 7); ctx.fill();
+      ctx.fillRect(sx - w2 * 0.16, drawY + hgt * 0.45, w2 * 0.32, hgt * 0.55);
+      ctx.restore();
+    }
   }
   if (k === 'heli') { // spinning rotor + tail rotor (sprite blades were erased)
     const hubX = sx - w2 / 2 + (flip ? 1 - 0.475 : 0.475) * w2;
@@ -720,6 +761,27 @@ function drawBullet(ctx, b, cam) {
       ctx.fillStyle = PAL.tracer;
       ctx.fillRect(sx - 7, y - 2, 14, 4);
     }
+  } else if (k === 11) { // shotgun pellet: short hot dash with a glow
+    ctx.fillStyle = 'rgba(255,230,170,0.35)';
+    ctx.fillRect(sx - 9, y - 3, 18, 6);
+    ctx.fillStyle = '#ffe9b0';
+    ctx.fillRect(sx - 5, y - 1.5, 10, 3);
+  } else if (k === 12) { // LAW rocket: body, nose, and a smoke trail
+    ctx.fillStyle = 'rgba(200,190,175,0.30)';
+    ctx.beginPath(); ctx.arc(sx - 16, y, 7, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx - 28, y + 1, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = '#4a4a3e'; ctx.fillRect(sx - 12, y - 4, 22, 8);
+    ctx.fillStyle = '#c8372d'; ctx.fillRect(sx + 8, y - 4, 7, 8);
+    ctx.fillStyle = '#ffca55';
+    ctx.beginPath(); ctx.arc(sx - 13, y, 4.5, 0, 7); ctx.fill();
+  } else if (k === 13) { // SKIPPER canister: tumbling drum trailing fire
+    ctx.save();
+    ctx.translate(sx, y); ctx.rotate((b[0] * 0.06) % (Math.PI * 2));
+    ctx.fillStyle = '#6d5a24'; ctx.fillRect(-9, -6, 18, 12);
+    ctx.fillStyle = '#FFC93C'; ctx.fillRect(-9, -2, 18, 4);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,150,50,0.5)';
+    ctx.beginPath(); ctx.arc(sx - 10, y + 3, 5, 0, 7); ctx.fill();
   } else if (k === 3) { // grenade
     ctx.fillStyle = PAL.jungle2;
     ctx.beginPath(); ctx.arc(sx, y, 7, 0, 7); ctx.fill();
@@ -900,6 +962,85 @@ function drawTailRotor(ctx, cx, cy, r, t) {
 }
 
 // ---------- ambient air war (background flavor, never overdone) ----------
+// THE VALKYRIES FLIGHT (Dylan: "in the beginning there needs to be American
+// helicopters coming in like the Ride of the Valkyries scene from Apocalypse
+// Now in the background. There needs to be a squad of them, almost like a
+// flock of geese."). 11 aircraft in three parallax layers, all scaled draws of
+// heli_us -- no new art. 6 far / 4 mid / 1 near, because a flock reads as
+// many-far, some-mid, one-hero; equal counts read as a grid. Far aircraft get
+// a shimmering ellipse instead of a real rotor (at 38px wide a rotor disc is
+// two pixels of information and the shimmer IS the read).
+const VALK = { born: 0, ships: null };
+function buildValkyries() {
+  const rows = [
+    // [layer, xOff, yOff, w] -- hand-placed, never randomised: no two share an
+    // x within 40 or a y within 18, and two far ships are deliberate stragglers
+    [0, -340, -132, 40], [0, -180, -128, 38], [0, -20, -134, 42], [0, 150, -126, 39],
+    [0, -262, -170, 33], [0, 68, -166, 34],                       // <- stragglers, smaller + higher
+    [1, -290, -58, 70], [1, -120, -50, 64], [1, 90, -60, 76], [1, 240, -46, 66],
+    [2, 0, 0, 162],
+  ];
+  return rows.map((r, i) => ({
+    layer: r[0], xOff: r[1], yOff: r[2], w: r[3],
+    ph: i * 1.37,                                   // deterministic phase: never sync
+    jx: Math.sin(i * 2.9) * 22, jy: Math.cos(i * 3.7) * 14,
+  }));
+}
+function drawValkyries(ctx, t, cam) {
+  if (!VALK.ships) { VALK.ships = buildValkyries(); VALK.born = t; }
+  const el = t - VALK.born;
+  if (el > 26000) return false;                     // set-piece, then hand back
+  // entrance: near ship arrives first (it's fastest at 0.42 parallax), far
+  // rank last -- that stagger IS the depth cue
+  const LAY = [
+    { par: 0.10, alpha: 0.42, haze: 0.35, ent: 4500 },
+    { par: 0.22, alpha: 0.68, haze: 0.15, ent: 4100 },
+    { par: 0.42, alpha: 1.00, haze: 0.00, ent: 3200 },
+  ];
+  const anchorX = W * 0.62, anchorY = 208;
+  const drift = el * 0.011;                          // formation creeps left
+  const out = Math.max(0, (el - 21000) / 3000);      // 3s exit
+  for (const s of VALK.ships) {
+    const L = LAY[s.layer];
+    const k = Math.min(1, el / L.ent);
+    const ease = 1 - Math.pow(1 - k, 3);
+    const bob = Math.sin(el / 620 + s.ph) * (2.5 + s.layer * 1.6);
+    const sway = Math.sin(el / 2400 + s.ph) * 9;
+    const x = anchorX + s.xOff + s.jx + sway - drift - cam * L.par
+            + (1 - ease) * (W + 420) + out * -520;
+    const y = anchorY + s.yOff + s.jy + bob - out * 90;
+    const w = s.w, h = w * 0.54;
+    if (x < -240 || x > W + 300) continue;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, L.alpha * (1 - out));
+    const pitch = 0.07 + Math.sin(el / 840 + s.ph) * 0.035;
+    ctx.translate(x + w / 2, y + h / 2); ctx.rotate(pitch); ctx.translate(-(x + w / 2), -(y + h / 2));
+    if (!drawImg(ctx, 'heli_us', x, y, w, h, true)) { ctx.fillStyle = '#2e3324'; ctx.fillRect(x, y, w, h * 0.4); }
+    if (s.layer === 2) {
+      drawRotor(ctx, x + (1 - 0.475) * w, y + 0.05 * h, 0.46 * w, t);
+      drawTailRotor(ctx, x + (1 - 0.910) * w, y + 0.160 * h, 0.078 * w, t);
+    } else if (s.layer === 1) {
+      ctx.globalAlpha *= 0.5;
+      drawRotor(ctx, x + (1 - 0.475) * w, y + 0.05 * h, 0.46 * w, t);
+      ctx.globalAlpha = L.alpha * (1 - out);
+    } else {
+      // far: a shimmering disc, 2->4px tall at 11Hz. One ellipse.
+      const rh = 2 + Math.abs(Math.sin(el / 90 + s.ph)) * 2;
+      ctx.fillStyle = 'rgba(230,225,210,0.18)';
+      ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + 0.06 * h, w * 0.475, rh, 0, 0, 7); ctx.fill();
+    }
+    ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-pitch); ctx.translate(-(x + w / 2), -(y + h / 2));
+    if (L.haze > 0) { // distance haze so the far rank sits behind the weather
+      ctx.globalAlpha = L.haze * (1 - out);
+      ctx.fillStyle = '#7d5a3a';
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  return true;
+}
+
 const AW = { nextT: 0, act: null };
 function drawAirWar(ctx, t, inv) {
   if (!AW.nextT) AW.nextT = t + 7000;
@@ -988,7 +1129,10 @@ export function render(ctx, view, t, myPid, dbg) {
   } else { ctx.fillStyle = PAL.duskSky; ctx.fillRect(0, 0, W, H); }
 
   // ambient air war: lone Hueys, and dogfights with UFOs after the invasion
-  drawAirWar(ctx, t, inv);
+  // The opening squadron owns the sky for its first ~26s; the lone-Huey
+  // dogfight spawner takes over afterwards. Never both at once.
+  if (!inv && !drawValkyries(ctx, t, cam)) drawAirWar(ctx, t, inv);
+  else if (inv) drawAirWar(ctx, t, inv);
 
   drawGround(ctx, cam, inv);
   drawIslands(ctx, cam, view.t || t);

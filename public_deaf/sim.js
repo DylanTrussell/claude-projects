@@ -37,8 +37,14 @@ export const LEVEL = {
   tunnels: [900, 1600, 2250, 2900, 6150],  // VC pop-up spawn points (+ the rat nest mouth)
   pows: [6700],                             // outdoor POW (Mittens is rescued INSIDE the tunnel now)
   fpsDoors: { main: 3350, nest: 6150 },     // first-person tunnel entrances
+  // Dylan: "there needs to be more power-ups. Double the amount of power-ups,
+  // and then you should run out of that one and then pick up a new one."
+  // 5 -> 12 crates, spaced so the Metal Slug loop turns over: you're never on
+  // the rifle for more than ~25s, and each special runs dry in 10-16s.
   crates: [ // breakable crates with pickups: x, kind
-    [560, 'grenades'], [2100, 'tuna'], [4350, 'flame'], [5770, 'tuna'], [6080, 'grenades'],
+    [560, 'grenades'], [1180, 'shot'], [2100, 'tuna'], [2720, 'rocket'],
+    [3240, 'shot'], [4350, 'flame'], [4820, 'skip'], [5320, 'tuna'],
+    [5770, 'rocket'], [6080, 'grenades'], [6620, 'shot'], [7420, 'skip'],
   ],
 };
 
@@ -50,10 +56,17 @@ const WAVES = [
   { x: 1300, lock: 1, spawn: [['gruntVC', 2, 'tunnel'], ['gruntUS', 2, 'right'], ['gruntVC', 1, 'right']] },
   { x: 2150, lock: 1, spawn: [['gruntUS', 3, 'right'], ['gruntVC', 2, 'tunnel']] },
   { x: 2650, lock: 1, pin: 1, spawn: [['gruntVC', 3, 'tunnel'], ['gruntUS', 3, 'right'], ['gruntVC', 2, 'left']] }, // exam A: pinned down -> air support
+  // ESCALATION (Dylan: "have the thing get progressively crazier"). Each new
+  // rat type gets ONE clean introduction before it's ever mixed in, which is
+  // the Metal Slug rule -- teach it solo, then stack it.
   { x: 4200, lock: 1, spawn: [['alien', 3, 'right']] },
+  { x: 4650, lock: 1, spawn: [['ratjet', 2, 'sky']] },                                          // teach: rocket packs
   { x: 4800, lock: 1, spawn: [['alien', 3, 'right'], ['ufo', 1, 'sky']] },
-  { x: 5600, lock: 1, spawn: [['alien', 4, 'right'], ['ufo', 1, 'sky'], ['alien', 2, 'left']] },
-  { x: 6450, lock: 1, spawn: [['alien', 4, 'right'], ['ufo', 2, 'sky'], ['alien', 2, 'left']] }, // exam B
+  { x: 5200, lock: 1, spawn: [['ratbig', 1, 'right']] },                                        // teach: the charger, solo
+  { x: 5600, lock: 1, spawn: [['alien', 3, 'right'], ['ratjet', 2, 'sky'], ['alien', 2, 'left']] },
+  { x: 6050, lock: 1, spawn: [['ratmech', 1, 'right'], ['alien', 2, 'left']] },                  // teach: the mech
+  { x: 6450, lock: 1, spawn: [['alien', 3, 'right'], ['ufo', 2, 'sky'], ['ratbig', 1, 'left']] }, // exam B
+  { x: 6900, lock: 1, spawn: [['ratmech', 2, 'right'], ['ratjet', 3, 'sky']] },                  // the mech is now a mook
 ];
 
 let nextId = 1;
@@ -203,6 +216,14 @@ function defaults(k) {
     case 'gruntUS': return { hp: CFG.gruntHp, side: 'us' };
     case 'gruntVC': return { hp: CFG.gruntHp, side: 'vc' };
     case 'alien':   return { hp: CFG.alienHp, side: 'alien' };
+    // v13.3 escalation ladder (Dylan: "make some giant rats, like rat mechas
+    // (like MechWarrior rats), and giant rats, and rats with rocket packs...
+    // have the thing get progressively crazier"). Same sprite, scaled and
+    // re-behaved, so no new art is needed to make the back half of the level
+    // feel like a different game.
+    case 'ratbig':  return { hp: 14, side: 'alien', spd: 130 };          // charger
+    case 'ratjet':  return { hp: 8,  side: 'alien', fly: 1, y0: 0 };     // rocket pack
+    case 'ratmech': return { hp: 40, side: 'alien', spd: 46, mech: 1 };  // walking mech
     case 'ufo':     return { hp: CFG.ufoHp, side: 'alien', st: 'hover' };
     case 'heli':    return { hp: CFG.heliHp, side: 'us', st: 'pass' };
     case 'pow':     return { hp: 1, side: 'pow', st: 'captive' };
@@ -463,6 +484,42 @@ export function step(g, dt, inputs) {
         if (--p.ammo <= 0) p.weap = 'rifle';
         evPush(g, { e: 'sfx', n: 'sfx_raygun' });
         evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng, w: 'raygun' });
+      } else if (p.weap === 'shot') {
+        // TRENCH BROOM: a cone of pellets that fade out with range. Devastating
+        // point-blank, weak far away -- and it shoves the player back, so
+        // firing it mid-air is also a movement tool.
+        p.fireCd = CFG.shotCd;
+        for (let i = 0; i < CFG.shotPellets; i++) {
+          const off = (i / (CFG.shotPellets - 1) - 0.5) * CFG.shotSpread;
+          const [vx2, vy2] = aim(CFG.shotSpd * (0.85 + g.rng() * 0.3), 0);
+          const ca = Math.cos(off), sa = Math.sin(off);
+          const b2 = fireBullet(g, mzX, mzY, vx2 * ca - vy2 * sa, vx2 * sa + vy2 * ca, 11, 1);
+          if (b2) { b2.t = (CFG.shotRange / CFG.shotSpd) * 1000; b2.p = 1; }
+        }
+        p.vx -= p.face * (p.onG ? 90 : 200);      // recoil shove
+        if (--p.ammo <= 0) p.weap = 'rifle';
+        evPush(g, { e: 'sfx', n: 'sfx_shotgun' });
+        evPush(g, { e: 'shake', m: 5 });
+        evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng, w: 'shotgun' });
+      } else if (p.weap === 'rocket') {
+        // LAW TUBE: slow heavy rocket, big splash, smoke trail.
+        p.fireCd = CFG.rocketCd;
+        const [vx2, vy2] = aim(CFG.rocketSpd, 0);
+        const b2 = fireBullet(g, mzX, mzY, vx2, vy2, 12, 1);
+        if (b2) b2.t = 2200;
+        if (--p.ammo <= 0) p.weap = 'rifle';
+        evPush(g, { e: 'sfx', n: 'sfx_shotgun' });
+        evPush(g, { e: 'shake', m: 6 });
+        evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng, w: 'shotgun' });
+      } else if (p.weap === 'skip') {
+        // SKIPPER: bouncing napalm. Aimed by rhythm off the terrain, and the
+        // terminal blast leaves a fire pool via the flamethrower's system.
+        p.fireCd = CFG.skipCd;
+        const b2 = fireBullet(g, mzX, mzY, p.face * CFG.skipSpd, -120, 13, 1);
+        if (b2) { b2.t = 3000; b2.bounce = 4; }
+        if (--p.ammo <= 0) p.weap = 'rifle';
+        evPush(g, { e: 'sfx', n: 'sfx_napalm' });
+        evPush(g, { e: 'muzzle', x: mzX, y: mzY, up: up ? 1 : 0, f: p.face, ang: mzAng, w: 'rifle' });
       } else if (p.weap === 'flame') { // short-range fire hose
         p.fireCd = CFG.flameCd;
         const [vx2, vy2] = aim(CFG.flameSpd, (g.rng() - 0.5) * 110);
@@ -796,6 +853,20 @@ export function step(g, dt, inputs) {
     if (b.x < g.cam - 80 || b.x > g.cam + W + 400) { b.on = 0; continue; }
     if (b.y >= gy - 2) {
       if (b.k === 3) { explode(g, b.x, gy - 10, 1); b.on = 0; continue; }
+      if (b.k === 12) { explode(g, b.x, gy - 10, 1); b.on = 0; continue; } // rocket hits dirt
+      if (b.k === 13) { // SKIPPER bounces, then lays a fire pool on the last one
+        if ((b.bounce || 0) > 0) {
+          b.bounce--; b.y = gy - 12; b.vy = -Math.abs(b.vy) * CFG.skipBounce; b.vx *= 0.88;
+          evPush(g, { e: 'sfx', n: 'sfx_shrapnel' });
+          continue;
+        }
+        explode(g, b.x, gy - 10, 1);
+        for (let i = -1; i <= 1; i++) {
+          const fx2 = b.x + i * 46;
+          if (g.fires.length < 26) g.fires.push({ id: nextId++, x: fx2, y: gy - 6, t: 2600, tick: 0 });
+        }
+        b.on = 0; continue;
+      }
       if (b.k === 4) { g.lures.push({ id: nextId++, x: b.x, y: gy - 14, t: CFG.cheeseLife }); b.on = 0; continue; }
       if (b.k === 5) { explode(g, b.x, gy - 10, 0); b.on = 0; continue; }
       // v13 (Dylan: "make them leave flaming residue"). Flame hitting dirt used
@@ -848,7 +919,12 @@ export function step(g, dt, inputs) {
             explode(g, b.x, b.y, 1);
             b.on = 0; break;
           }
-          const dmg = b.k === 9 ? CFG.raygunDmg : 1;
+          if (b.k === 12 || b.k === 13) { // rocket / napalm canister: splash
+            explode(g, b.x, b.y, 1);
+            if (b.k === 13) evPush(g, { e: 'fire', x: b.x, y: CFG.groundY, r: CFG.skipSplash });
+            b.on = 0; break;
+          }
+          const dmg = b.k === 9 ? CFG.raygunDmg : b.k === 12 ? CFG.rocketDmg : 1;
           if (b.k === 9) { // stolen ray gun: pierces through the line
             if (b.lh === e2.id) continue;
             b.lh = e2.id;
@@ -963,6 +1039,9 @@ function applyPickup(g, p, kind) {
     p.weap = 'raygun'; p.ammo = CFG.raygunAmmo; evPush(g, { e: 'banner', k: 'gotRaygun' }); evPush(g, { e: 'sfx', n: 'sfx_raygun' });
   }
   else if (kind === 'flame') { p.weap = 'flame'; p.ammo = CFG.flameAmmo; evPush(g, { e: 'banner', k: 'gotFlame' }); evPush(g, { e: 'sfx', n: 'sfx_flame' }); }
+  else if (kind === 'shot') { p.weap = 'shot'; p.ammo = CFG.shotAmmo; evPush(g, { e: 'banner', k: 'gotShotgunW' }); evPush(g, { e: 'sfx', n: 'sfx_shotgun' }); }
+  else if (kind === 'rocket') { p.weap = 'rocket'; p.ammo = CFG.rocketAmmo; evPush(g, { e: 'banner', k: 'gotRocket' }); evPush(g, { e: 'sfx', n: 'sfx_shotgun' }); }
+  else if (kind === 'skip') { p.weap = 'skip'; p.ammo = CFG.skipAmmo; evPush(g, { e: 'banner', k: 'gotSkip' }); evPush(g, { e: 'sfx', n: 'sfx_napalm' }); }
   // Was +100 here and a second, unreachable `else if (kind === 'tuna')` below
   // that added +300 -- dead because this branch returns first. Folded the
   // intended total into the one live branch.
@@ -1167,6 +1246,86 @@ function stepEnemy(g, e2, dt, dts) {
       e2.y = groundAt(e2.x) === CFG.groundY ? CFG.groundY : e2.y; // grunts don't fall in pits (path around)
       return;
     }
+    // ---- BIG RAT: charges in a straight line with a heavy wind-up, then has
+    // a long recovery. Bait the charge, sidestep, punish the recovery.
+    case 'ratbig': {
+      const p3 = near(e2.x);
+      if (!p3) return;
+      e2.y = groundAt(e2.x);
+      const d3 = Math.abs(p3.x - e2.x);
+      if (e2.chg > 0) {                                  // charging
+        e2.chg -= dt;
+        e2.x += e2.face * 330 * dts;
+        if (Math.abs(p3.x - e2.x) < 40 && p3.st === 'alive') hurtPlayer(g, p3, 'shot', 1);
+        if (e2.chg <= 0) { e2.rec = 900; evPush(g, { e: 'shake', m: 6 }); }
+        return;
+      }
+      if (e2.rec > 0) { e2.rec -= dt; return; }          // winded: free damage
+      e2.face = p3.x > e2.x ? 1 : -1;
+      if (d3 > 90 && d3 < 520) {
+        if (!e2.tell) { e2.tell = 700; evPush(g, { e: 'sfx', n: 'sfx_screech' }); }
+        e2.tell -= dt;
+        if (e2.tell <= 0) { e2.tell = 0; e2.chg = 900; }
+      } else if (d3 >= 520) e2.x += e2.face * (e2.spd || 130) * dts;
+      return;
+    }
+    // ---- JETPACK RAT: hovers, closes, then dives. The dive is telegraphed by
+    // a climb, and it eats a long ground recovery -- so dodging is a free kill.
+    case 'ratjet': {
+      const p4 = near(e2.x);
+      if (!p4) return;
+      const gy4 = groundAt(e2.x);
+      if (e2.dive > 0) {
+        e2.dive -= dt;
+        e2.x += e2.face * 300 * dts; e2.y += 520 * dts;
+        if (e2.y >= gy4) { e2.y = gy4; e2.dive = 0; e2.rec = 700; evPush(g, { e: 'boom', x: e2.x, y: e2.y - 10, big: 0 }); }
+        if (Math.abs(p4.x - e2.x) < 44 && Math.abs(p4.y - e2.y) < 90 && p4.st === 'alive') hurtPlayer(g, p4, 'shot', 1);
+        return;
+      }
+      if (e2.rec > 0) { e2.rec -= dt; e2.y = gy4; return; }
+      const hoverY = gy4 - 190;
+      e2.y += (hoverY - e2.y) * Math.min(1, dts * 2.4) + Math.sin(g.t / 220 + e2.id) * 0.6;
+      e2.face = p4.x > e2.x ? 1 : -1;
+      const d4 = Math.abs(p4.x - e2.x);
+      if (d4 > 60) e2.x += e2.face * 190 * dts;
+      e2.atkT -= dt;
+      if (d4 < 190 && e2.atkT <= 0) {
+        if (!e2.tell) { e2.tell = 450; }
+        e2.tell -= dt;
+        e2.y -= 90 * dts;                                 // climbs before the dive: the tell
+        if (e2.tell <= 0) { e2.tell = 0; e2.dive = 900; e2.atkT = 2600; evPush(g, { e: 'sfx', n: 'sfx_laser' }); }
+      }
+      return;
+    }
+    // ---- RAT MECHA: slow MechWarrior-style biped. Rocket salvo with a long,
+    // loud tell; the cockpit is the weak point and it's only open between
+    // salvos, so you damage it in the gaps.
+    case 'ratmech': {
+      const p5 = near(e2.x);
+      if (!p5) return;
+      e2.y = groundAt(e2.x);
+      e2.face = p5.x > e2.x ? 1 : -1;
+      const d5 = Math.abs(p5.x - e2.x);
+      if (d5 > 300) e2.x += e2.face * (e2.spd || 46) * dts;
+      e2.atkT -= dt;
+      if (e2.atkT <= 0) {
+        if (!e2.tell) { e2.tell = 800; e2.open = 0; evPush(g, { e: 'sfx', n: 'sfx_ufo' }); }
+        e2.tell -= dt;
+        if (e2.tell <= 0) {
+          e2.tell = 0; e2.atkT = 3200; e2.open = 1400;    // cockpit opens after firing
+          for (let i = 0; i < 5; i++) {
+            const ang5 = (i - 2) * 0.16;
+            const sp5 = 340;
+            fireBullet(g, e2.x + e2.face * 30, e2.y - 120,
+              e2.face * sp5 * Math.cos(ang5), sp5 * Math.sin(ang5) - 40, 6, 0);
+          }
+          evPush(g, { e: 'sfx', n: 'sfx_shotgun' });
+          evPush(g, { e: 'shake', m: 7 });
+        }
+      }
+      if (e2.open > 0) e2.open -= dt;
+      return;
+    }
     case 'alien': {
       if (e2.st === 'beam') { // beaming down from the saucers, live on screen
         e2.y += 300 * dts;
@@ -1293,11 +1452,26 @@ function stepEnemy(g, e2, dt, dts) {
       if (foe) {
         e2.face = foe.x > e2.x ? 1 : -1;
         if (e2.fireCd <= 0) {
-          e2.fireCd = 950 + g.rng() * 300;
-          fireBullet(g, e2.x + e2.face * 26, e2.y - 52, e2.face * CFG.gruntBulletSpd, 0, 1, 8);
-          evPush(g, { e: 'muzzle', x: e2.x + e2.face * 28, y: e2.y - 52, up: 0, f: e2.face });
-          evPush(g, { e: 'sfx', n: 'sfx_shot' });
+          // Dylan: at the drop-off "the cat is firing the gun, but it's
+          // stationary. There's a muzzle flash and the cat's just firing the
+          // gun stationary." Buddies now shoulder-shuffle while shooting and
+          // fire 3-round bursts, so the body reads as recoiling rather than a
+          // static sprite with a flash pinned to it. e2.kick drives a sprite
+          // offset in render.js.
+          e2.fireCd = 1100 + g.rng() * 400;
+          e2.bBurst = 3; e2.bCd = 0;
         }
+        if (e2.bBurst > 0) {
+          if (e2.bCd <= 0) {
+            e2.bBurst--; e2.bCd = 95;
+            e2.kick = 5;                                    // recoil shove, decays below
+            e2.moving = 0;
+            fireBullet(g, e2.x + e2.face * 26, e2.y - 52, e2.face * CFG.gruntBulletSpd, 0, 1, 8);
+            evPush(g, { e: 'muzzle', x: e2.x + e2.face * 28, y: e2.y - 52, up: 0, f: e2.face });
+            evPush(g, { e: 'sfx', n: 'sfx_shot' });
+          } else e2.bCd -= dt;
+        }
+        if (e2.kick > 0) e2.kick -= dts * 26;
       }
       return;
     }
@@ -1367,7 +1541,7 @@ export function serialize(g) {
       p.st === 'dead' ? (p.deathKind === 'trap' ? 1 : p.deathKind === 'pit' ? 2 : 0) : 0,
       R(p.respT)]),
     en: g.enemies.filter(e2 => e2.st !== 'gone' && e2.x > g.cam - 200 && e2.x < g.cam + W + 400)
-      .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0]),
+      .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0]),
     // v13: index 4 is the bullet's travel angle. Every projectile used to be
     // drawn as an axis-aligned horizontal dash regardless of where it was
     // actually going, so firing up (hold W) sent horizontal tracers climbing

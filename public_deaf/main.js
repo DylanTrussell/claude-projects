@@ -539,6 +539,16 @@ function frame(now) {
           g.score += kills * 100 + timeBonus;
           if (wasDoorgun) { // Charlie hops off the gun and back into the fight
             for (const e of g.enemies) if (e.duel) e.st = 'gone';
+            // Dylan: "after the main helicopter scene, there needs to be a
+            // transition into the next scene. It just ends abruptly." The rail
+            // used to cut straight to the side-scroller on the same frame.
+            // Now the gun run fades to white, holds, and fades back in on the
+            // ground with a title card -- the same white-out grammar the
+            // tunnel exit already uses, so the game reads as one piece.
+            FX.whiteT0 = 1500; FX.whiteT = 1500;
+            loadingChunk = true;
+            setTimeout(() => { loadingChunk = false; }, 900);
+            handleEvents([{ e: 'banner', k: 'actGroundwar' }]);
           }
           const p2 = g.players[0];
           p2.invulnT = 2200; if (p2.st !== 'out') p2.st = 'alive';
