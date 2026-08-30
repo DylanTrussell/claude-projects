@@ -775,8 +775,17 @@ function drawBullet(ctx, b, cam) {
       ctx.fillStyle = '#fffef2';
       ctx.fillRect(sx - 4, y - 1, 14, 2);
     } else {
+      // v13.3: enemy small-arms were a flat 14x4 tracer with no keyline. Under
+      // deuteranopia PAL.tracer simulates within 1.06:1 of the acid green that
+      // covers Act II, so incoming fire vanished into the scenery. A dark
+      // outline plus a white core reads against anything, at any colour vision,
+      // without turning enemy rounds into the player's glowing tracer.
+      ctx.fillStyle = PAL.outline;
+      ctx.fillRect(sx - 9, y - 4, 18, 8);
       ctx.fillStyle = PAL.tracer;
       ctx.fillRect(sx - 7, y - 2, 14, 4);
+      ctx.fillStyle = '#fffdf0';
+      ctx.fillRect(sx - 3, y - 1, 7, 2);
     }
   } else if (k === 11) { // shotgun pellet: short hot dash with a glow
     ctx.fillStyle = 'rgba(255,230,170,0.35)';
@@ -807,9 +816,15 @@ function drawBullet(ctx, b, cam) {
     ctx.fillStyle = PAL.cheese;
     ctx.beginPath(); ctx.moveTo(sx - 9, y + 6); ctx.lineTo(sx + 9, y + 6); ctx.lineTo(sx + 6, y - 8); ctx.closePath(); ctx.fill();
   } else if (k === 6) { // alien ray
-    ctx.fillStyle = PAL.ray;
-    ctx.fillRect(sx - 10, y - 2, 20, 5);
+    // v13.3: acid green on Act II's green sky measured 2.64:1 -- and 2.60:1
+    // under deuteranopia, at the SAME hue, so a colour-vision reviewer died
+    // twice in Act II without ever seeing what hit them. A dark keyline plus a
+    // white-hot core buys ~14:1 against any background regardless of colour
+    // vision, and costs the bolt nothing in character.
     ctx.fillStyle = PAL.acidGlow; ctx.fillRect(sx - 14, y - 4, 28, 9);
+    ctx.fillStyle = PAL.outline;  ctx.fillRect(sx - 12, y - 4, 24, 9);
+    ctx.fillStyle = PAL.ray;      ctx.fillRect(sx - 10, y - 2, 20, 5);
+    ctx.fillStyle = '#ffffff';    ctx.fillRect(sx - 4, y - 1, 9, 3);
   } else if (k === 8) { // shrapnel fragment
     ctx.fillStyle = PAL.boom2;
     ctx.fillRect(sx - 4, y - 1, 8, 3);
@@ -1434,12 +1449,38 @@ export function render(ctx, view, t, myPid, dbg) {
     hudText(ctx, label, 16, hy, 15, 'left', pid === myPid ? PAL.cheese : PAL.hud);
     // health meter: chunky segments, green -> red
     const segW = 22, segH = 10;
+    // v13.3: the healthy->warning step was PAL.acid -> PAL.cheese, which under
+    // deuteranopia is #e5e545 -> #dbdb35, a contrast of 1.10:1 -- below the
+    // threshold of a visible edge. A colour-vision reviewer only ever noticed
+    // health when it went RED, i.e. one hit from death. The tier now changes
+    // SHAPE as well as hue -- full segments solid, warning segments hollow,
+    // critical solid with a pulsing frame around the whole meter -- and the
+    // whole bar sits on an opaque plate instead of reading against live jungle.
+    const tier = (hp || 0) >= 4 ? 2 : (hp || 0) >= 2 ? 1 : 0;
+    const tierCol = tier === 2 ? PAL.acid : tier === 1 ? PAL.cheese : PAL.redAccent;
+    ctx.fillStyle = 'rgba(8,10,7,0.78)';
+    ctx.fillRect(12, hy + 4, (segW + 4) * CFG.hpMax + 8, segH + 10);
     for (let i = 0; i < CFG.hpMax; i++) {
       const x0 = 16 + i * (segW + 4), y0 = hy + 8;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(x0 - 1, y0 - 1, segW + 2, segH + 2);
-      ctx.fillStyle = i < (hp || 0) ? ((hp || 0) >= 4 ? PAL.acid : (hp || 0) >= 2 ? PAL.cheese : PAL.redAccent) : 'rgba(243,233,200,0.15)';
-      ctx.fillRect(x0, y0, segW, segH);
+      if (i < (hp || 0)) {
+        if (tier === 1) {                       // WARNING: hollow, unmistakable by shape
+          ctx.strokeStyle = tierCol; ctx.lineWidth = 2;
+          ctx.strokeRect(x0 + 1, y0 + 1, segW - 2, segH - 2);
+        } else {
+          ctx.fillStyle = tierCol;
+          ctx.fillRect(x0, y0, segW, segH);
+        }
+      } else {
+        ctx.fillStyle = 'rgba(243,233,200,0.15)';
+        ctx.fillRect(x0, y0, segW, segH);
+      }
+    }
+    if (tier === 0) {                            // CRITICAL: the whole meter pulses
+      ctx.strokeStyle = `rgba(200,55,45,${(0.45 + 0.45 * Math.sin(t / 140)).toFixed(2)})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(13, hy + 5, (segW + 4) * CFG.hpMax + 6, segH + 8);
     }
     const wLabel = weap === 'gatling' ? `  GATLING ${ammo}` : weap === 'raygun' ? `  RAY GUN ${ammo}` : weap === 'flame' ? `  FLAME ${ammo}` : '';
     hudText(ctx, `x${lives}  ✚${gren}  🧀${cheese}` + wLabel, 16, hy + 34, 14, 'left', PAL.hudDim);
