@@ -117,10 +117,16 @@ Seven have reported. What they found that was real, and fixed:
 - **The dodge window was below the reaction floor** at 380ms while the tunnel
   already used 560ms and called it honest.
 
-Skill-ladder win rate across six seeds, before and after this session:
+Skill-ladder win rate. Two caveats on these numbers, so they are not read as
+more than they are: the first measurement was a single seed, and the six-seed
+runs only started once the harness itself was trustworthy.
 
-| | novice | casual | good | expert |
+| measurement | novice | casual | good | expert |
 |---|---|---|---|---|
-| start of session | 0/6 | 0/6 | 0/6 | 0/6 (unwinnable) |
-| after balance work | 0/6 | 1/6 | 2/6 | 3/6 |
-| now | 3/6 | 4/6 | 5/6 | 4/6 |
+| first run, seed 7 only | LOSS | LOSS | LOSS | LOSS |
+| 6 seeds, mid-session | 0/6 | 1/6 | 2/6 | 3/6 |
+| 6 seeds, now | 3/6 | 4/6 | 5/6 | 4/6 |
+
+The first row is one seed, not six — every skill level lost that run, which is
+what prompted the investigation. n=6 cannot separate good from expert; the shape
+of the curve is the signal, not the individual cells.
