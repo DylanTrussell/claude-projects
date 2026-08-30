@@ -768,6 +768,12 @@ export class Skyraider extends RailBase {
     ctx.fillStyle = PAL.cheese; ctx.fillRect(W / 2 - 200, 14, 400 * Math.min(1, this.t / this.dur), 10);
     ctx.font = 'bold 20px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = PAL.boom2;
     ctx.fillText('NAPALM ' + '▮'.repeat(this.napalm), 24, 86);
+    // The A-1 has armour pips like the Huey; without a readout the player has
+    // no idea the plane is soaking hits for them, so losing the last one reads
+    // as an arbitrary death rather than the end of a resource they were
+    // spending.
+    ctx.fillStyle = this.pips <= 1 ? PAL.redAccent : PAL.hud;
+    ctx.fillText('HULL ' + '▮'.repeat(Math.max(0, this.pips)) + '▯'.repeat(Math.max(0, (this.pipsMax || 3) - this.pips)), 24, 112);
   }
 }
 
