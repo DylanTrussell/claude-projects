@@ -31,5 +31,17 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1])
-    os.chdir(sys.argv[2])
-    ThreadingHTTPServer(('', port), NoCacheHandler).serve_forever()
+    # Serve by ABSOLUTE PATH, never by chdir. assemble.sh does
+    # `rm -rf public_deaf && cp -R public public_deaf`, which deletes the very
+    # inode a chdir'd server is sitting in -- and SimpleHTTPRequestHandler calls
+    # os.getcwd() per request, so every request after a rebuild died with
+    # FileNotFoundError. A playtester hit this four times in one session and
+    # reported the page going white; it was my own rebuild pulling the floor out
+    # from under their server. An absolute path re-resolves to the new directory.
+    root = os.path.abspath(sys.argv[2])
+
+    class Handler(NoCacheHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=root, **kw)
+
+    ThreadingHTTPServer(('', port), Handler).serve_forever()
