@@ -439,6 +439,12 @@ if (new URLSearchParams(location.search).has('mute')) {
   $('p-music-slider').value = 0;
 }
 addEventListener('keydown', (e) => { if (e.code === 'Escape') { togglePause(); e.preventDefault(); } });
+// M toggles the tunnel automap. It defaults ON -- Dylan got lost twice, so the
+// map has to be there without being found first; the toggle exists for anyone
+// who wants the corner of the screen back.
+addEventListener('keydown', (e) => {
+  if (e.code === 'KeyM' && tunnel) { tunnel.mapOn = !tunnel.mapOn; e.preventDefault(); }
+});
 
 // ---------- main loop ----------
 let acc = 0, last = performance.now(), paused = false;

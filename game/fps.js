@@ -156,6 +156,17 @@ export class Tunnel {
     this.clawT = 0; this.clawBlood = 0; // v13: claw extend timer + blood-on-claws decay
     this.dmgDir = []; // v13: {a, t} directional damage indicators, angle relative to view
     this.rememberedMittens = false; this.vignette = null; // v13: the 'I knew I forgot something' beat
+    // v13.3 automap (Dylan, twice: "the tunnel is still really confusing and
+    // hard to navigate"). A compass chevron tells you which WAY the objective
+    // is; it cannot tell you which corridors you have already walked, which is
+    // the actual thing you lose track of down here. Doom shipped an automap
+    // for exactly this reason. `seen` is the set of cells revealed so far --
+    // filled in as you walk, not handed over at the start, so exploring still
+    // means something.
+    this.seen = new Set();
+    this.mapOn = true;                 // toggled with M
+    this.trail = [];                   // recent footsteps, so you can see doubling back
+    this.reveal();                     // the room you spawn in is on the map from frame one
     this.ammoInMag = PISTOL_MAG; this.reloadT = 0; // v10: pistol reload state
     this.walkT = 0; this.prevBits = 0; this.sway = 0; this.turnRate = 0;
     this.zbuf = new Float32Array(RW);
@@ -205,6 +216,83 @@ export class Tunnel {
     if (ny !== this.py) {
       const ey = ny + (ny > this.py ? R : -R);
       if (!this.solid(this.px - L, ey) && !this.solid(this.px + L, ey)) this.py = ny;
+    }
+    this.reveal();
+  }
+
+  // Corner automap. Only cells you have walked past are drawn, so it is a
+  // record of where you have BEEN rather than a solution handed over up front.
+  // Doubling back is the thing players actually lose track of down here, so
+  // the recent path is drawn on top of the rooms.
+  drawAutomap(ctx, now) {
+    if (!this.mapOn || !this.seen || !this.seen.size) return;
+    const gh = this.grid.length, gw = this.grid[0].length;
+    const box = 168, pad = 14;
+    const cs = Math.min(box / gw, box / gh);
+    const ox = W - box - pad, oy = H - box - pad;
+    ctx.save();
+    ctx.globalAlpha = 0.82;
+    ctx.fillStyle = 'rgba(12,14,10,0.72)';
+    ctx.fillRect(ox - 6, oy - 6, box + 12, box + 12);
+    ctx.strokeStyle = 'rgba(243,233,200,0.35)'; ctx.lineWidth = 1;
+    ctx.strokeRect(ox - 6, oy - 6, box + 12, box + 12);
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        if (!this.seen.has(y * 1000 + x)) continue;
+        const c = this.grid[y][x];
+        // 'D' is a secret wall: it must read as solid until it is opened, or
+        // the map gives every secret away for free.
+        const wall = c === '#' || c === 'D';
+        ctx.fillStyle = wall ? 'rgba(96,88,66,0.85)' : 'rgba(28,34,24,0.9)';
+        ctx.fillRect(ox + x * cs, oy + y * cs, Math.ceil(cs), Math.ceil(cs));
+      }
+    }
+    // path walked
+    if (this.trail.length > 1) {
+      ctx.strokeStyle = 'rgba(140,200,120,0.5)'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(ox + this.trail[0][0] * cs, oy + this.trail[0][1] * cs);
+      for (const t of this.trail) ctx.lineTo(ox + t[0] * cs, oy + t[1] * cs);
+      ctx.stroke();
+    }
+    // objective pip, but only once you have seen its part of the map -- it
+    // marks a place you can already navigate to, it does not reveal one.
+    const pip = (tx, ty, col) => {
+      if (!this.seen.has((ty | 0) * 1000 + (tx | 0))) return;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(ox + tx * cs, oy + ty * cs, Math.max(2.5, cs * 0.42), 0, 7); ctx.fill();
+    };
+    if (this.mittens && !this.result.rescued) pip(this.mittens.x, this.mittens.y, '#FFC93C');
+    if (this.exit) pip(this.exit.x, this.exit.y, '#8CFF3B');
+    // the player: a triangle, so the map tells you which way you are facing
+    ctx.save();
+    ctx.translate(ox + this.px * cs, oy + this.py * cs);
+    ctx.rotate(this.ang);
+    ctx.fillStyle = '#f3e9c8';
+    ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-3.5, 3.5); ctx.lineTo(-3.5, -3.5);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 0.5;
+    ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+    ctx.fillStyle = '#f3e9c8'; ctx.fillText('M — MAP', ox + box, oy - 11);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
+
+  // Light up the cells around the player plus the walls that bound them, so
+  // the automap draws corridors with edges instead of a cloud of dots.
+  reveal() {
+    const cx = this.px | 0, cy = this.py | 0;
+    for (let y = cy - 2; y <= cy + 2; y++) {
+      for (let x = cx - 2; x <= cx + 2; x++) {
+        if (y < 0 || x < 0 || y >= this.grid.length || x >= this.grid[0].length) continue;
+        this.seen.add(y * 1000 + x);
+      }
+    }
+    const last = this.trail[this.trail.length - 1];
+    if (!last || Math.hypot(last[0] - this.px, last[1] - this.py) > 0.9) {
+      this.trail.push([this.px, this.py]);
+      if (this.trail.length > 120) this.trail.shift();
     }
   }
 
@@ -480,11 +568,31 @@ export class Tunnel {
         if (it.kind === 'raygun') { this.result.loot++; this.ev({ e: 'banner', k: 'gotRaygun' }); this.ev({ e: 'sfx', n: 'sfx_raygun' }); }
       }
     }
-    if (this.mittens && !this.result.rescued && Math.hypot(this.mittens.x - this.px, this.mittens.y - this.py) < 0.7) {
+    // v13.3 (Dylan: the Mittens rescue "didn't quite register"). Two reasons.
+    // The trigger was 0.7 cells against a 0.28 player radius, so you had to
+    // walk almost exactly onto his cell -- brushing past the corner he is
+    // sitting in did nothing at all. And the rescue itself was one banner and
+    // a purr, which is the same feedback a health pickup gets, for the thing
+    // the entire level exists to do. Radius is now 1.45 (you cannot stand in
+    // his cell's doorway and miss him), and he calls out as you close in so
+    // the trigger is telegraphed rather than silent.
+    if (this.mittens && !this.result.rescued) {
+      const md = Math.hypot(this.mittens.x - this.px, this.mittens.y - this.py);
+      if (md < 4.5 && !this.mittensHeard) {
+        this.mittensHeard = true;
+        this.ev({ e: 'sfx', n: 'vo_mittens' });
+        this.ev({ e: 'hint', k: 'fpsMittensNear' });
+      }
+      this.mittensGlow = md < 5 ? Math.max(0, 1 - md / 5) : 0;
+    }
+    if (this.mittens && !this.result.rescued && Math.hypot(this.mittens.x - this.px, this.mittens.y - this.py) < 1.45) {
       this.result.rescued = true;
       this.ev({ e: 'banner', k: 'mittensFreed' });
       this.ev({ e: 'sfx', n: 'sfx_purr' });
       this.ev({ e: 'hint', k: 'followLight' });
+      // the level's whole reason for existing gets a real beat: hitch, white
+      // pop, screen shake -- the same punctuation a boss kill gets.
+      this.hitStop = 140; this.flash = 300; this.ev({ e: 'shake' });
       // Mittens kept your pistol. Closes the "once the grab takes the gun I
       // could never get a gun again" hole (Dylan hit it when he missed the
       // shotgun) with a story beat instead of a floor pickup: rescuing your
@@ -1234,6 +1342,23 @@ export class Tunnel {
       else if (s.kind === 'shotgun') img = IMG.pickup_shotgun_glow || IMG.fps_shotgun || IMG.pickup_flame;
       else if (s.kind === 'raygun') img = IMG.pickup_raygun;
       else if (s.kind === 'tuna') img = IMG.pickup_health;
+      // v13.3: Mittens is the reason the level exists and he was lit exactly
+      // like a wall. A cage-lamp halo behind him reads through the dark from
+      // down the corridor, and it brightens as you close so "getting warmer"
+      // is visible rather than only a compass label.
+      if (s.kind === 'mittens' && img) {
+        const glow = 0.45 + (this.mittensGlow || 0) * 0.55;
+        const pulse = 0.82 + Math.sin(now / 320) * 0.18;
+        const my = y0 + size * 0.5;
+        const gr = sc.createRadialGradient(sx, my, 0, sx, my, size * 1.15);
+        gr.addColorStop(0, `rgba(255,236,180,${(0.42 * glow * pulse).toFixed(3)})`);
+        gr.addColorStop(0.55, `rgba(230,180,90,${(0.18 * glow * pulse).toFixed(3)})`);
+        gr.addColorStop(1, 'rgba(120,80,30,0)');
+        sc.save(); sc.globalCompositeOperation = 'lighter';
+        sc.fillStyle = gr;
+        sc.beginPath(); sc.arc(sx, my, size * 1.15, 0, 7); sc.fill();
+        sc.restore();
+      }
       if (s.kind === 'shotgun' && img) {
         // v10 (Dylan: "two hands holding onto the shotgun... just make it a
         // gun that's spinning around with a light on it, illuminated, so it
@@ -1490,6 +1615,8 @@ export class Tunnel {
         ctx.restore();
       }
     }
+
+    this.drawAutomap(ctx, now);
 
     // kill/secret score pops, rising gold — the same reward beat as topside
     ctx.textAlign = 'center';

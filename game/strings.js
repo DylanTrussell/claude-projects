@@ -55,6 +55,7 @@ export const STR = {
   fpsObjective0: "FIND PVT. MITTENS. GET OUT ALIVE.",
   fpsObjective1: "CLEAR THE NEST.",
   fpsNeedMittens: "NOT WITHOUT MITTENS — HE'S DOWN HERE SOMEWHERE",
+  fpsMittensNear: "THAT'S HIM. MITTENS IS CLOSE — KEEP GOING",
   fpsNest: "PRESS S — DROP INTO THE RAT NEST",
   gotShotgun: "SHOTGUN!",
   nestCleared: "NEST CLEARED",
