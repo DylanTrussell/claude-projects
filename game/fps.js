@@ -49,7 +49,11 @@ export const MAPS = [
       '##.c..a..c######',
       '##c.......######',
       '##G#############',
-      '#c...H.....B.c.#',
+      // barrel moved 11 -> 14: at 11 it sat 3.2 cells from the nearest gunner,
+      // outside its own 1.9-cell blast, so it could never light anybody. Dylan
+      // asked for the barrel to be next to the enemy in the corner; at 14 it is
+      // directly above the gunner at (14,9).
+      '#c...H.......cB#',
       '#.SH#..g......g#',
       '############.###',
       '#c...a..#.a..g.#',
@@ -69,10 +73,14 @@ export const MAPS = [
       '#.###.g....a.#',
       '#.####..a#####',
       '#..c...R....##',
-      '#.####B..#.###',
+      // same fix: 2.8 cells from the nearest enemy is outside the blast. At 10
+      // it sits directly on top of the gunner at (10,9).
+      '#.####...#B###',
       '#.########g###',
       '#.########c###',
-      '#E..c..a.B..##',
+      // and the last one: at 9 it was exactly 2.0 cells from the ambusher at 7,
+      // a tenth of a cell outside the 1.9 blast. Moved to 8, right beside him.
+      '#E..c..aB...##',
       '##############',
     ],
     objective: 'fpsObjective1',
