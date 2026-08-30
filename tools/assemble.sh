@@ -77,7 +77,7 @@ inject = """<script>
 p = 'public_deaf/index.html'
 s = open(p).read()
 import re
-s = s.replace('<head>', '<head>\\n' + inject, 1) if '<head>' in s else inject + s
+s = s.replace('<head>', '<head>\n' + inject, 1) if '<head>' in s else inject + s
 open(p, 'w').write(s)
 print('deaf build injected')
 PYEOF

@@ -105,6 +105,15 @@ export function fxEvent(ev) {
       if (big && FX.opts.flash) FX.flash = CFG.flashMs + (big === 2 ? 40 : 0);
       break;
     }
+    // v13.3: the shot-kill impact beat. Deliberately smaller than a blast --
+    // ~28ms of freeze against a grenade's 40+, and shakeHit against shakeBoom --
+    // so the rifle punches without flattening the difference between a bullet
+    // and a rocket.
+    case 'impact': {
+      if (FX.opts.shake) FX.shake = Math.max(FX.shake, CFG.shakeHit);
+      FX.hitPause = Math.max(FX.hitPause, 28);
+      break;
+    }
     case 'muzzle': {
       // v10.1: proper oriented Metal-Slug-style flash (was a single fading dot).
       // ang comes from sim.js (radians; 0 = facing right). Fall back to the old
@@ -517,8 +526,37 @@ const SPRITE_FOR = { gruntUS: 'grunt_us', gruntVC: 'grunt_vc', alien: 'alien_tro
 // Native facing of each generated sprite (+1 = drawn facing right). Flip when entity faces the other way.
 const BASE_FACE = { gruntUS: 1, gruntVC: 1, alien: -1, ufo: 1, heli: 1, boss: 1, pow: 1, buddy: 1, ratbig: -1, ratjet: -1, ratmech: -1 };
 
+// v13.3: a white flash on the sprite's OWN pixels when it takes a hit. The
+// engine already had drawImgHit for exactly this and it was only ever called
+// from rails.js -- so the vehicle sections had better hit feedback than the
+// side-scroller. This is the same idea via source-atop on an offscreen pass, so
+// it works for sheet frames as well as single images.
+let _hitCv = null;
+function hitFlash(ctx, sprId, dx, dy, dw, dh, hitT, flip) {
+  const k = Math.max(0, hitT || 0) / 150;
+  if (k <= 0.02) return;
+  const img = IMG[sprId];
+  if (!img) return;
+  if (!_hitCv) { try { _hitCv = document.createElement('canvas'); } catch (_) { return; } }
+  if (_hitCv.width !== img.width || _hitCv.height !== img.height) {
+    _hitCv.width = img.width; _hitCv.height = img.height;
+  }
+  const c = _hitCv.getContext('2d');
+  c.clearRect(0, 0, img.width, img.height);
+  c.drawImage(img, 0, 0);
+  c.globalCompositeOperation = 'source-atop';
+  c.fillStyle = '#ffffff';
+  c.fillRect(0, 0, img.width, img.height);
+  c.globalCompositeOperation = 'source-over';
+  ctx.save();
+  ctx.globalAlpha = Math.min(0.9, k);
+  if (flip) { ctx.translate(dx + dw, dy); ctx.scale(-1, 1); ctx.drawImage(_hitCv, 0, 0, dw, dh); }
+  else ctx.drawImage(_hitCv, dx, dy, dw, dh);
+  ctx.restore();
+}
+
 function drawEntity(ctx, e2, cam, t, inv) {
-  const [id, k, x, y, face, st, hp, beam, open, ph, flyer, kick, burning] = e2;
+  const [id, k, x, y, face, st, hp, beam, open, ph, flyer, kick, burning, hitT] = e2;
   // recoil shove: a firing squadmate/grunt rocks back along its facing so the
   // body reads as shooting instead of a static sprite with a flash pinned on
   const sx = x - cam - (kick || 0) * face;
@@ -588,6 +626,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
     const s = SHEET.sheet_alien_walk;
     const fr = Math.floor(t / (1000 / s.fps)) % s.frames;
     drawSheet(ctx, 'sheet_alien_walk', fr, sx - w2 / 2, drawY, w2, hgt, flip);
+    hitFlash(ctx, sprId, sx - w2 / 2, drawY, w2, hgt, hitT, flip);
   } else if (!drawImg(ctx, sprId, sx - w2 / 2, drawY, w2, hgt, flip)) {
     // Dylan: "found a weird blue square on some of the rats." That was THIS --
     // a bright PAL.teal debug rectangle drawn whenever a sprite hadn't loaded
@@ -603,6 +642,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
       ctx.fillRect(sx - w2 * 0.16, drawY + hgt * 0.45, w2 * 0.32, hgt * 0.55);
       ctx.restore();
     }
+    hitFlash(ctx, sprId, sx - w2 / 2, drawY, w2, hgt, hitT, flip);
   }
   if (k === 'heli') { // spinning rotor + tail rotor (sprite blades were erased)
     const hubX = sx - w2 / 2 + (flip ? 1 - 0.475 : 0.475) * w2;
@@ -614,7 +654,13 @@ function drawEntity(ctx, e2, cam, t, inv) {
     ctx.fillStyle = PAL.cheese;
     ctx.beginPath(); ctx.moveTo(sx - 6, y - hgt - 16); ctx.lineTo(sx + 6, y - hgt - 16); ctx.lineTo(sx, y - hgt - 8); ctx.fill();
   }
-  if (beam && (k === 'gruntUS' || k === 'gruntVC' || k === 'alien')) {
+  // v13.3: the "!" tell was drawn for grunts and plain aliens ONLY, so the two
+  // hardest ground enemies in the game -- ratbig (a charger at 330px/s) and
+  // ratmech (40 HP, a five-rocket salvo) -- telegraphed through a SOUND EFFECT
+  // and nothing else. Played muted, which is how most browser players play and
+  // exactly how this build ships to agents, they attack with zero warning.
+  if (beam && (k === 'gruntUS' || k === 'gruntVC' || k === 'alien' ||
+               k === 'ratbig' || k === 'ratmech' || k === 'ratjet')) {
     // taking aim — the dodge window tell (multi-channel: glint + exclamation)
     const gx = sx + face * 34, gy2 = y - 52;
     ctx.fillStyle = k === 'alien' ? PAL.acid : PAL.boom2;

@@ -374,6 +374,15 @@ function killEnemy(g, e, big, cause) {
   } else {
     // shot: a wet burst and a body, no fireball
     evPush(g, { e: 'gib', x: e.x, y: e.y - 40, green: green ? 1 : 0, n: 15, blast: 0, face: e.face || 1 });
+    // v13.3 (Metal Slug review, frame-by-frame): "the enemy stops existing
+    // between two frames." Every impact system in the engine -- hitPauseMs,
+    // flashMs, shakeHit -- was gated behind `if (big)` inside the BOOM branch,
+    // so a shot kill routed around all of it. The only weapons that felt good
+    // were the ones that happened to go through the explosion path, which meant
+    // the rifle -- the gun you hold for 90% of the game -- landed on nothing.
+    // The kill now emits its own impact beat: a short freeze and a small shake,
+    // scaled well below a grenade so explosives keep their weight.
+    evPush(g, { e: 'impact', x: e.x, y: e.y - 30 });
     evPush(g, { e: 'sfx', n: green ? 'sfx_gore' : 'sfx_shot' });
     evPush(g, { e: 'blood', x: e.x, y: e.y - 30, big: 1, green: green ? 1 : 0 });
   }
@@ -1035,7 +1044,7 @@ export function step(g, dt, inputs) {
           if (b.k === 9) { // stolen ray gun: pierces through the line
             if (b.lh === e2.id) continue;
             b.lh = e2.id;
-            e2.hp -= dmg;
+            e2.hp -= dmg; e2.hitT = 150;
             evPush(g, { e: 'hit', x: b.x, y: b.y });
             if (e2.hp <= 0) {
               if (e2.k === 'boss') winBoss(g, e2); else killEnemy(g, e2, e2.k === 'heli' || e2.k === 'ufo', 'bullet');
@@ -1044,7 +1053,11 @@ export function step(g, dt, inputs) {
             continue;
           }
           b.on = 0;
-          e2.hp -= dmg;
+          // v13.3: enemies had NO hit-flash topside -- drawImgHit exists and was
+          // only ever called from rails.js, so the door gun and the Skyraider
+          // had better hit feedback than the mode you spend most of the game in.
+          // Shooting a rat produced no reaction on the rat at all until it died.
+          e2.hp -= dmg; e2.hitT = 150;
           evPush(g, { e: 'hit', x: b.x, y: b.y });
           if (e2.hp <= 0) {
             if (e2.k === 'boss') winBoss(g, e2); else killEnemy(g, e2, e2.k === 'heli' || e2.k === 'ufo', 'bullet');
@@ -1298,6 +1311,7 @@ function stepEnemy(g, e2, dt, dts) {
     if (gy === CFG.groundY && e2.y !== gy) e2.y = gy;   // never snap them INTO a pit
   }
   e2.t -= dt; e2.fireCd -= dt;
+  if (e2.hitT > 0) e2.hitT -= dt;
   const ap = alivePlayers(g);
   const near = (x) => ap.length ? ap.reduce((a, p) => Math.abs(p.x - x) < Math.abs(a.x - x) ? p : a) : null;
 
@@ -1669,7 +1683,7 @@ export function serialize(g) {
       p.st === 'dead' ? (p.deathKind === 'trap' ? 1 : p.deathKind === 'pit' ? 2 : 0) : 0,
       R(p.respT)]),
     en: g.enemies.filter(e2 => e2.st !== 'gone' && e2.x > g.cam - 200 && e2.x < g.cam + W + 400)
-      .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0]),
+      .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0, R(Math.max(0, e2.hitT || 0))]),
     // v13: index 4 is the bullet's travel angle. Every projectile used to be
     // drawn as an axis-aligned horizontal dash regardless of where it was
     // actually going, so firing up (hold W) sent horizontal tracers climbing
