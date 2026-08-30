@@ -52,8 +52,14 @@ const SEC = CFG.sections;
 
 // Wave director: locks camera until cleared. {x: trigger camX+screen, spawn list}
 const WAVES = [
-  { x: 700,  lock: 1, spawn: [['gruntVC', 2, 'tunnel'], ['gruntUS', 1, 'right']] },
-  { x: 1300, lock: 1, spawn: [['gruntVC', 2, 'tunnel'], ['gruntUS', 2, 'right'], ['gruntVC', 1, 'right']] },
+  // v13.3 ON-RAMP. Measured across four seeds, a low-skill player died at
+  // x~1390 in three of them and never once got past the first 12% of the
+  // level -- the wall was this second wave: FIVE enemies behind a camera lock,
+  // as the second thing that happens in the game, when the first was three.
+  // The escalation block below is untouched; this is only the first two
+  // minutes learning to shoot. 2 -> 3 -> 5 is a curve, 3 -> 5 -> 5 was a step.
+  { x: 700,  lock: 1, spawn: [['gruntVC', 1, 'tunnel'], ['gruntUS', 1, 'right']] },
+  { x: 1300, lock: 1, spawn: [['gruntVC', 1, 'tunnel'], ['gruntUS', 2, 'right']] },
   { x: 2150, lock: 1, spawn: [['gruntUS', 3, 'right'], ['gruntVC', 2, 'tunnel']] },
   { x: 2650, lock: 1, pin: 1, spawn: [['gruntVC', 3, 'tunnel'], ['gruntUS', 3, 'right'], ['gruntVC', 2, 'left']] }, // exam A: pinned down -> air support
   // ESCALATION (Dylan: "have the thing get progressively crazier"). Each new
@@ -256,14 +262,33 @@ function platformUnder(g, x, y, vy) {
   return best;
 }
 // nearest x to want that is real, solid, un-trapped ground (never respawn into a pit)
+// v13.3 RESPAWN DEATH LOOP. This checked that the respawn tile was solid, but
+// not that there was any RUNWAY on it. Respawning is `max(cam + 260,
+// checkpoint + 100)`, and when that landed inside the pit at 1750-1890 the
+// search stepped back exactly 20px to 1740 -- ten pixels from the lip, no
+// run-up, and a 140px gap to clear from a standing start. Measured over four
+// seeds, a low-skill player died there NINE TIMES IN A ROW and lost the whole
+// game to one hole without an enemy involved; the final death in the trace has
+// "enemies: none". Deterministic, so it repeated identically every life.
+//
+// A respawn point now has to carry RUN_UP of clear ground ahead of it, which
+// is what makes the very next jump possible.
 function safeGroundX(g, want) {
-  for (let d = 0; d <= 520; d += 20) {
-    for (const s of d === 0 ? [1] : [1, -1]) {
-      const x = want + d * s;
-      if (x < 40 || x > CFG.worldLen - 40) continue;
-      if (groundAt(x) !== CFG.groundY) continue;
-      if (g.traps.some(tr => tr.armed && Math.abs(tr.x - x) < 60)) continue;
-      return x;
+  const RUN_UP = 150;   // enough to be at full run before the lip (run 260px/s)
+  const clearAhead = x => {
+    for (let a = 0; a <= RUN_UP; a += 25) if (groundAt(x + a) !== CFG.groundY) return false;
+    return true;
+  };
+  for (const needRunway of [true, false]) {   // second pass: solid ground at any cost
+    for (let d = 0; d <= 520; d += 20) {
+      for (const s of d === 0 ? [1] : [1, -1]) {
+        const x = want + d * s;
+        if (x < 40 || x > CFG.worldLen - 40) continue;
+        if (groundAt(x) !== CFG.groundY) continue;
+        if (g.traps.some(tr => tr.armed && Math.abs(tr.x - x) < 60)) continue;
+        if (needRunway && !clearAhead(x)) continue;
+        return x;
+      }
     }
   }
   return want;

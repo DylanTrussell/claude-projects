@@ -67,6 +67,11 @@ export class RailBase {
       this.boom(235, this.hy + 40, 0);
       this.shake = 26;
       this.hsmoke = [];
+      // A replacement aircraft arrives intact. Without this the pips were a
+      // one-time buffer for the whole section: burn them in the first fifteen
+      // seconds and the remaining forty are raw, which is the opposite of the
+      // "you lose the machine, you get another machine" beat.
+      if (this.pips !== undefined) this.pips = this.pipsMax || 4;
       if (p.lives <= 0) { p.st = 'out'; this.dead = true; this.done = true; }
       this.hurtT = 2200;
     }
@@ -160,7 +165,7 @@ export class DoorGun extends RailBase {
     // visibly LOSES that hardware as it takes damage, and dying in it is a
     // screen-clearing event rather than a quiet failure.
     this.tier = 1;              // 1 stock -> 2 gunship -> 3 warthog
-    this.pips = 4;              // armour, independent of the player's lives
+    this.pips = 4; this.pipsMax = 4;   // armour, independent of the player's lives
     this.upgradeAt = [12000, 26000]; // supply pallets arrive on the clock
     this.upIdx = 0;
     this.turretCd = 0;
@@ -503,12 +508,20 @@ export class Skyraider extends RailBase {
     // 34 sits just above a no-aim run, so it's the gun that gets you out early.
     super(52000, 34);
     this.py = 260; this.spd = 340;
+    this.pips = 3; this.pipsMax = 3;
     // napalm 8 -> 4: measured, the dominant Skyraider strategy was to NOT fly
     // -- sit at a fixed altitude mashing K, where napalm supplied 31 of 40
     // kills (77%) and taking the aim axis (altitude) was actively the worst
     // policy in the game. Halving the free canisters makes the gun, and
     // therefore moving, matter again.
     this.gunCd = 0; this.napalm = 4; this.cans = []; this.fires = [];
+    // v13.3: the A-1 gets a hull, same as the Huey. Measured, this section
+    // killed the reference bot FIVE times against the door gun's one -- with
+    // lives: 9 that alone ended most runs before the boss, and simtest could
+    // not see it because it forces lives = 99. Nerfing the treeline guns far
+    // enough to fix it on its own would have emptied the sky, so the plane
+    // absorbs the first three hits per airframe instead and the fire stays
+    // thick. Refilled on each new aircraft (see RailBase.hurt).
     this.started = false;
   }
   step(bits, dt, p) {
@@ -518,6 +531,9 @@ export class Skyraider extends RailBase {
     this.gunCd -= dt;
     if (!this.started) { this.started = true; this.ev({ e: 'banner', k: 'actSkyraider' }); this.ev({ e: 'hint', k: 'skyControls' }); this.ev({ e: 'engine', on: true }); }
 
+    // a ~0.4s-stale altitude for the treeline gunners to aim at, so climbing or
+    // diving actually shakes their shots instead of dragging them along with you
+    this.lastPy = this.lastPy === undefined ? this.py : this.lastPy + (this.py - this.lastPy) * Math.min(1, dts * 2.5);
     if (bits & C.UP) this.py -= 300 * dts;
     if (bits & C.DOWN) this.py += 300 * dts;
     this.py = Math.max(90, Math.min(540, this.py));
@@ -583,9 +599,27 @@ export class Skyraider extends RailBase {
         f.x -= (120 + this.spd * 0.35) * dts; f.cd -= dt;
         // v11.2: ground troops now take real potshots at the plane, using the
         // same flak pool the door-gun section already had.
-        if (f.cd <= 0 && f.x < W - 20) {
-          f.cd = 1300 + Math.random() * 900;
-          const dxr = 320 - f.x, dyr = this.py - (f.y - 20), dr = Math.max(1, Math.hypot(dxr, dyr)), aaSpd = 440;
+        // v13.3 BALANCE. Measured with the reference bot: the Skyraider killed
+        // it FIVE times per run against the door gun's one, and an ablation
+        // pinned it on this line -- deaths went 5.0 -> 1.2 with the flak
+        // removed, and 5.0 -> 1.6 with these rats removed. With lives: 9 that
+        // made the whole game unwinnable at any skill, which simtest could
+        // never see because it forces lives = 99.
+        //
+        // The cause was density plus perfect aim. Rats spawn THREE at a time,
+        // each firing every 1.3-2.2s dead at your CURRENT altitude at 440px/s.
+        // One aimed shot is a dodge; eleven of them on screen at once is a
+        // wall with no gap in it. Metal Slug's rule is dense-and-telegraphed or
+        // sparse-and-aimed, never dense-and-aimed.
+        //
+        // So: slower cadence, slower rounds you can actually see coming, aim at
+        // where you WERE with a spread so moving beats them, and a hard cap on
+        // how much can be in the air at once.
+        if (f.cd <= 0 && f.x < W - 20 && this.flak.length < 5) {
+          f.cd = 1900 + Math.random() * 1100;
+          const aimY = (this.lastPy !== undefined ? this.lastPy : this.py) + (Math.random() - 0.5) * 90;
+          const dxr = 320 - f.x, dyr = aimY - (f.y - 20);
+          const dr = Math.max(1, Math.hypot(dxr, dyr)), aaSpd = 330;
           this.flak.push({ x: f.x, y: f.y - 20, vy: (dyr / dr) * aaSpd, vx: (dxr / dr) * aaSpd });
           this.ev({ e: 'sfx', n: 'sfx_laser' });
         }
@@ -601,7 +635,9 @@ export class Skyraider extends RailBase {
         f.t += dt; f.x -= this.spd * 0.7 * dts;
         if (!f.armed && Math.abs(f.x - 260) < 90) {
           f.armed = 1;
-          if (Math.abs(f.y - this.py) < 78) this.hurt(p, 1);
+          // 78 against a ~66px airframe meant a burst at your altitude was
+          // barely avoidable; 60 leaves a real gap to climb or dive through.
+          if (Math.abs(f.y - this.py) < 60) this.hurt(p, 1);
         }
         if (f.x < -80) f.hp = 0;
       }
