@@ -663,6 +663,22 @@ export function step(g, dt, inputs) {
   }
   // section banners + checkpoints
   const camMid = g.cam + W * 0.5;
+  // v13.3: there were exactly THREE checkpoints across 11,600px of level --
+  // tunnel 3000, invasion 3800, boss 7000 -- which was tolerable while running
+  // out of lives just threw you back to the title, and is not now that game
+  // over offers CONTINUE FROM CHECKPOINT. A continue is only ever as good as
+  // the nearest checkpoint behind you: failing at 5600 and being handed back
+  // 3800 means replaying the whole gauntlet that just beat you, at the same
+  // skill, which is not a rescue. A rolling checkpoint every 900px of ground
+  // you have actually reached keeps a continue close to where you lost it.
+  // Only ever moves forward, and never past a section marker below.
+  // Never bank one mid-fight: g.camLock >= 0 means a wave has the camera held,
+  // and checkpointing there would hand a continue straight back into the
+  // encounter that just killed the player, with the wave still live.
+  if (g.camLock < 0 && camMid > g.checkpoint + 900) {
+    const roll = Math.floor(camMid / 900) * 900;
+    if (roll > g.checkpoint) g.checkpoint = roll;
+  }
   if (!g.banners.A) { g.banners.A = true; evPush(g, { e: 'banner', k: 'actA' }); }
   if (!g.banners.tunnel && camMid > SEC.tunnel) { g.banners.tunnel = true; g.checkpoint = SEC.tunnel; evPush(g, { e: 'banner', k: 'actTunnel' }); }
   if (!g.standoff && !g.invasion && camMid > SEC.invasion) triggerInvasion(g);

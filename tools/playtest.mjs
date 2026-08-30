@@ -112,7 +112,14 @@ while (simMs < MAXMS && !victory && !gameover) {
     // re-phased it. Now each pit gets exactly one committed press edge, fired
     // 40px before its lip, tracked so it cannot re-fire mid-flight.
     const grounded = p.y >= CFG.groundY - 2;
-    const pit = LEVEL.pits.find(([a, b]) => p.x > a - 46 && p.x < b);
+    // A pit wider than a jump (228px) is crossed by hopping the bobbing
+    // islands over it, not by one leap -- LEVEL.islands puts two across the
+    // 500px chasm at 5100-5600. Without knowing that, the proxy took one jump
+    // at the lip and fell in EVERY time: 43 of 43 expert pit deaths were that
+    // one hole, which read as a game bug and is not. Over a wide pit, jump
+    // again each time we are back on solid footing (an island).
+    const wide = LEVEL.pits.find(([a, b]) => b - a > 240 && p.x > a - 46 && p.x < b);
+    const pit = wide || LEVEL.pits.find(([a, b]) => p.x > a - 46 && p.x < b);
     // A pit approach SUPPRESSES the idle boredom-jump. Otherwise a boredom jump
     // could fire just before the lip, leaving the bot airborne when the pit
     // window opened, so its one committed jump was swallowed and it walked off
@@ -121,7 +128,8 @@ while (simMs < MAXMS && !victory && !gameover) {
     const pitSoon = LEVEL.pits.some(([a]) => p.x > a - 220 && p.x < a);
     let wantJump = false;
     if (pit && grounded) {
-      const key = pit[0];
+      // over a wide pit every landing is an island, so re-arm on each landing
+      const key = wide ? pit[0] + '@' + Math.round(p.x / 40) : pit[0];
       if (jumpedPit !== key) { jumpedPit = key; wantJump = rnd() > S.jumpMiss; jumpHeld = 0; }
     } else if (!pit && grounded) jumpedPit = null;
     const nearTrap = g.traps.some(t => t.armed && Math.abs(t.x - ahead) < 60);
