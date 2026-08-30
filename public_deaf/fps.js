@@ -207,7 +207,26 @@ export class Tunnel {
     this.ev({ e: 'shake' });
   }
 
+  // v13.3 WALL CLIP. This tested only the DESTINATION point, never the path to
+  // it -- and unlike the side-scroller's fixed accumulator the tunnel is
+  // stepped with raw variable dt, clamped only at 250ms. On a long frame (GC,
+  // an asset decode, a bad frame on weak hardware) a sprinting player moved up
+  // to 1.55 cells in a single collision test against 1-cell-thick walls and
+  // went straight through. A speedrun tester reproduced it twice: once into a
+  // SEALED secret pocket, taking its loot without ever clawing the secret wall
+  // open, and once across the only corridor joining the tunnel's two halves,
+  // skipping the throat-grab set piece and the shotgun chamber entirely.
+  // Sub-stepping in fractions of a cell makes the move swept.
   tryMove(nx, ny) {
+    const dx = nx - this.px, dy = ny - this.py;
+    const dist = Math.hypot(dx, dy);
+    const STEP = 0.2;                       // well under a wall's 1-cell thickness
+    const n = dist > STEP ? Math.ceil(dist / STEP) : 1;
+    for (let i = 0; i < n; i++) this.moveStep(this.px + dx / n, this.py + dy / n);
+    this.reveal();
+  }
+
+  moveStep(nx, ny) {
     const R = 0.28, L = 0.2;
     if (nx !== this.px) {
       const ex = nx + (nx > this.px ? R : -R);
@@ -217,7 +236,6 @@ export class Tunnel {
       const ey = ny + (ny > this.py ? R : -R);
       if (!this.solid(this.px - L, ey) && !this.solid(this.px + L, ey)) this.py = ny;
     }
-    this.reveal();
   }
 
   // Corner automap. Only cells you have walked past are drawn, so it is a
@@ -236,9 +254,9 @@ export class Tunnel {
     ctx.globalAlpha = 0.42;
     ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
     ctx.fillStyle = '#0b0d08';
-    ctx.fillRect(10, H - 42, 268, 30);
+    ctx.fillRect(10, H - 42, 300, 30);
     ctx.fillStyle = '#f3e9c8';
-    ctx.fillText('W FORWARD · S BACK · A/D TURN', 16, H - 29);
+    ctx.fillText('W FORWARD · SPACE SPRINT · S BACK · A/D TURN', 16, H - 29);
     ctx.fillText('J FIRE · K CLAWS · L WEAPON · M MAP', 16, H - 17);
     ctx.restore();
     ctx.textAlign = 'left';
@@ -512,10 +530,17 @@ export class Tunnel {
     const turn = (bits & C.L ? -1 : 0) + (bits & C.R ? 1 : 0);
     this.ang += turn * TURN * dts;
     this.turnRate = turn;
+    // v13.3: SPACE stacked another full 1.0 on top of W, so holding both was a
+    // flat DOUBLE speed with no cost, no noise and no mention anywhere -- the
+    // drop-in card lists W/S/A/D/J/K/L and never Space, and the test bot only
+    // ever pressed W, so nobody had run it. It is a sprint now: real, listed in
+    // the control legend, and 1.45x rather than 2x so it is a choice instead of
+    // a strictly-correct default. (The wall clip it enabled is fixed in
+    // tryMove, which is now swept.)
     let fwd = 0;
     if (bits & C.UP) fwd += 1;
     if (bits & C.DOWN) fwd -= 0.6;
-    if (bits & C.JUMP) fwd += 1;
+    if (bits & C.JUMP && fwd > 0) fwd *= 1.45;
     if (fwd !== 0) {
       this.walkT += dt;
       this.tryMove(this.px + Math.cos(this.ang) * MOVE * fwd * dts, this.py + Math.sin(this.ang) * MOVE * fwd * dts);

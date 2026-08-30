@@ -53,7 +53,7 @@ export const STR = {
   gotShotgunW: "TRENCH BROOM!",
   gotRocket: "LAW TUBE!",
   gotSkip: "SKIPPER — BOUNCING NAPALM!",
-  fpsControls: "A/D TURN · W FORWARD · S BACK · J FIRE · K CLAWS · L SWAP WEAPON",
+  fpsControls: "A/D TURN · W FORWARD · SPACE SPRINT · J FIRE · K CLAWS · L SWAP WEAPON",
   fpsObjective0: "FIND PVT. MITTENS. GET OUT ALIVE.",
   fpsObjective1: "CLEAR THE NEST.",
   fpsNeedMittens: "NOT WITHOUT MITTENS — HE'S DOWN HERE SOMEWHERE",

@@ -725,7 +725,17 @@ export function step(g, dt, inputs) {
         const e2 = g.enemies.find(q => q.id === id);
         return e2 && e2.st !== 'gone';
       });
-      if (!w.alive.length && g.camLock > 0 && !g.boss && Math.abs(g.camLock - (w.x + W)) < W) g.camLock = -1;
+      // v13.3: `!g.boss` meant a cleared wave could NEVER release its camera
+      // lock once the boss existed, so a locked wave whose lock outlived
+      // startBoss()'s would pin the player short of the boss forever. Today it
+      // survives on ordering alone -- the wave at x=6900 locks to 8180 and
+      // startBoss then overwrites it with the larger 8280 -- so adding any
+      // locked wave after SEC.boss, or reordering those two, would have made
+      // the boss unreachable. Release the lock when the wave that OWNS it is
+      // clear, and let startBoss re-assert its own below.
+      if (!w.alive.length && g.camLock > 0 && Math.abs(g.camLock - (w.x + W)) < W) {
+        g.camLock = g.boss ? Math.max(SEC.boss + W, -1) : -1;
+      }
     }
   }
 
@@ -1176,7 +1186,7 @@ export function spawnTunnelSkirmish(g, x0) {
 }
 
 function startBoss(g) {
-  g.banners.boss = true; g.checkpoint = SEC.boss; g.camLock = SEC.boss + W;
+  g.banners.boss = true; g.checkpoint = SEC.boss; g.camLock = Math.max(g.camLock, SEC.boss + W);
   const b = en('boss', SEC.boss + W * 0.72, -120); // descends to hover — a warship, not a beached whale
   g.boss = b; g.enemies.push(b);
   evPush(g, { e: 'banner', k: 'bossWarning' });

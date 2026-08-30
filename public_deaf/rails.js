@@ -288,9 +288,12 @@ export class DoorGun extends RailBase {
       this.ev({ e: 'banner', k: this.tier === 2 ? 'heliT2' : 'heliT3' });
       this.ev({ e: 'sfx', n: 'sfx_purr' });
     }
-    // T3 chin turret: auto-fires at the nearest foe, so the upgrade is felt
-    // and not just seen
-    if (this.tier >= 3) {
+    // T3 chin turret. It used to fire on its own at the nearest foe, which a
+    // speedrun tester correctly called out: the turret unlocks at t=26s, so the
+    // last 18 seconds of the longest section in the game played themselves. It
+    // is SLAVED TO YOUR TRIGGER now -- it only fires while you are firing, so
+    // the upgrade amplifies what you are doing instead of replacing it.
+    if (this.tier >= 3 && (bits & C.FIRE)) {
       this.turretCd -= dt;
       if (this.turretCd <= 0 && this.foes.length) {
         this.turretCd = 220;
