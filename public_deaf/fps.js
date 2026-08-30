@@ -719,6 +719,15 @@ export class Tunnel {
         continue;
       }
       if (e.st === 'burst') { e.t += dt; if (e.t > 260) e.st = 'chase'; continue; }
+      if (e.st === 'wind') {
+        // held in place, telegraphing. Re-aims as it winds, so backing off
+        // still works but simply standing still does not save you.
+        e.t += dt;
+        e.flash = Math.max(e.flash, 120);
+        if (d > 0.01) { e.lvx = (this.px - e.x) / d; e.lvy = (this.py - e.y) / d; }
+        if (e.t >= CFG.aimTellMs) { e.st = 'lunge'; e.t = 0; }
+        continue;
+      }
       if (e.st === 'lunge') {
         e.t += dt;
         const spd = 5.2 * dts;
@@ -748,10 +757,18 @@ export class Tunnel {
         const R2 = 0.22;
         if (nx !== e.x && !this.solid(nx + (nx > e.x ? R2 : -R2), e.y)) e.x = nx;
         if (ny !== e.y && !this.solid(e.x, ny + (ny > e.y ? R2 : -R2))) e.y = ny;
-      } else if (e.atkT <= 0) { // wind up a lunge — the knife flashes as the tell
+      } else if (e.atkT <= 0) {
+        // v13.3: this comment used to say "wind up a lunge" but there was no
+        // wind-up -- it set st='lunge' and the enemy started travelling on the
+        // SAME FRAME as its own tell, so the flash and the hit were
+        // simultaneous. A first-time playtester: "twice the screen went solid
+        // red and I died before a single frame showed me an enemy." A real
+        // wind-up state now holds it still, flashing and screeching, for
+        // aimTellMs before it commits -- the same dodge window every enemy
+        // topside already gives you.
         e.atkT = this.enemyKind === 'rat' ? 1050 : 1250;
-        e.flash = 220;
-        e.st = 'lunge'; e.t = 0;
+        e.flash = 320;
+        e.st = 'wind'; e.t = 0;
         e.lvx = (this.px - e.x) / d; e.lvy = (this.py - e.y) / d;
         this.ev({ e: 'sfx', n: this.enemyKind === 'rat' ? 'sfx_laser' : 'sfx_screech' });
       }
@@ -920,7 +937,7 @@ export class Tunnel {
       return;
     }
     e.hp -= dmg;
-    if (e.st === 'hide') this.burst(e); else if (e.kind !== 'gun') e.st = e.st === 'lunge' ? 'lunge' : 'chase';
+    if (e.st === 'hide') this.burst(e); else if (e.kind !== 'gun') e.st = (e.st === 'lunge' || e.st === 'wind') ? e.st : 'chase';
     this.ev({ e: 'sfx', n: 'sfx_meow' });
     // blood flies
     const n = e.hp <= 0 ? 16 : 7;
@@ -1348,7 +1365,7 @@ export class Tunnel {
           }
         } else if (this.enemyKind === 'rat') {
           if (s.e.flash > 0 && IMG.rat_blade_hurt) img = IMG.rat_blade_hurt;
-          else if (s.e.st === 'lunge') img = IMG.rat_blade_lunge || IMG.rat_blade;
+          else if (s.e.st === 'lunge' || s.e.st === 'wind') img = IMG.rat_blade_lunge || IMG.rat_blade;
           else if (s.e.st === 'burst') img = IMG.rat_blade;
           else img = walking ? (IMG.rat_blade_walk1 || IMG.rat_blade) : (IMG.rat_blade_walk2 || IMG.rat_blade);
           if (!img) img = IMG.alien_trooper;
@@ -1358,7 +1375,7 @@ export class Tunnel {
           // dedicated lunge pose instead of reusing the idle frame, and a
           // brief hit-react frame when just shot.
           if (s.e.flash > 0 && IMG.vc_knife_hurt) img = IMG.vc_knife_hurt;
-          else if (s.e.st === 'lunge') img = IMG.vc_knife_lunge2 || IMG.vc_knife_a || IMG.grunt_vc;
+          else if (s.e.st === 'lunge' || s.e.st === 'wind') img = IMG.vc_knife_lunge2 || IMG.vc_knife_a || IMG.grunt_vc;
           else if (s.e.st === 'burst') img = IMG.vc_knife_a || IMG.grunt_vc;
           else img = walking ? (IMG.vc_knife_walk1 || IMG.vc_knife_a || IMG.grunt_vc) : (IMG.vc_knife_walk2 || IMG.vc_knife_b || IMG.grunt_vc);
         }
