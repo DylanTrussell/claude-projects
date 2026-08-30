@@ -594,10 +594,18 @@ export class Skyraider extends RailBase {
     this.cans = this.cans.filter(cn => cn.y < H + 100);
     for (const fr of this.fires) {
       fr.t += dt; fr.x -= this.spd * 0.35 * dts * 60 / 60;
-      // burn everything on the ground inside the wall of fire
+      // v13.3 (a teenage playtester: "I pressed K and half the rat horde
+      // vanished -- no fire, no wall of flame, no lingering burn. It's called
+      // napalm. It should look like napalm. Right now it's a delete button.")
+      // He was right, and the cause was ordering: the fire killed on the frame
+      // it spawned, while the flame wall itself ramps in over 400ms -- so
+      // everything was already gone before there was anything to see. They
+      // catch fire now and run burning for most of a second before they drop,
+      // which is what makes it read as napalm instead of a cull.
       for (const f of this.foes) {
-        if (f.k === 'rat' && Math.abs(f.x - fr.x) < fr.w / 2 && fr.t < 2400) {
-          f.hp = 0; this.kills++; this.ev({ e: 'fpsKill' });
+        if (f.k === 'rat' && !f.burning && Math.abs(f.x - fr.x) < fr.w / 2 && fr.t < 2400) {
+          f.burning = 700 + Math.random() * 400;
+          this.ev({ e: 'sfx', n: 'sfx_screech' });
         }
       }
     }
@@ -605,6 +613,16 @@ export class Skyraider extends RailBase {
 
     for (const f of this.foes) {
       if (f.flash > 0) f.flash -= dt; // v12: decay the hit flash
+      // burning: it runs, alight, and then it drops -- the kill is the END of
+      // the animation rather than the start of it
+      if (f.burning > 0) {
+        f.burning -= dt;
+        if (f.burning <= 0 && f.hp > 0) {
+          f.hp = 0; this.kills++;
+          this.boom(f.x, f.y - 18, 0);
+          this.ev({ e: 'fpsKill' });
+        }
+      }
       if (f.k === 'rat') {
         f.x -= (120 + this.spd * 0.35) * dts; f.cd -= dt;
         // v11.2: ground troops now take real potshots at the plane, using the
@@ -709,6 +727,23 @@ export class Skyraider extends RailBase {
         const h2 = f.k === 'ufo' ? 70 : 84;
         const w2 = h2 * (img.width / img.height);
         drawImgHit(ctx, img, f.x - w2 / 2, f.y - h2, w2, h2, (f.flash || 0) / 150, f.hpMax ? f.hp / f.hpMax : 1);
+        // alight: flame tongues licking up the body, brightest at the start
+        if (f.burning > 0) {
+          const bk = Math.min(1, f.burning / 700);
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          for (let i = 0; i < 5; i++) {
+            const fx = f.x + (i - 2) * (w2 * 0.16);
+            const fh = (26 + Math.sin(now / 60 + i * 1.9 + f.x) * 12) * (0.6 + bk * 0.6);
+            const gr = ctx.createRadialGradient(fx, f.y - h2 * 0.45, 0, fx, f.y - h2 * 0.45, fh);
+            gr.addColorStop(0, `rgba(255,240,190,${(0.55 * bk).toFixed(2)})`);
+            gr.addColorStop(0.45, `rgba(255,150,40,${(0.40 * bk).toFixed(2)})`);
+            gr.addColorStop(1, 'rgba(120,40,10,0)');
+            ctx.fillStyle = gr;
+            ctx.beginPath(); ctx.arc(fx, f.y - h2 * 0.45 - fh * 0.3, fh, 0, 7); ctx.fill();
+          }
+          ctx.restore();
+        }
       }
     }
     // v11.2: enemy anti-air fire from rats/saucers (was never drawn before —
