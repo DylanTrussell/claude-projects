@@ -626,7 +626,12 @@ function drawEntity(ctx, e2, cam, t, inv) {
     const s = SHEET.sheet_alien_walk;
     const fr = Math.floor(t / (1000 / s.fps)) % s.frames;
     drawSheet(ctx, 'sheet_alien_walk', fr, sx - w2 / 2, drawY, w2, hgt, flip);
-    hitFlash(ctx, sprId, sx - w2 / 2, drawY, w2, hgt, hitT, flip);
+    // Deliberately NO hitFlash on the sheet branch: the flash is built from the
+    // STATIC sprite, so stamping it over an animated frame would show a
+    // white silhouette in a different pose -- exactly the ghosting artefact
+    // this session spent the morning removing from the door gun. The walking
+    // alien keeps the gib/impact feedback and skips the flash.
+
   } else if (!drawImg(ctx, sprId, sx - w2 / 2, drawY, w2, hgt, flip)) {
     // Dylan: "found a weird blue square on some of the rats." That was THIS --
     // a bright PAL.teal debug rectangle drawn whenever a sprite hadn't loaded

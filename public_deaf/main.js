@@ -92,7 +92,7 @@ let tunnel = null; // active first-person tunnel section
 let rail = null;   // active vehicle rail section (door gun / skyraider)
 let loadingChunk = false; // v10: freezes the sim while a lazy CDN chunk fetches
 let hudShown = false; // tracks #hudbtns (pause/music) visibility, only touched on change
-let ckptSnap = null, lastCkptX = -1; // v13.3: last checkpoint world-state, for CONTINUE
+let ckptSnap = null, lastCkptX = -1, continuesLeft = 3; // v13.3: last checkpoint world-state, for CONTINUE
 let directTunnel = false; // ?tunnel=N boot: skip the sink-into-the-ground beat (there's no topside to sink from)
 const dev = new URLSearchParams(location.search).has('dev');
 
@@ -174,9 +174,12 @@ function endGame(won) {
   mode = 'tally';
   audio.stopMusic(); audio.hum(false); audio.eng(false);
   const v = lastView || {};
-  const canContinue = !won && !!ckptSnap;
+  // v13.3 QA: continues were unlimited and free from the same snapshot, so the
+  // game literally could not be lost. Three per run: enough to rescue a player
+  // stuck on one section, not enough to remove the ending.
+  const canContinue = !won && !!ckptSnap && continuesLeft > 0;
   $('btn-continue').style.display = canContinue ? '' : 'none';
-  $('btn-continue').textContent = STR.continueRun;
+  $('btn-continue').textContent = STR.continueRun + ' (' + continuesLeft + ')';
   $('t-result').textContent = won ? STR.victory : STR.gameOver;
   $('t-result').style.color = won ? '#8CFF3B' : '#c8372d';
   // Read the LIVE game state, not lastView. lastView is only re-serialized by
@@ -195,9 +198,13 @@ function endGame(won) {
   // target you can name ("I got a B, I want an A").
   let best = 0;
   try { best = +(localStorage.getItem('am_best') || 0) || 0; } catch (_) {}
-  // A continued run is not a clean run: it bought extra lives at a checkpoint,
-  // so it does not get to set the best-score record. It still shows its score.
-  const isRecord = score > best && !(g && g.continued);
+  // v13.3 QA: this guard never fired when it mattered. `g.continued` is only
+  // incremented when you PRESS continue -- which happens after this tally has
+  // already written am_best -- so the first game over of every run banked its
+  // record and only later continues were blocked. The offer of a continue is
+  // enough: once a checkpoint snapshot exists, this run can be continued, so it
+  // is not a clean run and does not set a record.
+  const isRecord = score > best && !(g && g.continued) && !ckptSnap;
   if (isRecord) { try { localStorage.setItem('am_best', String(score)); } catch (_) {} }
   // Rank rewards score, rewards optional rescues heavily, and punishes deaths
   // -- so the safest possible run (die freely, skip POWs) can't earn an S.
@@ -363,12 +370,13 @@ $('btn-start').addEventListener('click', () => {
   $('titlevid').pause();
 });
 $('btn-go').addEventListener('click', () => startGame());
-$('btn-again').addEventListener('click', () => { ckptSnap = null; lastCkptX = -1; startGame(); });
+$('btn-again').addEventListener('click', () => { ckptSnap = null; lastCkptX = -1; continuesLeft = 3; startGame(); });
 // CONTINUE: same run, from the last checkpoint, with the life count restored.
 // Score is kept but the continue is recorded, so a continued run cannot quietly
 // pass itself off as a clean one on the best-score board.
 $('btn-continue').addEventListener('click', () => {
-  if (!ckptSnap) { startGame(); return; }
+  if (!ckptSnap || continuesLeft <= 0) { startGame(); return; }
+  continuesLeft--;
   g = restoreState(ckptSnap, [{ pid: 'p1', hero: 'us' }]);
   for (const p of g.players) { p.lives = CFG.lives; p.hp = CFG.hpMax; p.st = 'alive'; p.invulnT = 2200; }
   g.over = false; g.won = false;
@@ -683,11 +691,19 @@ function frame(now) {
       dbg = `${fps} fps · ent ${ents}`;
     }
     render(ctx, lastView, now, 'p1', dbg);
-    if (paused && mode === 'game' && !manualPause) {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
-      ctx.font = 'bold 28px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#f3e9c8';
-      ctx.fillText(STR.paused, W / 2, H / 2);
-    }
+  }
+  // v13.3 QA: the PAUSED overlay lived ONLY inside the side-scroller branch, so
+  // the tunnel and the rail sections showed nothing at all when the window lost
+  // focus -- and their shake and rotor keep animating, so the screen reads as
+  // running while every key is ignored. That is exactly the "helicopter hung
+  // mid-air, no key did anything, reported as CRASHED" symptom I claimed to have
+  // fixed earlier today; it was still live in the two sections that need it
+  // most, and on desktop it fires any time you click another window. Drawn last
+  // and for every mode now, so nothing can paint over it.
+  if (paused && mode === 'game' && !manualPause) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+    ctx.font = 'bold 28px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#f3e9c8';
+    ctx.fillText(STR.paused, W / 2, H / 2);
   }
   const wantHud = mode === 'game' && !cutsceneActive;
   if (wantHud !== (hudShown)) { hudShown = wantHud; $('hudbtns').style.display = wantHud ? 'flex' : 'none'; }

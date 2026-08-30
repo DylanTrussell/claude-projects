@@ -1706,15 +1706,40 @@ export function serialize(g) {
 }
 
 // Full state save for host refresh resume (superset; sim-restorable)
+// v13.3 QA pass. This had two defects that only mattered once CONTINUE started
+// calling it, and together they made a continue actively harmful:
+//
+//  1. It stored LIVE OBJECT REFERENCES for players, enemies, pickups, traps,
+//     crates and banners. Those keep mutating until you die, so "the
+//     checkpoint" was really "the moment you died" -- restoring handed back
+//     your death-time position, weapon, ammo and HP, while `score` (a real
+//     copy) rolled back. Everything is deep-copied now.
+//  2. It saved no PHASE and no SECTION-COMPLETION flags. restoreState builds a
+//     fresh game, which starts in phase 'insertion' -- so a continue replayed
+//     the opening touchdown: six seconds of ignored input, the player yanked
+//     back to x=480 (clamped forward to cam+30, i.e. ~456px BEHIND themselves,
+//     which at the tunnel checkpoint lands inside the pit at 2850-2985 and
+//     kills you before you can press a key), buddies re-spawned, and the ACT I
+//     banner again. And with rail1/fps0/fps1/rideOn lost, already-finished rail
+//     and tunnel sections re-triggered -- a tester watched the Skyraider run a
+//     second time at the boss checkpoint with the boss HP bar still on screen.
+const clone = (o) => JSON.parse(JSON.stringify(o));
 export function checkpointState(g) {
   return {
     seed: g.seed, t: g.t, cam: g.cam, camLock: g.camLock, sec: g.sec, invasion: g.invasion,
     score: g.score, pows: g.pows, checkpoint: g.checkpoint,
-    players: g.players, enemies: g.enemies.filter(e2 => e2.st !== 'gone'),
-    pickups: g.pickups, lures: g.lures, fires: g.fires,
-    waves: g.waves.map(w2 => ({ x: w2.x, done: w2.done, alive: w2.alive })),
-    traps: g.traps, crates: g.crates, bossDone: g.bossDone,
-    banners: g.banners,
+    players: clone(g.players), enemies: clone(g.enemies.filter(e2 => e2.st !== 'gone')),
+    pickups: clone(g.pickups), lures: clone(g.lures), fires: clone(g.fires),
+    waves: g.waves.map(w2 => ({ x: w2.x, done: w2.done, alive: [...(w2.alive || [])] })),
+    traps: clone(g.traps), crates: clone(g.crates), bossDone: g.bossDone,
+    banners: clone(g.banners),
+    // the player is ON THE GROUND at a checkpoint, never mid-insertion
+    phase: 'play', phaseT: 99999, phaseStep: 9,
+    // sections already finished must not run again
+    rail1: g.rail1, fps0: g.fps0, fps1: g.fps1, rideOn: g.rideOn,
+    heliEvac: g.heliEvac ? clone(g.heliEvac) : null,
+    riverStarted: g.riverStarted, parleyStarted: g.parleyStarted,
+    standoff: g.standoff, duelClick: g.duelClick,
   };
 }
 export function restoreState(snap, seats) {
@@ -1724,7 +1749,14 @@ export function restoreState(snap, seats) {
     score: snap.score, pows: snap.pows, checkpoint: snap.checkpoint,
     pickups: snap.pickups || [], lures: snap.lures || [], fires: snap.fires || [],
     traps: snap.traps, crates: snap.crates, bossDone: snap.bossDone, banners: snap.banners,
+    // skip the insertion cinematic -- see checkpointState
+    phase: snap.phase || 'play', phaseT: snap.phaseT || 99999, phaseStep: snap.phaseStep || 9,
+    rail1: snap.rail1, fps0: snap.fps0, fps1: snap.fps1, rideOn: snap.rideOn,
+    heliEvac: snap.heliEvac || null,
+    riverStarted: snap.riverStarted, parleyStarted: snap.parleyStarted,
+    standoff: snap.standoff, duelClick: snap.duelClick,
   });
+  if (g.lift) { g.lift.st = 'gone'; g.lift = null; }   // no insertion helicopter on a continue
   g.enemies = (snap.enemies || []).map(e2 => ({ ...e2 }));
   g.boss = g.enemies.find(e2 => e2.k === 'boss') || null;
   for (const w2 of g.waves) {

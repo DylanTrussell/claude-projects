@@ -317,7 +317,23 @@ export class DoorGun extends RailBase {
         const w2 = h2 * (img.width / img.height);
         drawImgHit(ctx, img, f.x - w2 / 2, f.y - h2, w2, h2, (f.flash || 0) / 150, f.hpMax ? f.hp / f.hpMax : 1);
       }
-      if (f.k === 'nest') { ctx.fillStyle = PAL.teal; ctx.fillRect(f.x - 26, f.y - 26, 52, 26); }
+      // v13.3: this was the LAST teal debug rectangle in the game. Dylan
+      // reported "a weird blue square on some of the rats"; that was fixed in
+      // render.js and this one was missed, so a QA pass still found 2,600+
+      // pixels of flat #3FA7A0 under the rat line in the door-gun section. It
+      // is an anti-air emplacement -- draw it as one: sandbags and a barrel.
+      if (f.k === 'nest') {
+        ctx.fillStyle = '#4e4630';
+        ctx.beginPath(); ctx.ellipse(f.x, f.y - 6, 30, 15, 0, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = '#3b3526';
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath(); ctx.ellipse(f.x + i * 19, f.y - 4, 11, 7, 0, Math.PI, 0); ctx.fill();
+        }
+        ctx.strokeStyle = '#23201a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(f.x, f.y - 14); ctx.lineTo(f.x + 6, f.y - 40); ctx.stroke();
+        ctx.fillStyle = PAL.outline;
+        ctx.fillRect(f.x + 3, f.y - 46, 8, 8);
+      }
     }
     // flak / aimed anti-air fire — v11.2: oriented along travel direction
     // now that rats/hover units aim shots instead of only the nest's
