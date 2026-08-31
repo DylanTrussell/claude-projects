@@ -1029,9 +1029,29 @@ export class Skyraider extends RailBase {
       ctx.scale(-1, 1);
       ctx.drawImage(pl, -pw / 2, -ph / 2, pw, ph);
       ctx.restore();
-      // prop blur disc at the nose
-      ctx.fillStyle = `rgba(230,230,220,${0.25 + 0.2 * Math.sin(now / 16)})`;
-      ctx.beginPath(); ctx.ellipse(pw / 2 - 6, 0, 10, ph * 0.42, 0, 0, 7); ctx.fill();
+      // v13.4 (Dylan: "there's a propeller spinning and there's a propeller
+      // that's not spinning next to each other"). The sprite used to carry a
+      // painted STATIC four-blade prop with this blur ellipse floating beside
+      // it. The baked blades are gone from the art; this is now the only
+      // propeller: a full-disc blur with three rotating blade streaks and the
+      // spinner glint, at the actual nose (u 0.997, v 0.623 of the art).
+      const nx2 = pw / 2 - 3, ny2 = ph * 0.123;
+      ctx.save();
+      ctx.translate(nx2, ny2);
+      ctx.fillStyle = 'rgba(225,225,215,0.16)';
+      ctx.beginPath(); ctx.ellipse(0, 0, 9, ph * 0.46, 0, 0, 7); ctx.fill();
+      const spin = now / 24;
+      for (let bl = 0; bl < 3; bl++) {
+        const ba = spin + bl * (Math.PI * 2 / 3);
+        const ext = Math.abs(Math.sin(ba)) * ph * 0.44;      // vertical projection of the blade
+        const sgn = Math.sin(ba) >= 0 ? 1 : -1;
+        ctx.strokeStyle = `rgba(210,210,200,${(0.30 + 0.25 * Math.abs(Math.cos(ba))).toFixed(2)})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ba) * 6, sgn * ext); ctx.stroke();
+      }
+      ctx.fillStyle = '#8a8a80';
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, 7); ctx.fill();
+      ctx.restore();
       ctx.restore();
       if (this.fireT > 0) drawMuzzleBurst(ctx, 330 + 14, this.py + 12, 0, this.fireT / 70); // v11.2: real fire burst
     } else { ctx.fillStyle = PAL.khaki; ctx.fillRect(200, this.py - 20, 120, 40); }

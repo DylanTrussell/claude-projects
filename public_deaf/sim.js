@@ -1038,9 +1038,10 @@ export function step(g, dt, inputs) {
           if (Math.abs(b.x - e2.x) < 260 && Math.abs(b.y - (e2.y - 170)) < 190) { b.on = 0; break; }
           continue;
         }
-        const rw = e2.k === 'boss' ? 85 : e2.k === 'heli' ? 110 : e2.k === 'ufo' ? 54 : 34;
+        const rw = e2.k === 'boss' ? 115 : e2.k === 'heli' ? 110 : e2.k === 'ufo' ? 54 : 34;
         const rh = e2.k === 'boss' ? 135 : e2.k === 'heli' ? 60 : e2.k === 'ufo' ? 34 : 78; // jump-shots + up-shots both reach the hatch
-        const cy = e2.k === 'boss' ? e2.y - 170 : e2.y - rh / 2;
+        // the new barrel's vulnerable bay is on the BELLY, not mid-hull
+        const cy = e2.k === 'boss' ? e2.y - 60 : e2.y - rh / 2;
         if (Math.abs(b.x - e2.x) < rw && Math.abs(b.y - cy) < rh) {
           if (b.k === 3) { // grenade on direct contact DETONATES — no more sad plinks
             explode(g, b.x, b.y, 1);

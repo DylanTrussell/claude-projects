@@ -206,27 +206,33 @@ export class ParleyBoss extends RailBase {
     const introK = Math.min(1, this.t / 2200);
     const ease = 1 - Math.pow(1 - introK, 3);
     const shipYOff = (1 - ease) * 260;
+    // v13.4 (Dylan: "why is the rat floating next to the spaceship? It makes
+    // no sense. He should be in it."). One drawing now: the Dune flagship with
+    // Grimtail visible ON HIS THRONE inside the lit dome baked into the art.
+    // No separate floating chancellor sprite. The laugh pulse shakes the whole
+    // ship, and the dome glows brighter while he speaks.
     const ship = IMG.chancellor_ship;
+    const bossPulse = this.laughPulse > 0 ? Math.sin(now / 60) * 6 : 0;
     if (ship) {
-      const sh = 340, sw = sh * (ship.width / ship.height);
-      ctx.drawImage(ship, BX - sw * 0.42, BY - sh * 0.62 + shipYOff - 40, sw, sh);
+      const sh = 430, sw = sh * (ship.width / ship.height);
+      ctx.drawImage(ship, BX - sw * 0.5 + bossPulse * 0.4, BY - sh * 0.60 + shipYOff, sw, sh);
+      // dome glow: his voice, shown not told -- pulses while he laughs/talks
+      const domeX = BX + sw * 0.10, domeY = BY - sh * 0.36 + shipYOff;
+      const talk = this.phase !== 'fight' ? 0.5 + 0.5 * Math.sin(now / 190) : 0.25;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createRadialGradient(domeX, domeY, 6, domeX, domeY, 90);
+      gr.addColorStop(0, `rgba(255,205,110,${(0.30 * talk + 0.10).toFixed(2)})`);
+      gr.addColorStop(1, 'rgba(255,160,40,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(domeX, domeY, 90, 0, 7); ctx.fill();
+      ctx.restore();
     } else {
       ctx.fillStyle = '#8a6a3a';
       ctx.beginPath(); ctx.ellipse(BX, BY - 90 + shipYOff, 220, 90, 0, 0, 7); ctx.fill();
     }
 
-    // the Chancellor himself, foreground
-    const boss = IMG.chancellor_boss;
-    const bossPulse = this.laughPulse > 0 ? Math.sin(now / 60) * 6 : 0;
-    if (boss) {
-      const bh = 300, bw = bh * (boss.width / boss.height);
-      ctx.drawImage(boss, BX - bw * 0.5, BY - bh * 0.42 + shipYOff * 0.3 + bossPulse * 0.2, bw, bh);
-    } else {
-      ctx.fillStyle = '#b5702c';
-      ctx.fillRect(BX - 70, BY - 140 + shipYOff * 0.3, 140, 220);
-    }
-
-    // reveal-phase plasma gun flash near his hand
+    // reveal-phase plasma cannon flash on the hull
     if (this.phase === 'reveal' || this.phase === 'laugh' || this.phase === 'fight') {
       ctx.fillStyle = 'rgba(140,255,180,0.85)';
       ctx.beginPath(); ctx.arc(BX + 70, BY + 40, 10, 0, 7); ctx.fill();

@@ -573,8 +573,15 @@ function drawEntity(ctx, e2, cam, t, inv) {
   if (k === 'boss') {
     // hovering warship: two hull states — hatch closed / hatch open (the real tell)
     const img = (open && IMG.boss_open) ? IMG.boss_open : (IMG.boss_closed || IMG.boss_mothership);
-    const hgt2 = 340, w2 = 595; // native art aspect — no squash
-    const top = y - hgt2;
+    // v13.4: the Gouda Mothership is now the ornate brass barrel (Dylan hated
+    // the old one; the barrel is the Dune-style ship he liked at the finale,
+    // "moved into a different level"). Dimensions derive from each state's own
+    // art: the open state is TALLER because its belly bay pours molten cheese,
+    // which hangs below the hull and pools toward the ground.
+    const hullH = 340;
+    const w2 = img ? hullH * (899 / 452) : 595;   // hull aspect from the closed art
+    const hgt2 = img === IMG.boss_open ? w2 * (650 / 900) : hullH;
+    const top = y - hullH;
     if (img) ctx.drawImage(img, sx - w2 / 2, top, w2, hgt2);
     // v13.4 (Dylan: "it's not changing colors when you hit it, which it
     // should, like everything else... The thing should glow when it's taking
@@ -590,11 +597,11 @@ function drawEntity(ctx, e2, cam, t, inv) {
       const gk = 0.5 + 0.5 * Math.sin(t / 150);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      const gr = ctx.createRadialGradient(sx, y - 150, 40, sx, y - 150, w2 * 0.42);
+      const gr = ctx.createRadialGradient(sx, y - 40, 40, sx, y - 40, w2 * 0.42);
       gr.addColorStop(0, `rgba(255,190,60,${(0.28 + 0.2 * gk).toFixed(2)})`);
       gr.addColorStop(1, 'rgba(255,120,20,0)');
       ctx.fillStyle = gr;
-      ctx.beginPath(); ctx.arc(sx, y - 150, w2 * 0.42, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx, y - 40, w2 * 0.42, 0, 7); ctx.fill();
       ctx.restore();
       // molten cheese dripping from the open bay -- the Gouda Mothership
       // bleeds what it came for
@@ -602,7 +609,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
         const dk = ((t / (700 + i * 130)) + i * 0.37) % 1;
         const dx2 = sx - 60 + i * 30 + Math.sin(i * 7) * 12;
         ctx.fillStyle = `rgba(255,201,60,${(0.85 * (1 - dk)).toFixed(2)})`;
-        ctx.fillRect(dx2, y - 40 + dk * 130, 4, 10 + 8 * (1 - dk));
+        ctx.fillRect(dx2, y - 10 + dk * 110, 4, 10 + 8 * (1 - dk));
       }
     }
     if (open && !IMG.boss_open) { // fallback tell only if the open-state art is missing

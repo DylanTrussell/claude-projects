@@ -215,7 +215,15 @@ export const CHUNKS = {
   boss2: {
     images: {
       chancellor_boss: CDN + '3dc17b4b-38bb-4319-a6c4-b4616d1fe6d9.png',
-      chancellor_ship: CDN + 'cd854daf-8ea0-43aa-b4bf-709a22296801.png',
+      // v13.4 (Dylan: "why is the rat floating next to the spaceship? It
+      // makes no sense. He should be in it" + "use the one that briefly
+      // appears in the water level as the ending one, because it's more
+      // epic"). The finale ship is now the Jodorowsky-Dune flagship from the
+      // river flyover, with Grimtail visible ON HIS THRONE inside a lit dome.
+      // The old golden barrel moved to the mid-game mothership slot
+      // (assets/sprites/boss_closed.png), which is the "different level" he
+      // asked it moved to.
+      chancellor_ship: CDN + 'f4897a61-3e1a-4acf-8af5-96d0fa59680b.png',
       // generated + keyed this session, NOT yet placed in a level — ready for
       // the next two boss/mini-boss slots whenever Dylan picks where they go.
       boss_ship_1: CDN + 'd7154a17-c3c1-4e41-9783-bf4065487cf9.png',
