@@ -299,6 +299,13 @@ function handleEvents(evs) {
         playCutscene(ev.which, ev.which === 'truce' ? () => handleEvents([{ e: 'rail', k: 'doorgun' }]) : undefined);
         break;
       case 'rail':
+        // v13.4: each rail opens on its story film (skippable), except when
+        // relaunched from a continue -- nobody wants the movie again on retry.
+        if (!ev.resumed && (ev.k === 'skyraider' || ev.k === 'ptboat' || ev.k === 'parley')) {
+          const film = ev.k === 'skyraider' ? 'escape' : ev.k === 'ptboat' ? 'dock' : 'parley';
+          playCutscene(film, () => handleEvents([{ e: 'rail', k: ev.k, resumed: 1 }]));
+          break;
+        }
         // v13.4 (Dylan: "I just had to restart at the checkpoint, and the
         // checkpoint was before the plane level. Just have it restart the
         // plane level. Each new little level part is a checkpoint.") Bank a
@@ -326,7 +333,9 @@ function handleEvents(evs) {
         }
         break;
       case 'gameover': setTimeout(() => endGame(false), 900); break;
-      case 'victory': setTimeout(() => playCutscene('victory', () => endGame(true)), 1400); break;
+      // v13.4: the Chancellor's death gets its beat -- his last breath as the
+      // flagship falls -- then the dawn-aftermath film, then END OF PART ONE.
+      case 'victory': setTimeout(() => playCutscene('grimdeath', () => playCutscene('victory', () => endGame(true))), 1400); break;
       case 'fps': { // drop into the tunnels — the whole game changes
         try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'fps', map: ev.map }; lastCkptX = g.checkpoint; } catch (_) {}
         // v10: the tunnel's forward-facing gun/fire/reload art, redone enemy
@@ -396,7 +405,7 @@ $('btn-continue').addEventListener('click', () => {
   // tunnel), not the stretch of jungle in front of it
   if (ckptSnap._section) {
     const sec = ckptSnap._section;
-    handleEvents([sec.e === 'rail' ? { e: 'rail', k: sec.k } : { e: 'fps', map: sec.map }]);
+    handleEvents([sec.e === 'rail' ? { e: 'rail', k: sec.k, resumed: 1 } : { e: 'fps', map: sec.map }]);
   }
 });
 // no start screen: the film cuts straight to the chopper coming down in gameplay

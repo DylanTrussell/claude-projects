@@ -92,9 +92,9 @@ const WAVES = [
   // game (40 against the previous hardest at 14) and it is the first thing you
   // meet after 52 seconds of flying a plane -- it gets the clean introduction
   // the ratjet and ratbig already got. The aliens move to the wave after.
-  { x: 6050, lock: 1, spawn: [['ratmech', 1, 'right']] },                                        // teach: the mech, SOLO
+  { x: 6050, lock: 1, spawn: [['ratbig', 1, 'right'], ['alien', 2, 'left']] },                   // (mechs debut in the ride, by cutscene)
   { x: 6450, lock: 1, spawn: [['alien', 3, 'right'], ['ufo', 2, 'sky'], ['ratbig', 1, 'left'], ['alien', 2, 'left']] }, // exam B (+ the pair moved off the mech's intro)
-  { x: 6900, lock: 1, spawn: [['ratmech', 2, 'right'], ['ratjet', 3, 'sky']] },                  // the mech is now a mook
+  { x: 6900, lock: 1, spawn: [['ratbig', 2, 'right'], ['ratjet', 3, 'sky']] },                   // (mechs debut in the ride, by cutscene)
 ];
 
 let nextId = 1;
@@ -158,12 +158,23 @@ function stepBike(g, p, bits, dt, dts) {
   if ((bits & C.FIRE) && p.fireCd <= 0) { // sidecar mounted gun (Trung Sĩ Mèo earns his ride)
     p.fireCd = CFG.bikeGunCd;
     const up = p.aimUp, down = p.aimDown;
-    fireBullet(g, p.x + (up ? 20 : 52), p.y - (up ? 96 : 56),
-      up ? 140 : (down ? 360 : 780), up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
+    // v13.4 (Dylan: "The gun turret on the bike is facing backwards, but it
+    // can also face forwards when it needs to.") Charlie mans the sidecar gun,
+    // and Charlie AIMS it: the turret swings toward the nearest live threat --
+    // rear by default, since the chase comes from behind -- so the player
+    // drives and shoots while the gunner tracks. This is also the two-player
+    // seam: in co-op the second player IS this turret.
+    let dir = -1, best = 1e9;
+    for (const e2 of g.enemies) {
+      if (e2.st === 'gone' || e2.side !== 'alien') continue;
+      const dd = Math.abs(e2.x - p.x);
+      if (dd < best && dd < 760) { best = dd; dir = e2.x >= p.x ? 1 : -1; }
+    }
+    p.turret = dir;                                     // renderer flips the gun
+    fireBullet(g, p.x + (up ? 20 : dir * 40), p.y - (up ? 96 : 62),
+      up ? 140 : dir * 780, up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
     evPush(g, { e: 'sfx', n: 'sfx_shot' });
-    // v10: match the ground-hero muzzle fix — keep the up-aim flash offset to
-    // the side of centerline rather than dead-center.
-    evPush(g, { e: 'muzzle', x: p.x + (up ? 30 : 56), y: p.y - (up ? 104 : 56), up: up ? 1 : 0, f: 1 });
+    evPush(g, { e: 'muzzle', x: p.x + (up ? 30 : dir * 48), y: p.y - (up ? 104 : 62), up: up ? 1 : 0, f: dir });
   }
   if ((bits & C.GREN) && !(p.prevC & C.GREN) && p.grenCd <= 0 && p.gren > 0) {
     p.gren--; p.grenCd = CFG.grenadeCd;
@@ -796,7 +807,6 @@ export function step(g, dt, inputs) {
       // ratmech is a 40hp unit against the 14 of the next hardest and the 3 of
       // an alien, and had NO player-facing explanation anywhere in the game.
       if (w.x === 5200) evPush(g, { e: 'hint', k: 'teachRatbig' });
-      if (w.x === 6050) evPush(g, { e: 'hint', k: 'teachRatmech' });
       if (w.x === 6450 && !g.banners.cheeseDrop) { // the cheese MISSION: one supply drop, used with intent
         // Two fixes here. (1) This used to set g.banners.cheeseHint, which is
         // the SAME flag applyPickup tests before firing the "throw it" hint --
@@ -901,6 +911,10 @@ export function step(g, dt, inputs) {
     g.rideT -= dt;
     if (g.rideT <= 0) {
       g.rideT = 0; g.rideOn = true; g.camLock = -1;
+      // v13.4 (Dylan: the mecha rats arrive BY CUTSCENE here, not in earlier
+      // waves): mothership high-five -> the mecha crashes through the palms ->
+      // the village -> the bike. Then the chase.
+      evPush(g, { e: 'cutscene', which: 'mecha' });
       for (const p2 of g.players) { if (p2.st !== 'out') { p2.mode = 'bike'; p2.st = 'alive'; p2.hp = CFG.hpMax; p2.invulnT = 2200; p2.y = CFG.groundY; } }
       evPush(g, { e: 'banner', k: 'actRide' });
       evPush(g, { e: 'hint', k: 'rideHint' });
@@ -910,12 +924,28 @@ export function step(g, dt, inputs) {
   }
   // act III chase spawner
   if (g.rideOn && !g.over) {
+    // v13.4 THE CHASE (Dylan: "everything should be kind of... coming from the
+    // left side, and they're trying to run right away from the stuff. Instead
+    // of everything going towards itself, they're running away from it.")
+    // The mecha film just showed WHY you are on this bike: what is behind you.
+    // Rats, jetpacks and the debuting MECHS spawn on the LEFT and pursue;
+    // UFOs still cut across the sky ahead so the front is not empty.
     g.rideSpawnT = (g.rideSpawnT || 0) - dt;
+    // chasers that fall too far behind the bike are out of the fight -- cull
+    // them, or the live cap fills with stragglers and the chase goes empty
+    for (const e2 of g.enemies) {
+      if (e2.st !== 'gone' && e2.side === 'alien' && e2.x < g.cam - 320) e2.st = 'gone';
+    }
     const live = g.enemies.filter(e2 => e2.st !== 'gone' && e2.k !== 'pow').length;
-    if (g.rideSpawnT <= 0 && live < 9) {
+    if (g.rideSpawnT <= 0 && live < 10) {
       g.rideSpawnT = 850 + g.rng() * 700;
       const r = g.rng();
-      if (r < 0.6) g.enemies.push(en('alien', g.cam + W + 90, CFG.groundY, { fast: 1 }));
+      if (r < 0.42) g.enemies.push(en('alien', g.cam - 90, CFG.groundY, { fast: 1 }));
+      else if (r < 0.62) g.enemies.push(en('ratjet', g.cam - 60, 200 + g.rng() * 160));
+      else if (r < 0.78 && !g.enemies.some(e2 => e2.k === 'ratmech' && e2.st !== 'gone')) {
+        g.enemies.push(en('ratmech', g.cam - 150, CFG.groundY, { spd: 300 }));
+        if (!g.banners.teachMech) { g.banners.teachMech = true; evPush(g, { e: 'hint', k: 'teachRatmech' }); }
+      }
       else g.enemies.push(en('ufo', g.cam + W + 140, 150 + g.rng() * 110));
     }
   }

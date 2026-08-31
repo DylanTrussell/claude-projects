@@ -154,6 +154,23 @@ export const SUBS = {
     [24.4, 25.3, "I'm in."],
   ],
   victory: [],
+  escape: [
+    [2.2, 5.2, "GO! DON'T LOOK BACK!"],
+    [11.5, 13.6, "Get in!"],
+  ],
+  mecha: [
+    [8.6, 11.4, "...you have GOT to be kidding me."],
+    [14.8, 17.2, "The village! There's a bike under that tarp!"],
+  ],
+  dock: [
+    [2.4, 4.9, "I know the land. There's a dock over there."],
+    [5.3, 8.0, "I know. My side stashed a boat there."],
+  ],
+  parley: [
+    [3.6, 5.8, "\"WE COME TO TALK, NOT TO FIGHT.\""],
+    [6.4, 8.6, "\"LAY DOWN YOUR ARMS, KITTENS.\""],
+  ],
+  grimdeath: [],
 };
 
 // v13.3 (Dylan: "the long sentence that the American cat says in the cut scene
@@ -162,6 +179,15 @@ export const SUBS = {
 // under each line so they're actually SAYING it. [time, sfx, playbackRate].
 // Rates give each speaker a voice: Whiskers low-ish, Charlie higher.
 export const CUT_MEOWS = {
+  escape: [
+    [2.3, 'meow_a', 1.3], [11.6, 'meow_c', 0.9],
+  ],
+  mecha: [
+    [8.7, 'meow_b', 0.85], [14.9, 'meow_a', 1.2],
+  ],
+  dock: [
+    [2.5, 'meow_a', 1.05], [5.4, 'meow_b', 0.9],
+  ],
   truce: [
     [13.45, 'meow_a', 1.35],   // "What the hell is that?"  -- startled, high
     [14.30, 'meow_c', 1.55],

@@ -264,5 +264,17 @@ export const VIDEO_URLS = {
   // scene's timing are unaffected. Re-verified post-splice via waveform
   // peak scan (not just "the ffmpeg command didn't error").
   truce: CDN + '64045a3a-13e1-4c19-a45a-255dd8b0bf9d.mp4',
+  // v13.4 story films (Dylan: "everything needs to have a cut scene"). All five
+  // generated with ONE model (Seedance 2.0) using frames extracted from the
+  // original intro/truce films as identity references, so the whole set reads
+  // as one movie. escape: the jungle chase into the A-1 pickup ("Get in").
+  // mecha: mothership high-five -> the mecha rat reveal -> the village bike.
+  // dock: the road runs out at the river. parley: the flagship descends with
+  // Grimtail visible inside. grimdeath: his last breath as the ship falls.
+  escape: CDN + '02f30a5b-b701-4770-9b25-1fc613a1918f.mp4',
+  mecha: CDN + 'e5755f62-7b1e-4bf2-b2f9-a4471aaec94c.mp4',
+  dock: HF + 'hf_20260831_011525_bedb12c0-ff64-4c86-ba47-4082c2d8bf4c.mp4',
+  parley: HF + 'hf_20260831_011546_db265157-b126-4641-a4a3-0f7b31fef11e.mp4',
+  grimdeath: HF + 'hf_20260831_011600_27fd01fc-3bce-4ffd-990a-d0d87b382fbd.mp4',
   victory: CDN + '364475d2-1cc9-43f3-8491-846801935086.mp4',
 };

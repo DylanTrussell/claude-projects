@@ -46,17 +46,16 @@ export class ParleyBoss extends RailBase {
   }
 
   runScript(t) {
+    // v13.4: the parley CONVERSATION is a film now (VIDEO_URLS.parley) -- the
+    // ship descending, the hold-your-fire, Grimtail in his dome. Dylan: "the
+    // whole conversation... wouldn't it be better if that was a cut scene?
+    // Yes, make it that." So the in-game script is just the double-cross:
+    // 20.8 seconds of banners (10 of them over deliberately ignored input, per
+    // the pacing review) is now a 6-second betrayal straight into the fight.
     const lines = [
-      [400, () => this.ev({ e: 'banner', k: 'parleyApproach' })],
-      [2700, () => this.ev({ e: 'banner', k: 'chancellorGreet' })],
-      [5200, () => this.ev({ e: 'banner', k: 'chancellorOffer' })],
-      [7500, () => this.ev({ e: 'banner', k: 'heroSuspicious' })],
-      [9500, () => { this.phase = 'reveal'; this.ev({ e: 'banner', k: 'chancellorReveal' }); this.ev({ e: 'sfx', n: 'sfx_laser' }); this.ev({ e: 'shake', m: 8 }); }],
-      [10600, () => { this.ineffective = true; this.ev({ e: 'banner', k: 'heroFireBack' }); this.ev({ e: 'sfx', n: 'sfx_shot' }); }],
-      [13600, () => { this.ev({ e: 'banner', k: 'shieldNoEffect' }); }],
-      [15800, () => { this.phase = 'laugh'; this.laughPulse = 2200; this.ev({ e: 'banner', k: 'chancellorLaugh' }); this.ev({ e: 'sfx', n: 'sfx_ufo' }); }],
-      [18400, () => { this.ev({ e: 'banner', k: 'chancellorTaunt' }); }],
-      [20800, () => { this.phase = 'fight'; this.ev({ e: 'hint', k: 'parleyControls' }); this.ev({ e: 'music', n: 'music_invasion' }); }],
+      [700, () => { this.phase = 'reveal'; this.ev({ e: 'banner', k: 'chancellorReveal' }); this.ev({ e: 'sfx', n: 'sfx_laser' }); this.ev({ e: 'shake', m: 8 }); }],
+      [2400, () => { this.phase = 'laugh'; this.laughPulse = 2200; this.ev({ e: 'sfx', n: 'sfx_ufo' }); }],
+      [6000, () => { this.phase = 'fight'; this.ev({ e: 'hint', k: 'parleyControls' }); this.ev({ e: 'music', n: 'music_invasion' }); }],
     ];
     for (const [tt, fn] of lines) {
       if (t >= tt && !this._fired.has(tt)) { this._fired.add(tt); fn(); }
