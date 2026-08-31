@@ -294,7 +294,10 @@ export class DoorGun extends RailBase {
     }
     for (const su of (this.supplies || [])) {
       su.y += su.vy * dts; su.x -= 74 * dts;
-      if (su.y > GY - 20) su.y = GY - 20;
+      // rest height 560, not the deck: the Huey's floor is hy 500 and the
+      // collect window is 84px, so a crate on the actual ground was reachable
+      // by only 4px -- technically collectable, unreadably tight
+      if (su.y > GY - 80) su.y = GY - 80;
       if (aabb(su.x, su.y, 240, this.hy + 40, 84)) {
         su.got = 1;
         this.ev({ e: 'sfx', n: 'sfx_purr' });

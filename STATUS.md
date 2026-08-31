@@ -1,18 +1,9 @@
 # IS IT LIVE? **NO**
 
 Everything below is on this machine only. https://soft-cabin-573.higgsfield.gg/
-is still serving v13 and has **none** of the v13.3 work.
-
-Verified, not assumed — fetched the deployed bundle and grepped it:
-
-| feature | live | local |
-|---|---|---|
-| `drawValkyries` (helicopter squadron) | absent | present |
-| `ratmech` (giant / mecha / jetpack rats) | absent | present |
-| `heliT2` (helicopter upgrade lifecycle) | absent | present |
-
-That URL only updates through the Higgsfield MCP `deploy_game` tool, game_id
-`78f224f4-218e-4c86-afbd-136b3c0abdf4`. Nothing has been pushed to it.
+is still serving v13 — none of v13.3 or v13.4 is deployed. That URL only
+updates through the Higgsfield MCP `deploy_game` tool, game_id
+`78f224f4-218e-4c86-afbd-136b3c0abdf4`.
 
 ## Where to play the local build
 
@@ -20,11 +11,69 @@ That URL only updates through the Higgsfield MCP `deploy_game` tool, game_id
 python3 tools/serve.py 8934 public
 ```
 
-Then http://127.0.0.1:8934/ — full audio, this is the one to play.
-`?tunnel=1` boots straight into the tunnel, `?tunnel=2` into the rat nest.
+Then http://127.0.0.1:8934/ — full audio. `?tunnel=1` boots the tunnel.
+`public_deaf/` on port 8951 is the silent twin for agent playtesting.
 
-`public_deaf/` on port 8951 is the same build with the audio graph severed, for
-automated playtesting. Agents use that one and cannot make noise from it.
+## v13.4 — Dylan's full playthrough list, all of it
+
+**Cutscenes.** Six new films, all generated with ONE model (Seedance 2.0) using
+frames from the original intro/truce footage as identity references so the set
+matches: the jungle escape into the A-1 pickup ("Get in!"), the mothership
+high-five → mecha rat reveal → village bike, the road-runs-out dock beat, the
+flagship descending with Grimtail in his dome, his death as the ship falls, and
+a fully redone victory film (the old cartoon one is gone) — dawn, the wreck
+oozing molten cheese, the tired high-five, END OF PART ONE / TO BE CONTINUED.
+Note: the exact model that made the originals isn't recorded in the repo; the
+reference-frame match is the strongest guarantee available, and it holds.
+
+**The A-1 dives.** Guns strafe the ground below mid-height, PULL UP flashes at
+the deck, the ground costs a hull pip, and on the deck the PROPELLER kills rats
+in a spray of gore. Napalm doubled and lobbed 700px downrange where the rat
+stream actually is; napalmed rats catch fire, burn, and CRUMPLE (no more
+explosion). The pointed-triangle fire and triangle treeline are gone — real
+layered fire, real palm silhouettes. Static baked propeller removed from the
+sprite; one drawn prop that actually spins.
+
+**Earned upgrades.** Both aircraft get parachute supply crates you fly into —
+Huey: pods → chin turret → armour patches (missed crates re-drop); A-1: napalm
+restock / twin wing guns / hull repair. Nothing on a wall clock.
+
+**The ride is a chase.** Mechs debut HERE by cutscene (pulled out of the earlier
+waves); rats/jets/mechs pursue from the left; Charlie's sidecar turret tracks
+the nearest threat — rear by default. Ride banter meows.
+
+**The ships.** Mid-game mothership = the brass barrel (hatch-open state pours
+molten cheese; hitbox on the belly). Finale = the Jodorowsky-Dune checkered
+flagship with GRIMTAIL VISIBLE INSIDE — no more floating rat. Parley's 20.8s
+banner script cut to a 6s betrayal; the film carries the talk.
+
+**Show, don't tell.** "GET UNDER IT — SHOOT UP (W)", "CORE EXPOSED", "HIT THE
+PYLONS" all deleted. The boss flashes on every hit (new standing rule:
+everything that takes damage reacts), glows amber while open, drips cheese.
+
+**Water level rebuilt from scratch.** Perspective swell bands, crest foam,
+sun-glint shimmer, parallax far bank — no more gradient with dashed lines. Surf
+pistol fires from its measured muzzle with body recoil; surf raiders take aimed
+shots and the duck-dive is the dodge.
+
+**Tunnel.** Doom-style death: camera drops where you fell, PRESS J to get up in
+place (auto 5s) — no teleport, which also kills the green line the teleport
+drew across the automap. Ambush cats now climb OUT of the floor over 650ms with
+dirt flying. Section checkpoints: dying in a rail/tunnel restarts THAT section.
+
+**Feel.** Real gunshot crack (the "muted" shot was a 4.2kHz hiss tick). Plane
+and bike get separate roaring engine loops (eng() had the bike hardwired).
+Phantom gun fixed (overlay now covers the baked rifle). Buddy rocks while
+firing. Valkyries are individually-drawn silhouette Hueys, not copies.
+
+## Gate
+
+```bash
+bash tools/gate.sh 12
+```
+
+Non-deterministic — never trust one run. Currently 10/10 and 12/12 on sweeps.
+Ladder (6 seeds): novice 3/6 · casual 4/6 · good 6/6 · expert 6/6.
 
 ## What landed in v13.3
 
