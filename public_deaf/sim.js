@@ -1235,7 +1235,7 @@ function explode(g, x, y, fromPlayer) {
         // grenades, so timing the open hatch is a genuine alternative to
         // parking under the hull and holding fire.
         if (e2.open && Math.abs(x - e2.x) < 210 && Math.abs(y - (e2.y - 170)) < 340) {
-          e2.hp -= 30; if (e2.hp <= 0) winBoss(g, e2);
+          e2.hp -= 30; e2.hitT = 150; if (e2.hp <= 0) winBoss(g, e2);
         }
         continue;
       }
@@ -1658,7 +1658,7 @@ function stepBoss(g, b, dt, dts) {
     // so "time the open hatch" wasn't a timing problem at all. 1200 makes the
     // window a real read worth watching for.
     b.open = 1200;
-    if (!g.banners.core) { g.banners.core = true; evPush(g, { e: 'banner', k: 'coreExposed' }); }
+    // v13.4 show-don't-tell: no CORE EXPOSED banner -- the open hatch glows
     const ap = alivePlayers(g);
     const p = ap.length ? ap[(g.rng() * ap.length) | 0] : null;
     if (b.ph === 1) { // death ray sweep: telegraphed vertical beam

@@ -166,7 +166,7 @@ export class DoorGun extends RailBase {
     // screen-clearing event rather than a quiet failure.
     this.tier = 1;              // 1 stock -> 2 gunship -> 3 warthog
     this.pips = 4; this.pipsMax = 4;   // armour, independent of the player's lives
-    this.upgradeAt = [12000, 26000]; // supply pallets arrive on the clock
+    this.upgradeAt = [10000, 22000, 36000]; // crate release times (collected by flying into them)
     this.upIdx = 0;
     this.turretCd = 0;
     this.aimA = 0;               // v11 (Dylan: "you need to be able to aim it") — A/D sweeps the M60 barrel independent of altitude
@@ -223,7 +223,7 @@ export class DoorGun extends RailBase {
       // so the upgrade changes how the gun FEELS and not just how it looks.
       if ((this.tier || 1) >= 2) {
         this.podT = (this.podT || 0) + 1;
-        if (this.podT % 3 === 0) {
+        if (this.podT % 2 === 0) {   // v13.4: every other shot, was every third
           for (const off of [-0.075, 0.075]) {
             this.shots.push({ x: 210, y: this.hy + 118, vx: Math.cos(ang + off) * spd * 0.92,
               vy: Math.sin(ang + off) * spd * 0.92, t: 1400, pod: 1 });
@@ -282,12 +282,35 @@ export class DoorGun extends RailBase {
     }
     this.flak = this.flak.filter(fk => fk.y > -80 && fk.y < H + 200 && fk.x > -100 && fk.x < W + 200);
 
-    // supply pallet: the Huey visibly bolts on hardware mid-mission
+    // v13.4: upgrades used to arrive on a wall clock -- "nothing is earned"
+    // (the Metal Slug review, and Dylan: "the helicopter needs more power-ups
+    // too... make it better somehow"). Now they are parachute crates that fall
+    // through the airspace and you must FLY the Huey into them. Miss one and it
+    // re-drops later. A crate at max tier is +1 armour pip instead.
     if (this.upIdx < this.upgradeAt.length && this.t > this.upgradeAt[this.upIdx]) {
-      this.upIdx++; this.tier = Math.min(3, this.tier + 1);
-      this.ev({ e: 'banner', k: this.tier === 2 ? 'heliT2' : 'heliT3' });
-      this.ev({ e: 'sfx', n: 'sfx_purr' });
+      this.upIdx++;
+      this.supplies = this.supplies || [];
+      this.supplies.push({ x: W + 50, y: -50, vy: 52 });
     }
+    for (const su of (this.supplies || [])) {
+      su.y += su.vy * dts; su.x -= 74 * dts;
+      if (su.y > GY - 20) su.y = GY - 20;
+      if (aabb(su.x, su.y, 240, this.hy + 40, 84)) {
+        su.got = 1;
+        this.ev({ e: 'sfx', n: 'sfx_purr' });
+        if (this.tier < 3) {
+          this.tier++;
+          this.ev({ e: 'banner', k: this.tier === 2 ? 'heliT2' : 'heliT3' });
+        } else {
+          this.pips = Math.min(this.pipsMax || 4, this.pips + 1);
+          this.ev({ e: 'banner', k: 'heliPatched' });
+        }
+      } else if (su.x < -60) {          // missed -- another bird will re-drop it
+        su.got = 1;
+        this.upgradeAt.push(this.t + 8000);
+      }
+    }
+    this.supplies = (this.supplies || []).filter(su => !su.got);
     // T3 chin turret. It used to fire on its own at the nearest foe, which a
     // speedrun tester correctly called out: the turret unlocks at t=26s, so the
     // last 18 seconds of the longest section in the game played themselves. It
@@ -501,6 +524,20 @@ export class DoorGun extends RailBase {
       if (this.fireT > 0) {
         drawMuzzleBurst(ctx, gx + cA * 62, gy2 + sA * 62, ang, this.fireT / 70);
       }
+    }
+    // parachute supply crates — fly the Huey into one to take the upgrade
+    for (const su of (this.supplies || [])) {
+      ctx.save();
+      ctx.translate(su.x + Math.sin(now / 420 + su.x * 0.01) * 8, su.y);
+      ctx.fillStyle = 'rgba(233,226,200,0.92)';
+      ctx.beginPath(); ctx.arc(0, -46, 30, Math.PI, 0); ctx.fill();
+      ctx.strokeStyle = 'rgba(60,54,40,0.9)'; ctx.lineWidth = 2;
+      for (const rx of [-26, 0, 26]) { ctx.beginPath(); ctx.moveTo(rx, -46); ctx.lineTo(0, -12); ctx.stroke(); }
+      ctx.fillStyle = '#8a7448'; ctx.fillRect(-16, -14, 32, 26);
+      ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.strokeRect(-16, -14, 32, 26);
+      ctx.fillStyle = PAL.redAccent; ctx.font = 'bold 16px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('★', 0, 6);
+      ctx.restore();
     }
     this.drawBooms(ctx);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }

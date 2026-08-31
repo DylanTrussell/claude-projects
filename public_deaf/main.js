@@ -299,6 +299,12 @@ function handleEvents(evs) {
         playCutscene(ev.which, ev.which === 'truce' ? () => handleEvents([{ e: 'rail', k: 'doorgun' }]) : undefined);
         break;
       case 'rail':
+        // v13.4 (Dylan: "I just had to restart at the checkpoint, and the
+        // checkpoint was before the plane level. Just have it restart the
+        // plane level. Each new little level part is a checkpoint.") Bank a
+        // snapshot AT the section boundary, tagged with the section, so a
+        // continue relaunches this exact section instead of the walk before it.
+        try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'rail', k: ev.k }; lastCkptX = g.checkpoint; } catch (_) {}
         // v11: ptboat/surf/parley are lazy CDN content (same pattern as the
         // 'fps' tunnel below) — doorgun/skyraider's art ships in the base
         // bundle so those two stay synchronous.
@@ -322,6 +328,7 @@ function handleEvents(evs) {
       case 'gameover': setTimeout(() => endGame(false), 900); break;
       case 'victory': setTimeout(() => playCutscene('victory', () => endGame(true)), 1400); break;
       case 'fps': { // drop into the tunnels — the whole game changes
+        try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'fps', map: ev.map }; lastCkptX = g.checkpoint; } catch (_) {}
         // v10: the tunnel's forward-facing gun/fire/reload art, redone enemy
         // frames, and pickup icons are lazy CDN content (see chunks.js) — the
         // sim freezes while the (usually sub-second, since prefetchChunk
@@ -385,6 +392,12 @@ $('btn-continue').addEventListener('click', () => {
   mode = 'game'; show(null);
   audio.ensure(); audio.music('music_rock', 800);
   fxEvent({ e: 'banner', k: 'continued' });
+  // section-tagged snapshot: relaunch the section itself (the rail or the
+  // tunnel), not the stretch of jungle in front of it
+  if (ckptSnap._section) {
+    const sec = ckptSnap._section;
+    handleEvents([sec.e === 'rail' ? { e: 'rail', k: sec.k } : { e: 'fps', map: sec.map }]);
+  }
 });
 // no start screen: the film cuts straight to the chopper coming down in gameplay
 $('btn-skip').addEventListener('click', () => { $('intro').style.display = 'none'; touchPad(true); $('introvid').pause(); startGame(); });

@@ -576,6 +576,35 @@ function drawEntity(ctx, e2, cam, t, inv) {
     const hgt2 = 340, w2 = 595; // native art aspect — no squash
     const top = y - hgt2;
     if (img) ctx.drawImage(img, sx - w2 / 2, top, w2, hgt2);
+    // v13.4 (Dylan: "it's not changing colors when you hit it, which it
+    // should, like everything else... The thing should glow when it's taking
+    // damage when the hatch is open"). Standing rule now: everything that
+    // takes damage reacts visibly. The boss flashes white on every hit via the
+    // same source-atop pass as the troops, and while the hatch hangs open the
+    // whole hull breathes an amber damage glow so the vulnerability is SHOWN.
+    if (img && (hitT || 0) > 0) {
+      hitFlash(ctx, img === IMG.boss_open ? 'boss_open' : (IMG.boss_closed ? 'boss_closed' : 'boss_mothership'),
+        sx - w2 / 2, top, w2, hgt2, hitT, false);
+    }
+    if (open) {
+      const gk = 0.5 + 0.5 * Math.sin(t / 150);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createRadialGradient(sx, y - 150, 40, sx, y - 150, w2 * 0.42);
+      gr.addColorStop(0, `rgba(255,190,60,${(0.28 + 0.2 * gk).toFixed(2)})`);
+      gr.addColorStop(1, 'rgba(255,120,20,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(sx, y - 150, w2 * 0.42, 0, 7); ctx.fill();
+      ctx.restore();
+      // molten cheese dripping from the open bay -- the Gouda Mothership
+      // bleeds what it came for
+      for (let i = 0; i < 5; i++) {
+        const dk = ((t / (700 + i * 130)) + i * 0.37) % 1;
+        const dx2 = sx - 60 + i * 30 + Math.sin(i * 7) * 12;
+        ctx.fillStyle = `rgba(255,201,60,${(0.85 * (1 - dk)).toFixed(2)})`;
+        ctx.fillRect(dx2, y - 40 + dk * 130, 4, 10 + 8 * (1 - dk));
+      }
+    }
     if (open && !IMG.boss_open) { // fallback tell only if the open-state art is missing
       ctx.fillStyle = PAL.acidGlow;
       ctx.beginPath(); ctx.arc(sx, y - 170, 46 + Math.sin(t / 90) * 6, 0, 7); ctx.fill();
@@ -1092,7 +1121,56 @@ function buildValkyries() {
     layer: r[0], xOff: r[1], yOff: r[2], w: r[3],
     ph: i * 1.37,                                   // deterministic phase: never sync
     jx: Math.sin(i * 2.9) * 22, jy: Math.cos(i * 3.7) * 14,
+    // v13.4 per-airframe variety (Dylan: "you just lazily copied the same
+    // helicopter over and over. Make different ones, make it like a squad of
+    // silhouetted Hueys."): each distant ship gets its own geometry -- tail
+    // length, nose droop, cabin height, skids or not, heading -- so the far
+    // ranks read as a squadron of individual aircraft, not one stamp.
+    tail: 0.9 + ((i * 37) % 10) / 22,               // tail boom length mult
+    nose: ((i * 53) % 7 - 3) * 0.012,               // nose droop / climb attitude
+    cab: 0.9 + ((i * 29) % 8) / 30,                 // cabin height mult
+    skids: (i % 3) !== 1,
+    flipH: (i % 4) === 2 ? -1 : 1,                  // a couple crab the other way
   }));
+}
+
+// A hand-drawn Huey side profile in one path: bulbous cabin, tapering tail
+// boom, fin, skids, rotor mast — plus a spinning rotor BLUR, not a frozen bar.
+function drawHueySilhouette(ctx, x, y, w, sh, t, ph) {
+  const h = w * 0.34 * sh.cab;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(sh.flipH, 1);
+  ctx.rotate(sh.nose);
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.18, -h * 0.15);                              // nose top
+  ctx.quadraticCurveTo(-w * 0.02, -h * 0.62, w * 0.16, -h * 0.5); // cabin roof
+  ctx.lineTo(w * 0.24, -h * 0.28);                                // cabin back
+  ctx.lineTo(w * (0.24 + 0.42 * sh.tail), -h * 0.18);             // boom top
+  ctx.lineTo(w * (0.26 + 0.46 * sh.tail), -h * 0.52);             // tail fin up
+  ctx.lineTo(w * (0.30 + 0.46 * sh.tail), -h * 0.48);
+  ctx.lineTo(w * (0.30 + 0.44 * sh.tail), -h * 0.02);             // fin back down
+  ctx.lineTo(w * 0.24, h * 0.08);                                 // boom belly
+  ctx.quadraticCurveTo(w * 0.05, h * 0.5, -w * 0.16, h * 0.32);   // belly
+  ctx.quadraticCurveTo(-w * 0.24, h * 0.05, -w * 0.18, -h * 0.15);// nose
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(-w * 0.01, -h * 0.72, w * 0.04, h * 0.24);         // rotor mast
+  if (sh.skids) {
+    ctx.fillRect(-w * 0.16, h * 0.46, w * 0.36, h * 0.055);       // skid
+    ctx.fillRect(-w * 0.10, h * 0.32, w * 0.03, h * 0.16);        // struts
+    ctx.fillRect(w * 0.12, h * 0.32, w * 0.03, h * 0.16);
+  }
+  // rotor blur: a thin sweeping bar whose apparent length breathes at rotor
+  // rate, over a faint full-span disc
+  const sweep = Math.abs(Math.sin(t / 70 + ph));
+  ctx.globalAlpha *= 0.55;
+  ctx.fillRect(-w * 0.55, -h * 0.78, w * 1.1, h * 0.05);
+  ctx.globalAlpha *= (0.4 + sweep * 0.6) / 0.55;
+  ctx.fillRect(-w * (0.2 + sweep * 0.35), -h * 0.80, w * (0.4 + sweep * 0.7), h * 0.08);
+  // tail rotor tick
+  ctx.fillRect(w * (0.29 + 0.45 * sh.tail), -h * (0.3 + sweep * 0.18), w * 0.02, h * (0.24 + sweep * 0.3));
+  ctx.restore();
 }
 function drawValkyries(ctx, t, cam) {
   if (!VALK.ships) { VALK.ships = buildValkyries(); VALK.born = t; }
@@ -1123,16 +1201,19 @@ function drawValkyries(ctx, t, cam) {
     ctx.globalAlpha = Math.max(0, L.alpha * (1 - out));
     const pitch = 0.07 + Math.sin(el / 840 + s.ph) * 0.035;
     ctx.translate(x + w / 2, y + h / 2); ctx.rotate(pitch); ctx.translate(-(x + w / 2), -(y + h / 2));
-    if (!drawImg(ctx, 'heli_us', x, y, w, h, true)) { ctx.fillStyle = '#2e3324'; ctx.fillRect(x, y, w, h * 0.4); }
     if (s.layer === 2) {
+      // the lead ship is the only one close enough for real art
+      if (!drawImg(ctx, 'heli_us', x, y, w, h, true)) { ctx.fillStyle = '#2e3324'; ctx.fillRect(x, y, w, h * 0.4); }
       drawRotor(ctx, x + (1 - 0.475) * w, y + 0.05 * h, 0.46 * w, t);
       drawTailRotor(ctx, x + (1 - 0.910) * w, y + 0.160 * h, 0.078 * w, t);
     } else if (s.layer === 1) {
-      ctx.globalAlpha *= 0.5;
-      drawRotor(ctx, x + (1 - 0.475) * w, y + 0.05 * h, 0.46 * w, t);
-      ctx.globalAlpha = L.alpha * (1 - out);
+      ctx.fillStyle = 'rgba(38,42,29,0.96)';
+      drawHueySilhouette(ctx, x + w / 2, y + h / 2, w, s, t, s.ph);
     } else {
-      // far: a shimmering disc, 2->4px tall at 11Hz. One ellipse.
+      // far rank: tiny individual silhouettes too — each with its own
+      // geometry — under the rotor shimmer, so even the specks are aircraft
+      ctx.fillStyle = 'rgba(44,48,34,0.9)';
+      drawHueySilhouette(ctx, x + w / 2, y + h / 2, w, s, t, s.ph);
       const rh = 2 + Math.abs(Math.sin(el / 90 + s.ph)) * 2;
       ctx.fillStyle = 'rgba(230,225,210,0.18)';
       ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + 0.06 * h, w * 0.475, rh, 0, 0, 7); ctx.fill();
@@ -1569,7 +1650,10 @@ export function render(ctx, view, t, myPid, dbg) {
     const bw = 420, bx = (W - bw) / 2;
     ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(bx - 4, 52, bw + 8, 18);
     ctx.fillStyle = PAL.acid; ctx.fillRect(bx, 55, bw * Math.max(0, view.boss.hp / view.boss.max), 12);
-    hudText(ctx, STR.goalBoss, W / 2, 88, 13, 'center', PAL.hudDim);
+    // v13.4 SHOW, DON'T TELL (Dylan, with a screenshot literally named "Show
+    // Don't Tell"): the on-screen instruction for beating the boss is gone.
+    // The hatch irising open, the amber damage glow and the molten cheese
+    // dripping out of it ARE the instruction now.
   }
 
   // banners / hints

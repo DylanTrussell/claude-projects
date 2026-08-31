@@ -56,7 +56,7 @@ export class ParleyBoss extends RailBase {
       [13600, () => { this.ev({ e: 'banner', k: 'shieldNoEffect' }); }],
       [15800, () => { this.phase = 'laugh'; this.laughPulse = 2200; this.ev({ e: 'banner', k: 'chancellorLaugh' }); this.ev({ e: 'sfx', n: 'sfx_ufo' }); }],
       [18400, () => { this.ev({ e: 'banner', k: 'chancellorTaunt' }); }],
-      [20800, () => { this.phase = 'fight'; this.ev({ e: 'banner', k: 'findWeakness' }); this.ev({ e: 'hint', k: 'parleyControls' }); this.ev({ e: 'music', n: 'music_invasion' }); }],
+      [20800, () => { this.phase = 'fight'; this.ev({ e: 'hint', k: 'parleyControls' }); this.ev({ e: 'music', n: 'music_invasion' }); }],
     ];
     for (const [tt, fn] of lines) {
       if (t >= tt && !this._fired.has(tt)) { this._fired.add(tt); fn(); }

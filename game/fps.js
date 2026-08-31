@@ -4,6 +4,7 @@
 // ambushers that burst out of the walls, DOOM gore, a scripted throat-rip
 // setpiece, and a light-shaft exit with a crawl-out animation.
 import { CFG, C, PAL, W, H } from './config.js';
+import { STR as STRD } from './strings.js';
 import { IMG, SHEET, drawImg } from './assets.js';
 
 const FOV = 66 * Math.PI / 180;
@@ -359,6 +360,13 @@ export class Tunnel {
     ctx.textAlign = 'left';
   }
 
+  respawnInPlace(p) {
+    this.downT = 0;
+    p.hp = CFG.hpMax;
+    this.hurtT = 1600;                 // i-frames while you find your feet
+    this.ev({ e: 'sfx', n: 'sfx_reload' });
+  }
+
   // Light up the cells around the player plus the walls that bound them, so
   // the automap draws corridors with edges instead of a cloud of dots.
   reveal() {
@@ -407,9 +415,17 @@ export class Tunnel {
     const kd = Math.max(0.1, Math.hypot(this.px - sx, this.py - sy));
     this.tryMove(this.px + (this.px - sx) / kd * 0.55, this.py + (this.py - sy) / kd * 0.55);
     if (p.hp <= 0) {
-      p.deaths++; p.lives--; p.hp = CFG.hpMax;
+      p.deaths++; p.lives--;
       if (p.lives <= 0) { p.st = 'out'; this.done = true; this.result.dead = true; return true; }
-      this.px = this.spawn[0]; this.py = this.spawn[1];
+      // v13.4 (Dylan: "when you get shot, the map draws a green line and puts
+      // you back to the beginning. Just have it count down and you have to
+      // press a button to respawn while you're in the tunnel. However Doom
+      // does it.") No more teleport-to-spawn -- which also kills the automap
+      // artefact, because the green line WAS the trail being drawn straight
+      // across the map from the death spot to the entrance. Doom death cam:
+      // the view drops and rolls toward the killer, the world keeps moving,
+      // and after a beat you press FIRE to get back up right where you fell.
+      this.downT = 1;
       this.hurtT = 2000;
       // Respawn safety (loop-1: killed AT the spawn point while the previous
       // death message was still on screen, and respawned mid-firefight on an
@@ -480,6 +496,16 @@ export class Tunnel {
       return;
     }
     this.t += dt;
+    // DOWN: the Doom death beat. The world holds, the camera lies on the
+    // floor, and getting up is a choice -- FIRE after a beat (or 5s pass, so
+    // nobody can strand themselves by never pressing it).
+    if (this.downT) {
+      this.downT += dt;
+      const fireEdge = (bits & C.FIRE) && !(this.prevBits & C.FIRE);
+      this.prevBits = bits;
+      if ((this.downT > 900 && fireEdge) || this.downT > 5000) this.respawnInPlace(p);
+      return;
+    }
     if (this.mittensFreed > 0) this.mittensFreed -= dt;   // the freeing beat
     const dts = dt / 1000;
     this._p = p; // barrels lit by the player's own shots need p for the blast
@@ -800,7 +826,18 @@ export class Tunnel {
         if (d < 1.9 && this.los(e.x, e.y)) this.burst(e);
         continue;
       }
-      if (e.st === 'burst') { e.t += dt; if (e.t > 260) e.st = 'chase'; continue; }
+      // v13.4 (Dylan: "Cats in the tunnel should not just appear. They need
+      // to come out from behind a hiding place.") 260ms was a pop. 650ms is an
+      // ENTRANCE: the cat claws up out of the tunnel floor, dirt flying, and
+      // the billboard rises with it (see the emerge factor in the draw).
+      if (e.st === 'burst') {
+        e.t += dt;
+        if (e.t < 600 && Math.random() < 0.3) {
+          this.gore.push({ x: e.x, y: e.y, z: 0.15, vx: (Math.random() - 0.5) * 2.2, vy: (Math.random() - 0.5) * 2.2, vz: 1.4 + Math.random() * 1.8, t: 600, dirt: 1 });
+        }
+        if (e.t > 650) e.st = 'chase';
+        continue;
+      }
       if (e.st === 'wind') {
         // held in place, telegraphing. Re-aims as it winds, so backing off
         // still works but simply standing still does not save you.
@@ -1085,6 +1122,15 @@ export class Tunnel {
     if (!this.sctx) return;
     if (!this._flat) this.buildFlats();
     const sc = this.sctx;
+    // Doom death cam: the whole frame rolls and sinks as you hit the floor
+    const downK = this.downT ? Math.min(1, this.downT / 700) : 0;
+    if (downK > 0) {
+      ctx.save();
+      ctx.translate(W / 2, H);
+      ctx.rotate(downK * 0.34);
+      ctx.scale(1 + downK * 0.08, 1 + downK * 0.08);
+      ctx.translate(-W / 2, -(H - downK * 64));
+    }
 
     // ---- floor + ceiling casting into a 320x180 ImageData ----
     // v13.1 perf rewrite (playtest: "tons of lag"): this loop used to call
@@ -1443,8 +1489,16 @@ export class Tunnel {
         }
         continue;
       }
-      const size = (RH * (s.kind === 'enemy' || s.kind === 'corpse' ? 0.74 : s.kind === 'mittens' ? 0.6 : 0.34)) / d;
-      const y0 = HORIZON + (RH * 0.5) / d / 2 - size;
+      let size = (RH * (s.kind === 'enemy' || s.kind === 'corpse' ? 0.74 : s.kind === 'mittens' ? 0.6 : 0.34)) / d;
+      let y0 = HORIZON + (RH * 0.5) / d / 2 - size;
+      // emerging cats rise out of the floor: the billboard grows bottom-up
+      // from the ground plane over the burst, anchored at the feet
+      if (s.kind === 'enemy' && s.e && s.e.st === 'burst') {
+        const em = Math.min(1, (s.e.t || 0) / 650);
+        const foot = y0 + size;
+        size *= (0.15 + 0.85 * em);
+        y0 = foot - size;
+      }
       sc.save();
       let img = null;
       if (s.kind === 'enemy') {
@@ -1783,6 +1837,23 @@ export class Tunnel {
       popY += 30;
     }
     ctx.textAlign = 'left';
+    // close the death-cam transform, then the down overlay on top, unrotated
+    if (downK > 0) {
+      ctx.restore();
+      ctx.fillStyle = `rgba(110,10,8,${(0.38 * downK).toFixed(2)})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 30px monospace';
+      ctx.fillStyle = '#0b0d08'; ctx.fillText(STRD.tunnelDown, W / 2 + 2, H * 0.42 + 2);
+      ctx.fillStyle = '#f3e9c8'; ctx.fillText(STRD.tunnelDown, W / 2, H * 0.42);
+      if (this.downT > 900) {
+        const pulse = 0.55 + 0.45 * Math.sin(now / 220);
+        ctx.font = 'bold 20px monospace';
+        ctx.fillStyle = `rgba(255,201,60,${pulse.toFixed(2)})`;
+        ctx.fillText(STRD.pressToRise, W / 2, H * 0.52);
+      }
+      ctx.textAlign = 'left';
+    }
   }
 
   drawViewmodel(ctx, now) {
