@@ -138,8 +138,22 @@ function startGame() {
   if (dev && warp > 0) { // dev-only section warp for verification
     g.phase = 'play';
     if (g.lift) { g.lift.st = 'gone'; g.lift = null; }
-    for (const p of g.players) { p.st = 'alive'; p.x = warp; p.y = 100; }
+    // v13.5 (vehicle playtest: warping past the boss "resurrects the BIG UGLY
+    // wave with its camera lock BEHIND the warp point -- player pinned to the
+    // left screen edge, un-winnable, death-looped"; also spawned "standing in
+    // the SKY"). A warp now means the content behind it is DONE: waves cleared,
+    // boss done past its arena, no stale camera lock, feet on the ground.
+    for (const p of g.players) { p.st = 'alive'; p.x = warp; p.y = CFG.groundY; }
     g.enemies = g.enemies.filter(e => e.k !== 'buddy' && e.k !== 'heli');
+    for (const w of g.waves) if (w.x < warp) { w.done = true; w.alive = []; }
+    if (warp > CFG.sections.boss + 200) {
+      // the boss trigger guards on banners.boss (not bossDone) -- without this
+      // the fight restarts at x=7000 BEHIND the warped player and its camLock
+      // pins them at the left screen edge in an un-winnable death loop
+      g.bossDone = true; g.banners.boss = true;
+      g.rideT = 900; // winBoss is what mounts the bike; warping past it means it happened
+    }
+    g.camLock = -1;
     g.cam = Math.max(0, warp - W * 0.4); g.checkpoint = warp;
     if (warp > CFG.sections.invasion) { g.invasion = true; g.sec = 'B'; }
     // dev-only: warping anywhere past x=5572 puts camMid > 5700 immediately,
@@ -272,7 +286,14 @@ function playCutscene(which, then) {
   };
   vid.addEventListener('timeupdate', meowTick);
   vid._meowTick = meowTick;
-  vid.play().catch(() => {});
+  // v13.5: play() rejection was swallowed, leaving the film frozen at frame 0
+  // with only SKIP as the way out. Meows/subs ride the video clock, not its
+  // audio track, so a muted retry loses nothing — and if even that is refused,
+  // let the game continue rather than hang on a black frame.
+  vid.play().catch(() => {
+    vid.muted = true;
+    vid.play().catch(() => done());
+  });
   const done = () => {
     if (!cutsceneActive) return;
     cutsceneActive = false;
@@ -310,8 +331,8 @@ function handleEvents(evs) {
       case 'rail':
         // v13.4: each rail opens on its story film (skippable), except when
         // relaunched from a continue -- nobody wants the movie again on retry.
-        if (!ev.resumed && (ev.k === 'skyraider' || ev.k === 'ptboat' || ev.k === 'parley')) {
-          const film = ev.k === 'skyraider' ? 'escape' : ev.k === 'ptboat' ? 'dock' : 'parley';
+        if (!ev.resumed && (ev.k === 'skyraider' || ev.k === 'ptboat' || ev.k === 'surf' || ev.k === 'parley')) {
+          const film = ev.k === 'skyraider' ? 'escape' : ev.k === 'ptboat' ? 'dock' : ev.k === 'surf' ? 'surfout' : 'parley';
           playCutscene(film, () => handleEvents([{ e: 'rail', k: ev.k, resumed: 1 }]));
           break;
         }
@@ -684,6 +705,12 @@ function frame(now) {
         while (acc >= 1000 / 60) {
           step(g, 1000 / 60, inputs);
           acc -= 1000 / 60;
+          // v13.5: events drain only after this loop, so on a hitch frame
+          // (dt up to 250ms = 15 banked steps) the world kept simulating for
+          // the rest of the batch AFTER a film/section event had fired --
+          // the ride could burn its opening seconds under the mecha film.
+          // Bail out and let handleEvents freeze the sim first.
+          if (g.events.some(ev => ev.e === 'cutscene' || ev.e === 'rail' || ev.e === 'victory')) break;
         }
       }
       const evs = g.events.splice(0);

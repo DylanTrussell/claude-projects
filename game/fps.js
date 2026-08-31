@@ -1278,6 +1278,16 @@ export class Tunnel {
       }
       if (e.dead && e.noCorpse) continue;
       sprites.push({ x: e.x, y: e.y, kind: e.dead ? 'corpse' : 'enemy', e });
+      // v13.5 (Dylan, twice now: "Cats in the tunnel should not just appear.
+      // They need to come out from behind a hiding place" / "Rats are still
+      // just appearing... so fix that"). The rise-from-the-floor helped, but
+      // there was still no visible PLACE they came from. Every ambusher's home
+      // cell now carries a SPIDER-HOLE billboard: a woven-cover dirt mound you
+      // can see before anything happens, torn open once its occupant bursts
+      // out -- so the ambush is out of somewhere, not out of nowhere.
+      if (e.kind === 'ambush') {
+        sprites.push({ x: e.hx, y: e.hy, kind: 'hole', open: e.st !== 'hide' ? 1 : 0 });
+      }
       // v13.2 (loop-1 playtest: SIX deaths to "ghosts" -- alerted stalkers
       // hunting through corridors too dark to read): live knife-cats keep
       // their eyeshine in EVERY state, so whatever the light does, the eyes
@@ -1537,6 +1547,35 @@ export class Tunnel {
           else if (s.e.st === 'burst') img = IMG.vc_knife_a || IMG.grunt_vc;
           else img = walking ? (IMG.vc_knife_walk1 || IMG.vc_knife_a || IMG.grunt_vc) : (IMG.vc_knife_walk2 || IMG.vc_knife_b || IMG.grunt_vc);
         }
+      } else if (s.kind === 'hole') {
+        // the spider-hole: a floor mound with a woven bamboo cover. Closed =
+        // a lump you can learn to distrust; open = a torn dark mouth with the
+        // cover blown aside and dirt scattered.
+        const foot = y0 + size;
+        const hw = size * 1.15, hh = size * 0.34;
+        sc.fillStyle = 'rgba(52,40,26,0.95)';
+        sc.beginPath(); sc.ellipse(sx, foot - hh * 0.4, hw / 2, hh / 2, 0, 0, 7); sc.fill();
+        if (s.open) {
+          sc.fillStyle = 'rgba(8,6,4,0.95)';                     // the open mouth
+          sc.beginPath(); sc.ellipse(sx, foot - hh * 0.42, hw * 0.32, hh * 0.36, 0, 0, 7); sc.fill();
+          sc.fillStyle = 'rgba(70,54,34,0.9)';                   // cover thrown aside
+          sc.save(); sc.translate(sx + hw * 0.42, foot - hh * 0.5); sc.rotate(0.6);
+          sc.fillRect(-hw * 0.2, -2, hw * 0.4, 4); sc.restore();
+          for (let di = 0; di < 5; di++) {                       // scattered dirt
+            sc.fillStyle = 'rgba(60,46,30,0.8)';
+            sc.fillRect(sx - hw * 0.5 + di * hw * 0.24, foot - 2 - (di % 2) * 3, 3, 2);
+          }
+        } else {
+          sc.strokeStyle = 'rgba(96,76,44,0.85)'; sc.lineWidth = Math.max(1, size * 0.03);
+          for (let li = -2; li <= 2; li++) {                     // woven cover slats
+            sc.beginPath();
+            sc.moveTo(sx - hw * 0.38, foot - hh * 0.42 + li * hh * 0.09);
+            sc.lineTo(sx + hw * 0.38, foot - hh * 0.42 + li * hh * 0.09);
+            sc.stroke();
+          }
+        }
+        sc.restore();
+        continue;
       } else if (s.kind === 'corpse') {
         img = this.enemyKind === 'rat' ? IMG.alien_trooper : (IMG.vc_corpse || IMG.grunt_vc);
       } else if (s.kind === 'mittens') img = IMG.grunt_us; // was hero_us -- see the vignette fix note above, same wrong-sprite bug

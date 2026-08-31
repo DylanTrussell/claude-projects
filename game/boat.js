@@ -114,7 +114,7 @@ function drawWater(ctx, scroll, tint, now) {
 // ============================ PT BOAT ============================
 export class PTBoat extends RailBase {
   constructor() {
-    super(54000, 20);           // quota: the sim bot manages ~23-27 here
+    super(78000, 42);           // v13.5: 78s ceiling; good bot lands 48 over the full run           // v13.5 +50% (Dylan); quota scaled -- bot manages ~34-40 in this span
     this.py = 340;              // position across the river (near bank <-> far bank)
     this.gunCd = 0; this.chargeCd = 0; this.charges = 6;
     this.mines = []; this.depth = []; this.started = false;
@@ -152,7 +152,9 @@ export class PTBoat extends RailBase {
       this.ev({ e: 'sfx', n: 'sfx_shot' });
       this.shots.push({ x: 300, y: this.py - 8, vx: 900, vy: 0, t: 1000 });
     }
-    for (const s of this.shots) { s.x += s.vx * dts; s.t -= dt; }
+    // v13.5: diver torpedoes carry vy but this line never integrated it, so
+    // every aimed enemy shot flew dead flat regardless of aim
+    for (const s of this.shots) { s.x += s.vx * dts; s.y += (s.vy || 0) * dts; s.t -= dt; }
     this.shots = this.shots.filter(s => s.t > 0);
 
     // depth charge: K — lobs forward, arcs into the water, radius blast on mines/divers
@@ -193,8 +195,21 @@ export class PTBoat extends RailBase {
         f.y += Math.sin(f.ph) * 60 * dts;
         if (aabb(f.x, f.y, 260, this.py, 60)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
       } else if (f.k === 'diver') {
+        // v13.5 (Dylan: "You got completely rid of the scuba rats. I think
+        // there's some kind of place for them. You just have to make them more
+        // menacing and have them actually do something.") They were never
+        // gone -- they just did NOTHING but drift and ram. Now the periscope-up
+        // window means a TORPEDO: slow, aimed, visible wake, dodgeable, and
+        // exactly what a depth charge is for.
         f.t += dt; f.x -= 130 * dts;
-        f.up = (f.t % 1400) < 700; // periscopes up to take a shot, ducks back under
+        f.up = (f.t % 1400) < 700; // periscopes up to shoot, ducks back under
+        f.cd = (f.cd || 900) - dt;
+        if (f.up && f.cd <= 0 && f.x > 300 && f.x < W) {
+          f.cd = 1700 + Math.random() * 600;
+          const dy = this.py - f.y;
+          this.shots.push({ x: f.x, y: f.y, vx: -420, vy: Math.max(-140, Math.min(140, dy * 0.6)), t: 2400, foe: true, torp: true });
+          this.ev({ e: 'sfx', n: 'sfx_reload' });
+        }
         if (f.up && aabb(f.x, f.y, 260, this.py, 54)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
       }
       for (const s of this.shots) {
@@ -217,14 +232,21 @@ export class PTBoat extends RailBase {
     // "sighted, not yet a fight" tension per the standing backlog recommendation. Purely
     // atmospheric — no collision, no combat — it just tells the player something much
     // bigger than a gunboat is out there.
+    // v13.5 (Dylan: "The spaceship is still showing up on some frames in the
+    // water level, which is weird. You can do a flyby.") The old version was a
+    // 48-second half-transparent crawl -- slow enough to read as a rendering
+    // glitch rather than an event. Now it is a deliberate 11s cinematic pass:
+    // sweep in from the right, a menacing dwell mid-sky, then punch off the
+    // left edge, banking through the turn, with its shadow crossing the water.
     if (!this.flybySpawned && this.t > 17000) {
       this.flybySpawned = true;
-      this.flyby = { x: W + 340, y: 100 };
+      this.flyby = { t: 0 };
       this.ev({ e: 'banner', k: 'shipSighted' });
+      this.ev({ e: 'sfx', n: 'sfx_ufo' });
     }
     if (this.flyby) {
-      this.flyby.x -= 42 * dts;
-      if (this.flyby.x < -420) this.flyby = null;
+      this.flyby.t += dt;
+      if (this.flyby.t > 11500) this.flyby = null;
     }
 
     if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'ptboatDone' }); this.ev({ e: 'sfx', n: 'sfx_explosion' }); }
@@ -235,13 +257,30 @@ export class PTBoat extends RailBase {
     const sx = this.shake ? (Math.random() - 0.5) * this.shake : 0;
     ctx.save(); ctx.translate(sx, 0);
     drawWater(ctx, this.scroll, '#2a6f6b', now);
-    // boss_ship_1 — huge, hazy, high overhead, purely atmospheric (see step())
+    // boss_ship_1 — the deliberate flyby (see step()): eased sweep, dwell, exit
     if (this.flyby) {
+      const k = this.flyby.t / 11500;
+      let fx, tilt;
+      if (k < 0.32) { // sweep in from the right, decelerating
+        const e = 1 - Math.pow(1 - k / 0.32, 3);
+        fx = W + 340 + (W * 0.56 - (W + 340)) * e; tilt = -0.06 * (1 - e);
+      } else if (k < 0.62) { // the dwell: drift slowly, let the player stare
+        const e = (k - 0.32) / 0.3;
+        fx = W * 0.56 - W * 0.12 * e; tilt = 0;
+      } else { // punch off the left edge, accelerating into the bank
+        const e = Math.pow((k - 0.62) / 0.38, 2.2);
+        fx = W * 0.44 + (-460 - W * 0.44) * e; tilt = 0.07 * Math.min(1, e * 2.5);
+      }
+      const fy = 118 + Math.sin(now / 700) * 8;
       const img = IMG.boss_ship_1;
-      const fh = 210, fw = img ? fh * (img.width / img.height) : fh * 1.5;
-      ctx.save(); ctx.globalAlpha = 0.6;
-      if (img) ctx.drawImage(img, this.flyby.x - fw / 2, this.flyby.y - fh / 2, fw, fh);
-      else { ctx.fillStyle = '#2a2233'; ctx.beginPath(); ctx.ellipse(this.flyby.x, this.flyby.y, fw / 2, fh / 2.6, 0, 0, 7); ctx.fill(); }
+      const fh = 250, fw = img ? fh * (img.width / img.height) : fh * 1.5;
+      // its shadow slides across the swells beneath it -- what sells the mass
+      ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = '#0a1210';
+      ctx.beginPath(); ctx.ellipse(fx, H * 0.26 + 46, fw * 0.34, 14, 0, 0, 7); ctx.fill();
+      ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.94; ctx.translate(fx, fy); ctx.rotate(tilt);
+      if (img) ctx.drawImage(img, -fw / 2, -fh / 2, fw, fh);
+      else { ctx.fillStyle = '#2a2233'; ctx.beginPath(); ctx.ellipse(0, 0, fw / 2, fh / 2.6, 0, 0, 7); ctx.fill(); }
       ctx.restore();
     }
     // mines
@@ -262,8 +301,20 @@ export class PTBoat extends RailBase {
     // depth charges
     ctx.fillStyle = PAL.khakiDark;
     for (const dcn of this.depth) { ctx.beginPath(); ctx.arc(dcn.x, dcn.y, 9, 0, 7); ctx.fill(); }
-    // tracers
+    // tracers -- torpedoes get a body and a bubble wake so the diver threat reads
     for (const s of this.shots) {
+      if (s.torp) {
+        ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(Math.atan2(s.vy || 0, s.vx));
+        ctx.fillStyle = PAL.outline; ctx.fillRect(-16, -4, 32, 8);
+        ctx.fillStyle = PAL.acid; ctx.fillRect(-16, -2, 6, 4); // glowing motor
+        ctx.restore();
+        ctx.fillStyle = 'rgba(220,240,235,0.55)';
+        for (let bi2 = 0; bi2 < 3; bi2++) {
+          const bx2 = s.x - 22 - bi2 * 14 - (now / 40 + bi2 * 17) % 12;
+          ctx.beginPath(); ctx.arc(bx2, s.y - 3 + Math.sin(now / 90 + bi2 * 2.1) * 4, 3 - bi2 * 0.6, 0, 7); ctx.fill();
+        }
+        continue;
+      }
       ctx.strokeStyle = s.foe ? PAL.ray : PAL.tracer; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.03, s.y - s.vy * 0.03); ctx.stroke();
     }
@@ -298,7 +349,7 @@ export class PTBoat extends RailBase {
 // The boat's gone. Boards under your feet, wave rolling east toward the LZ.
 export class Surf extends RailBase {
   constructor() {
-    super(46000, 30);           // quota: the sim bot manages ~36-40 here
+    super(65000, 52);           // v13.5: 65s ceiling; good bot lands 60 over the full run           // v13.5 +50% (Dylan); quota scaled with the longer ride
     this.py = 340; this.dive = 0; this.diveCd = 0;
     this.gunCd = 0; this.started = false;
   }
@@ -364,6 +415,16 @@ export class Surf extends RailBase {
       } else if (f.k === 'diver' || f.k === 'shark') {
         f.t += dt; f.x -= (f.k === 'shark' ? 240 : 140) * dts;
         f.up = f.k === 'shark' ? true : (f.t % 1300) < 650;
+        // surfaced divers snap off aimed shots at the surfer -- duck-dive under them
+        if (f.k === 'diver') {
+          f.cd = (f.cd || 800) - dt;
+          if (f.up && f.cd <= 0 && f.x > 280 && f.x < W) {
+            f.cd = 1500 + Math.random() * 500;
+            const dy = this.py - f.y;
+            this.shots.push({ x: f.x, y: f.y, vx: -560, vy: Math.max(-200, Math.min(200, dy * 0.8)), t: 1500, foe: true });
+            this.ev({ e: 'sfx', n: 'sfx_laser' });
+          }
+        }
         const canHit = f.up && this.dive <= 0;
         if (canHit && aabb(f.x, f.y, 260, this.py, 50)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
       }
@@ -405,7 +466,16 @@ export class Surf extends RailBase {
         ctx.beginPath(); ctx.ellipse(f.x, f.y, f.k === 'shark' ? 50 : 40, 20, 0, 0, 7); ctx.fill();
       }
     }
-    for (const s of this.shots) { ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke(); }
+    for (const s of this.shots) {
+      if (s.foe) {         // enemy fire: green bolt on a dark keyline, unmissable
+        ctx.fillStyle = PAL.outline; ctx.fillRect(s.x - 12, s.y - 4, 24, 8);
+        ctx.fillStyle = PAL.acid; ctx.fillRect(s.x - 10, s.y - 2, 20, 5);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(s.x - 3, s.y - 1, 7, 3);
+      } else {
+        ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke();
+      }
+    }
     // surfer
     const bob = Math.sin(now / 220) * 5;
     const si = IMG.surf_hero;
@@ -430,7 +500,10 @@ export class Surf extends RailBase {
       ctx.fillStyle = '#f3e9c8'; ctx.fillRect(150, this.py + 4 + bob, 120, 12);
       ctx.restore();
     }
-    if (this.fireT > 0) drawMuzzleBurst(ctx, 300, this.py - 10 + bob, 0, this.fireT / 70); // v11.2: real fire burst
+    // v13.5 (Dylan's screenshot: "you're shooting from two different places").
+    // This was the OLD burst at (300, py-10), still firing beside the new one
+    // at the pistol's actual muzzle. One gun now -- the sprite's own raised
+    // pistol, flash and rounds both leaving it. Removed, not moved.
     this.drawBooms(ctx);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();

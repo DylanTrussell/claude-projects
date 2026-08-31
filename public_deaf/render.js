@@ -774,7 +774,11 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     ctx.translate(-sx, -y + sink);
   }
   if (bike) { // Act III: both heroes on the motorcycle
-    const bw = 200, bh = 134;
+    // v13.5 (Dylan: "you still have the two different cartoon characters in the
+    // motorcycle... they don't look like the same characters"): bike.png is now
+    // the restyled sprite -- Whiskers driving, Charlie in the sidecar on the
+    // rear-facing gun -- so size from its own aspect instead of the old 200x134.
+    const bw = 210, bh = IMG.bike ? bw * (IMG.bike.height / IMG.bike.width) : 134;
     if (!drawImg(ctx, 'bike', sx - bw / 2, y - bh, bw, bh, false)) {
       ctx.fillStyle = PAL.khakiDark; ctx.fillRect(sx - 70, y - 60, 140, 50);
       ctx.fillStyle = PAL.outline;
@@ -824,6 +828,13 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     }
     ctx.restore();
   } else if (st === 'dead') { ctx.globalAlpha = 0.85; ctx.translate(sx, y - hgt / 2); ctx.rotate(face * 0.6); ctx.translate(-sx, -(y - hgt / 2)); }
+  // v13.5 (Dylan: "there's still a double-up of the gun"): the run SHEET has
+  // the rifle baked at a different spot in every frame, so the overlay -- tuned
+  // to the STATIC sprite's gun line -- could never cover it while running.
+  // With an upgrade held, skip the sheet entirely: static sprite + a step bob,
+  // one known gun line for the overlay to sit on.
+  const wepArt = { gatling: 'wep_gatling', flame: 'wep_flame', raygun: 'wep_raygun' }[weap];
+  const runBob = (wepArt && runT > 0 && st === 'alive' && !crouch && !fireFlash) ? Math.abs(Math.sin(runT / 95)) * 5 : 0;
   const upId = hero === 'us' ? 'hero_us_up' : 'hero_vc_up';
   const upImg = IMG[upId];
   if (aimUp && st === 'alive' && upImg) { // dedicated pose: the gun actually points up
@@ -835,12 +846,12 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     const uh = hgt;
     const uw = uh * (upImg.width / upImg.height);
     drawImg(ctx, upId, sx - uw / 2, y - uh, uw, uh, flip);
-  } else if (runT > 0 && st === 'alive' && !crouch && !fireFlash && SHEET[sheetId]) {
+  } else if (runT > 0 && st === 'alive' && !crouch && !fireFlash && SHEET[sheetId] && !wepArt) {
     const s = SHEET[sheetId];
     const fr = Math.floor(runT / (1000 / s.fps)) % s.frames;
     drawSheet(ctx, sheetId, fr, sx - w2 / 2, y - hgt, w2, hgt, flip);
-  } else if (!drawImg(ctx, imgId, sx - w2 / 2, y - hgt, w2, hgt, flip)) {
-    ctx.fillStyle = PAL.khaki; ctx.fillRect(sx - 18, y - hgt, 36, hgt);
+  } else if (!drawImg(ctx, imgId, sx - w2 / 2, y - hgt + runBob, w2, hgt, flip)) {
+    ctx.fillStyle = PAL.khaki; ctx.fillRect(sx - 18, y - hgt + runBob, 36, hgt);
   }
   ctx.restore();
   if (aimUp && st === 'alive' && !upImg) { // fallback cue if the up-pose sprite is missing
@@ -855,7 +866,6 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
   // baked in, so every pickup looked identical. These sit over the gun hand,
   // sized off the hero's height and flipped with his facing. Only the upgrades
   // draw -- the default rifle is already in the sprite.
-  const wepArt = { gatling: 'wep_gatling', flame: 'wep_flame', raygun: 'wep_raygun' }[weap];
   if (wepArt && IMG[wepArt] && st === 'alive' && !bike) {
     const wi = IMG[wepArt];
     // v13.4 (Dylan: "main character has a phantom gun on top of his other
@@ -865,7 +875,7 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     // both guns showed at once. The overlay now sits ON the baked gun's own
     // line and is sized up a touch so it covers it: one gun, the upgrade.
     const ww = hgt * 1.04, wh2 = ww * (wi.height / wi.width);
-    const hx = sx + face * hgt * 0.22, hy2 = y - hgt * (aimUp ? 0.72 : 0.367);
+    const hx = sx + face * hgt * 0.22, hy2 = y - hgt * (aimUp ? 0.72 : 0.367) + runBob;
     ctx.save();
     ctx.translate(hx, hy2);
     if (aimUp) ctx.rotate(face * -1.15);       // swing the barrel skyward with the aim-up pose

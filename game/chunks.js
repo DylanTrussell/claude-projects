@@ -282,4 +282,9 @@ export const VIDEO_URLS = {
   // the paddies, the crashed checkered flagship oozing molten cheese, the
   // tired high-five. The molten cheese thread pays off here on purpose.
   victory: HF + 'hf_20260831_013940_297316a1-49cb-4e7a-bf21-78ba7f6820f8.mp4',
+  // v13.5 (Dylan: "There needs to be a cut scene between the boat and the
+  // surfboard. You missed that part."): the PT boat takes the torpedo, both
+  // cats go flying, Whiskers hauls himself onto a floating board and rides it
+  // -- which is exactly the state the Surf section hands the player.
+  surfout: HF + 'hf_20260831_031014_9ecfd5e7-cf9e-4ee0-96c3-d930107ceb6b.mp4',
 };

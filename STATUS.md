@@ -14,6 +14,54 @@ python3 tools/serve.py 8934 public
 Then http://127.0.0.1:8934/ — full audio. `?tunnel=1` boots the tunnel.
 `public_deaf/` on port 8951 is the silent twin for agent playtesting.
 
+## v13.5 — the second feedback list (2026-08-31)
+
+**Pacing (+50%, except tunnel→truce which Dylan called perfect).** Door gun
+44→66s, Skyraider 52→72s, PT boat 54→78s, surf 46→65s, bike chase 2750→4150px,
+Grimtail finale ~19→28s (pylons 4hp, boss 105hp). Kill quotas re-measured
+against the real ceilings so good shooting still exits ~10s early; rail armour
+scaled with the length (lives stay at Dylan's 9). Ladder: good + expert win end
+to end, casual dies AT the finale with the CONTINUE checkpoint right there.
+
+**Boat→surf cutscene (was missing).** New Seedance film `surfout`: torpedo
+takes the PT boat, Whiskers hauls onto a floating board, Charlie paddles after
+him on a fuel drum. Wired between PT-boat completion and the surf ride, with
+meows.
+
+**Flagship flyby (water level).** The "shows up on some frames" ghost is now a
+deliberate 11s pass: sweeps in from the right, dwells mid-sky, banks off the
+left edge, shadow crossing the swells, UFO hum on entry.
+
+**Scuba rats.** PT-boat divers fire real torpedoes (body + bubble wake, and the
+vy the old code never integrated, so aimed shots actually track). Surf divers
+snap aimed shots when surfaced — duck-dive under them.
+
+**Double-gun finally dead.** The run SHEET has the rifle baked at a different
+spot every frame, so the overlay could never cover it while running. With an
+upgrade held the hero now uses the static sprite + step bob — one gun line.
+
+**Bike riders restyled.** New sprite: Whiskers drives, Charlie (BLACK fur, per
+Dylan — recolored from the generation's blue) mans the rear-facing sidecar gun.
+
+**Tunnel spider-holes.** Ambush rats rise out of woven-slat mounds that open —
+no more appearing from nowhere.
+
+**Finale dynamics.** Grimtail's ship hovers, exits off-screen, and makes
+strafing passes from both sides; the parley "thing at the bottom" is now the
+hero's own aim-up sprite with recoil + muzzle flash.
+
+**Crates.** Shared olive-canopy supply-crate art on both rails, shootable to
+pop the power-up; door-gun drops re-timed (8/21/36s of 66) so tier 3 gets
+flown; strip banner now says what you actually lost (pods vs turret).
+
+**Engine fixes.** Dev warp no longer resurrects the boss behind you (the
+death-loop pin the vehicle tester hit); a cutscene event now freezes the sim
+mid-frame-batch instead of leaking up to 250ms of world under the film; a
+rejected video play() retries muted instead of hanging the film at frame 0.
+
+**Verified.** simtest 12/12 GREEN ×2, full ladder run, browser probe: world
+frozen at x=8400 under the mecha film while it plays.
+
 ## v13.4 — Dylan's full playthrough list, all of it
 
 **Cutscenes.** Six new films, all generated with ONE model (Seedance 2.0) using

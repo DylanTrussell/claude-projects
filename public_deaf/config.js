@@ -66,9 +66,13 @@ export const CFG = {
   // polish (config data, live-tunable)
   shakeHit: 3, shakeBoom: 9, hitPauseMs: 40, flashMs: 90,
   // world
-  worldLen: 11600,
+  // v13.5 (Dylan: "some of the cut scenes are happening a little too soon...
+  // make the levels up to 50% longer between each cut scene"): the bike chase
+  // grows from 2750px to 4150px of road; ground is flat past the pits so the
+  // extension is free.
+  worldLen: 13000,
   groundY: 620,
-  sections: { A: 0, tunnel: 3000, invasion: 3800, B: 3900, exam: 6400, boss: 7000, ride: 8600, rideEnd: 11350 },
+  sections: { A: 0, tunnel: 3000, invasion: 3800, B: 3900, exam: 6400, boss: 7000, ride: 8600, rideEnd: 12750 },
   // act III bike
   bikeBase: 250, bikeMin: 150, bikeMax: 400, bikeJumpVy: -620, bikeGunCd: 95,
   // audio mix (audio.md levels)

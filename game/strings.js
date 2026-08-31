@@ -80,6 +80,7 @@ export const STR = {
   heliT2: "AIR DROP! ROCKET PODS BOLTED ON",
   heliT3: "AIR DROP! CHIN TURRET ONLINE",
   heliStripped: "TURRET SHOT OFF! HULL BREACHED",
+  heliStrippedPods: "ROCKET PODS SHOT OFF! HULL BREACHED",
   heliCritical: "MAYDAY — ONE HIT LEFT",
   heliPatched: "SUPPLY CRATE — ARMOUR PATCHED",
   actSkyraider: "TREELINE BURN — A-1 SKYRAIDER",
@@ -174,6 +175,7 @@ export const SUBS = {
     [6.4, 8.6, "\"LAY DOWN YOUR ARMS, KITTENS.\""],
   ],
   grimdeath: [],
+  surfout: [], // pure action beat -- the torpedo hit and the board carry it
 };
 
 // v13.3 (Dylan: "the long sentence that the American cat says in the cut scene
@@ -190,6 +192,10 @@ export const CUT_MEOWS = {
   ],
   dock: [
     [2.5, 'meow_a', 1.05], [5.4, 'meow_b', 0.9],
+  ],
+  surfout: [
+    [3.1, 'meow_b', 0.75],  // thrown from the boat -- the long underwater wail
+    [6.8, 'meow_c', 1.5],   // Charlie paddling after him, squeaky and indignant
   ],
   truce: [
     [13.45, 'meow_a', 1.35],   // "What the hell is that?"  -- startled, high

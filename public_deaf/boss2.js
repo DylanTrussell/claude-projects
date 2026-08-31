@@ -15,9 +15,16 @@
 import { C, PAL, W, H } from './config.js';
 import { IMG } from './assets.js';
 import { RailBase } from './rails.js';
+import { drawMuzzleBurst } from './render.js';
 
 const GY = 640;
-const BX = 900, BY = 260; // Chancellor's fixed hover position, screen space
+// v13.5 (Dylan: "he should be flying from the left, from the right, flying
+// off-screen, flying on-screen. It's just not dynamic enough."). The fixed
+// hover is gone: the flagship now FLIES -- hover at one flank, power off the
+// edge, then a fast strafing pass back across at a new height, and settle on
+// the other flank. Everything that referenced the fixed point (pylons, shield,
+// bolts, hit tests, dome glow) rides the animated position instead.
+const BX0 = 900, BY0 = 260; // initial hover, screen space
 const PYLONS0 = [
   { dx: -190, dy: -100, per: 2400, off: 0 },
   { dx: 200, dy: -60, per: 2400, off: 900 },
@@ -33,9 +40,11 @@ export class ParleyBoss extends RailBase {
     this.phase = 'talk'; // talk -> reveal -> laugh -> fight -> (shield down, same phase, this.shieldUp flips)
     this.px = W / 2;
     this.gunCd = 0;
-    this.bossHp = 70; this.bossHpMax = 70;
+    this.bossHp = 105; this.bossHpMax = 105; // v13.5: the finale was the SHORTEST fight (~19s); +50% pass
     this.shieldUp = true;
-    this.pylons = PYLONS0.map(o => ({ ...o, hp: 3, alive: true, t: o.off, exposed: false }));
+    this.pylons = PYLONS0.map(o => ({ ...o, hp: 4, alive: true, t: o.off, exposed: false })); // v13.5: 3 -> 4, longer finale
+    this.bx = BX0; this.by = BY0;
+    this.flyState = 'hover'; this.flyT = 0; this.flySide = 1; this.passY = BY0;
     this.bolts = []; // boss plasma bolts -> player
     this.sparks = []; // shield-spark FX (armored hit, or shield-dome hit)
     this.atkT = 2200;
@@ -75,7 +84,43 @@ export class ParleyBoss extends RailBase {
       this.gunCd -= dt;
       if (this.gunCd <= 0) {
         this.gunCd = 90;
-        this.sparks.push({ x: BX + (Math.random() - 0.5) * 200, y: BY + (Math.random() - 0.5) * 140, t: 0 });
+        this.sparks.push({ x: this.bx + (Math.random() - 0.5) * 200, y: this.by + (Math.random() - 0.5) * 140, t: 0 });
+      }
+    }
+
+    // ---- the flagship flies (fight phase only; it holds still to talk) ----
+    if (this.phase === 'fight') {
+      this.flyT += dt;
+      const OFF = 460;                                   // how far past the edge it exits
+      if (this.flyState === 'hover') {
+        // settle on the current flank with a live bob -- the main shooting window
+        const tx = this.flySide > 0 ? W - 330 : 330;
+        this.bx += (tx - this.bx) * Math.min(1, dts * 2.4);
+        this.by = BY0 + Math.sin(this.t / 700) * 26;
+        if (this.flyT > 3400) { this.flyState = 'exit'; this.flyT = 0; }
+      } else if (this.flyState === 'exit') {
+        // power off the near edge
+        this.bx += this.flySide * (900 * dts) * (1 + this.flyT / 600);
+        if (this.bx < -OFF || this.bx > W + OFF) {
+          this.flyState = 'pass'; this.flyT = 0;
+          this.flySide = -this.flySide;                  // come back from the other side
+          this.bx = this.flySide > 0 ? -OFF : W + OFF;
+          this.passY = 180 + Math.random() * 240;        // new altitude every pass
+          this.ev({ e: 'sfx', n: 'sfx_ufo' });
+        }
+      } else if (this.flyState === 'pass') {
+        // the strafing run: fast sweep across, raining bolts
+        this.bx += this.flySide * 780 * dts;
+        this.by += (this.passY - this.by) * Math.min(1, dts * 3);
+        this.passGun = (this.passGun || 0) - dt;
+        if (this.passGun <= 0 && this.bx > 120 && this.bx < W - 120) {
+          this.passGun = 260;
+          this.bolts.push({ x: this.bx, y: this.by + 60, vx: this.flySide * 120, vy: 560, tx: null });
+          this.ev({ e: 'sfx', n: 'sfx_laser' });
+        }
+        if ((this.flySide > 0 && this.bx > W - 330) || (this.flySide < 0 && this.bx < 330)) {
+          this.flyState = 'hover'; this.flyT = 0;
+        }
       }
     }
 
@@ -101,7 +146,7 @@ export class ParleyBoss extends RailBase {
         let hitSomething = false;
         for (const py of this.pylons) {
           if (!py.alive) continue;
-          const px2 = BX + py.dx, py2 = BY + py.dy;
+          const px2 = this.bx + py.dx, py2 = this.by + py.dy;
           if (aabb(s.x, s.y, px2, py2, 46)) {
             hitSomething = true; s.t = 0;
             if (py.exposed) {
@@ -118,17 +163,17 @@ export class ParleyBoss extends RailBase {
           }
         }
         // boss / shield dome
-        if (!hitSomething && aabb(s.x, s.y, BX, BY, 190)) {
+        if (!hitSomething && aabb(s.x, s.y, this.bx, this.by, 190)) {
           s.t = 0;
           if (this.shieldUp) {
-            this.sparks.push({ x: s.x, y: BY + 40, t: 0 });
+            this.sparks.push({ x: s.x, y: this.by + 40, t: 0 });
           } else {
             this.bossHp -= 4;
             this.ev({ e: 'hit', x: s.x, y: s.y });
-            this.sparks.push({ x: s.x, y: BY, t: 0, good: 1 });
+            this.sparks.push({ x: s.x, y: this.by, t: 0, good: 1 });
             if (this.bossHp <= 0 && !this.won) {
               this.won = true;
-              for (let i = 0; i < 6; i++) this.boom(BX - 130 + i * 46, BY - 60 + (i % 3) * 70, 1);
+              for (let i = 0; i < 6; i++) this.boom(this.bx - 130 + i * 46, this.by - 60 + (i % 3) * 70, 1);
               this.ev({ e: 'sfx', n: 'sfx_explosion' });
               this.ev({ e: 'shake', m: 16 });
               this.ev({ e: 'banner', k: 'chancellorDown' });
@@ -165,7 +210,7 @@ export class ParleyBoss extends RailBase {
         this.tellT -= dt;
         if (this.tellT <= 0) {
           this.tellT = 0;
-          this.bolts.push({ x: BX, y: BY + 60, vx: 0, vy: 620, tx: this.tellTX });
+          this.bolts.push({ x: this.bx, y: this.by + 60, vx: 0, vy: 620, tx: this.tellTX });
           this.ev({ e: 'sfx', n: 'sfx_laser' });
         }
       } else if (this.atkT <= 0 && this.phase === 'fight') {
@@ -214,9 +259,9 @@ export class ParleyBoss extends RailBase {
     const bossPulse = this.laughPulse > 0 ? Math.sin(now / 60) * 6 : 0;
     if (ship) {
       const sh = 430, sw = sh * (ship.width / ship.height);
-      ctx.drawImage(ship, BX - sw * 0.5 + bossPulse * 0.4, BY - sh * 0.60 + shipYOff, sw, sh);
+      ctx.drawImage(ship, this.bx - sw * 0.5 + bossPulse * 0.4, this.by - sh * 0.60 + shipYOff, sw, sh);
       // dome glow: his voice, shown not told -- pulses while he laughs/talks
-      const domeX = BX + sw * 0.10, domeY = BY - sh * 0.36 + shipYOff;
+      const domeX = this.bx + sw * 0.10, domeY = this.by - sh * 0.36 + shipYOff;
       const talk = this.phase !== 'fight' ? 0.5 + 0.5 * Math.sin(now / 190) : 0.25;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -228,13 +273,13 @@ export class ParleyBoss extends RailBase {
       ctx.restore();
     } else {
       ctx.fillStyle = '#8a6a3a';
-      ctx.beginPath(); ctx.ellipse(BX, BY - 90 + shipYOff, 220, 90, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(this.bx, this.by - 90 + shipYOff, 220, 90, 0, 0, 7); ctx.fill();
     }
 
     // reveal-phase plasma cannon flash on the hull
     if (this.phase === 'reveal' || this.phase === 'laugh' || this.phase === 'fight') {
       ctx.fillStyle = 'rgba(140,255,180,0.85)';
-      ctx.beginPath(); ctx.arc(BX + 70, BY + 40, 10, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.bx + 70, this.by + 40, 10, 0, 7); ctx.fill();
     }
 
     // shield dome (only while up)
@@ -242,24 +287,46 @@ export class ParleyBoss extends RailBase {
       const pulse = 0.12 + 0.05 * Math.sin(now / 220);
       ctx.strokeStyle = `rgba(90,170,255,${pulse + 0.12})`;
       ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(BX, BY, 190, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(this.bx, this.by, 190, 0, 7); ctx.stroke();
       ctx.fillStyle = `rgba(90,170,255,${pulse * 0.3})`;
-      ctx.beginPath(); ctx.arc(BX, BY, 190, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.bx, this.by, 190, 0, 7); ctx.fill();
     }
 
-    // pylons
+    // pylons: shield emitter PODS -- chrome housing, energy core, and a live
+    // tether arcing back to the hull, so they read as part of the machine
+    // rather than floating circles
     for (const py of this.pylons) {
       if (!py.alive) continue;
-      const px2 = BX + py.dx, py2 = BY + py.dy;
-      const glow = py.exposed ? 1 : 0.32;
-      ctx.fillStyle = py.exposed ? `rgba(255,240,140,${0.7 + 0.3 * Math.sin(now / 40)})` : `rgba(90,170,255,${glow})`;
-      ctx.beginPath(); ctx.arc(px2, py2, py.exposed ? 22 : 16, 0, 7); ctx.fill();
+      const px2 = this.bx + py.dx, py2 = this.by + py.dy;
+      // tether to the hull
+      ctx.strokeStyle = `rgba(120,190,255,${py.exposed ? 0.15 : 0.4})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(px2, py2);
+      ctx.quadraticCurveTo((px2 + this.bx) / 2 + Math.sin(now / 180 + py.off) * 14, (py2 + this.by) / 2, this.bx, this.by);
+      ctx.stroke();
+      // housing: a hexagonal chrome pod
+      ctx.save();
+      ctx.translate(px2, py2); ctx.rotate(now / 900 + py.off);
+      ctx.fillStyle = '#5a5f6a'; ctx.strokeStyle = '#23252b'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let hx2 = 0; hx2 < 6; hx2++) {
+        const ha = hx2 * Math.PI / 3;
+        const hr = py.exposed ? 26 : 21;
+        if (hx2 === 0) ctx.moveTo(Math.cos(ha) * hr, Math.sin(ha) * hr);
+        else ctx.lineTo(Math.cos(ha) * hr, Math.sin(ha) * hr);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      // the core
+      const glow = py.exposed ? 1 : 0.35;
+      ctx.fillStyle = py.exposed ? `rgba(255,240,140,${0.75 + 0.25 * Math.sin(now / 40)})` : `rgba(90,170,255,${glow})`;
+      ctx.beginPath(); ctx.arc(px2, py2, py.exposed ? 15 : 10, 0, 7); ctx.fill();
       ctx.strokeStyle = 'rgba(20,20,24,0.8)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(px2, py2, py.exposed ? 22 : 16, 0, 7); ctx.stroke();
-      // hp pips
-      for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.arc(px2, py2, py.exposed ? 15 : 10, 0, 7); ctx.stroke();
+      // hp pips (4 since v13.5)
+      for (let i = 0; i < 4; i++) {
         ctx.fillStyle = i < py.hp ? '#f3e9c8' : 'rgba(243,233,200,0.2)';
-        ctx.fillRect(px2 - 15 + i * 12, py2 - (py.exposed ? 34 : 28), 8, 5);
+        ctx.fillRect(px2 - 21 + i * 12, py2 - (py.exposed ? 34 : 28), 8, 5);
       }
     }
 
@@ -277,17 +344,30 @@ export class ParleyBoss extends RailBase {
     // boss bolts + telegraph
     if (this.tellT > 0) {
       ctx.fillStyle = `rgba(255,80,220,${0.5 + 0.4 * Math.sin(now / 30)})`;
-      ctx.beginPath(); ctx.arc(BX, BY + 60, 16, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.bx, this.by + 60, 16, 0, 7); ctx.fill();
     }
     ctx.fillStyle = '#ff54d8';
     for (const b of this.bolts) { ctx.beginPath(); ctx.arc(b.x, b.y, 10, 0, 7); ctx.fill(); }
 
-    // player dodge marker (foreground, small — no hero art loaded in this module)
+    // v13.5 (Dylan's screenshot: "I don't know what this thing on the bottom
+    // is that I'm shooting from. It makes no sense.") It was a khaki rectangle
+    // with a circle for a head -- the comment claimed no hero art was loaded
+    // here, but hero_us_up ships in the BASE bundle and has been available the
+    // whole time. The real cat now stands there, gun up, rocking with recoil.
     if (this.phase === 'fight' || this.phase === 'laugh' || this.phase === 'reveal') {
-      ctx.fillStyle = PAL.khaki;
-      ctx.fillRect(this.px - 16, GY - 60, 32, 60);
-      ctx.fillStyle = PAL.outline;
-      ctx.beginPath(); ctx.arc(this.px, GY - 68, 14, 0, 7); ctx.fill();
+      const hi = IMG.hero_us_up || IMG.hero_us;
+      if (hi) {
+        const hh = 104, hw = hh * (hi.width / hi.height);
+        const rk = Math.max(0, this.fireT || 0) / 70;
+        ctx.save();
+        if (rk > 0) { ctx.translate(this.px, GY); ctx.rotate(rk * 0.05); ctx.translate(-this.px, -GY); }
+        ctx.drawImage(hi, this.px - hw / 2, GY - hh + rk * 3, hw, hh);
+        ctx.restore();
+        if (rk > 0.2) drawMuzzleBurst(ctx, this.px + 8, GY - hh - 6, -Math.PI / 2, rk);
+      } else {
+        ctx.fillStyle = PAL.khaki;
+        ctx.fillRect(this.px - 16, GY - 60, 32, 60);
+      }
     }
 
     this.drawBooms(ctx);
@@ -319,10 +399,10 @@ export function parleyBot(rail) {
   // every frame, or the bot never dwells under any single pylon long enough
   // to catch its exposed window) until it's dead, then the shield, then the
   // boss center once it's down.
-  let tx = BX;
+  let tx = rail.bx;
   if (rail.shieldUp) {
     const live = rail.pylons.find(py => py.alive);
-    if (live) tx = BX + live.dx;
+    if (live) tx = rail.bx + live.dx;
   }
   if (rail.px < tx - 8) b |= C.R; else if (rail.px > tx + 8) b |= C.L;
   return b;

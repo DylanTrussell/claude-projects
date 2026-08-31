@@ -8,6 +8,51 @@ import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burs
 
 const GY = 640; // rail ground line
 
+// v13.5 (Dylan: "the stuff that's parachuting, it doesn't look like it's
+// designed from the same game. So fix that, make it better, make it look
+// cooler"). One shared crate, drawn in the game's own language: thick dark
+// outlines, flat PAL colours, a stencilled star, panel-seamed olive canopy
+// with a torn edge, swinging in its own rig lines.
+function drawSupplyCrate(ctx, x, y, now) {
+  const sway = Math.sin(now / 420 + x * 0.01) * 9;
+  const rock = Math.sin(now / 420 + x * 0.01 + 0.5) * 0.08;
+  ctx.save();
+  ctx.translate(x + sway, y);
+  // canopy: olive dome with panel seams and outline
+  ctx.rotate(rock * 0.4);
+  ctx.fillStyle = '#4c5d2a';
+  ctx.beginPath(); ctx.arc(0, -52, 34, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = '#39481f';
+  ctx.beginPath(); ctx.arc(0, -52, 34, Math.PI, Math.PI + 0.9); ctx.lineTo(0, -52); ctx.fill();
+  ctx.strokeStyle = PAL.outline; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, -52, 34, Math.PI, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-34, -52); ctx.lineTo(34, -52); ctx.stroke();
+  ctx.lineWidth = 2;
+  for (const px2 of [-17, 0, 17]) { ctx.beginPath(); ctx.moveTo(px2, -52 - (34 - Math.abs(px2)) * 0.9); ctx.lineTo(px2 * 0.85, -52); ctx.stroke(); }
+  // rig lines
+  ctx.strokeStyle = '#26231c'; ctx.lineWidth = 2;
+  for (const rx of [-30, 0, 30]) { ctx.beginPath(); ctx.moveTo(rx, -52); ctx.lineTo(0, -16); ctx.stroke(); }
+  ctx.rotate(rock * 0.6);
+  // the crate: khaki planks, corner straps, stencil star
+  ctx.fillStyle = PAL.khaki; ctx.fillRect(-19, -16, 38, 30);
+  ctx.fillStyle = PAL.khakiDark; ctx.fillRect(-19, -16, 38, 7);
+  ctx.fillStyle = 'rgba(38,35,28,0.35)'; ctx.fillRect(-19, 8, 38, 6);
+  ctx.strokeStyle = PAL.outline; ctx.lineWidth = 3; ctx.strokeRect(-19, -16, 38, 30);
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-19, -2); ctx.lineTo(19, -2); ctx.stroke();       // plank seam
+  ctx.fillStyle = PAL.redAccent;                                                 // stencil star
+  ctx.save(); ctx.translate(0, 0);
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a2 = -Math.PI / 2 + i * (Math.PI * 4 / 5);
+    const r2 = 9;
+    if (i === 0) ctx.moveTo(Math.cos(a2) * r2, Math.sin(a2) * r2);
+    else ctx.lineTo(Math.cos(a2) * r2, Math.sin(a2) * r2);
+  }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.restore();
+}
+
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
 // v11: this was NOT exported — boat.js and boss2.js both `import { RailBase }
@@ -48,8 +93,11 @@ export class RailBase {
       this.flashT = 130; this.shake = 14;
       this.ev({ e: 'fpsHurt' }); this.ev({ e: 'sfx', n: 'sfx_explosion' });
       if (this.pips === 2 && this.tier > 1) {
-        this.tier--;                                   // the chin turret blows off
-        this.ev({ e: 'banner', k: 'heliStripped' });
+        this.tier--;                                   // highest upgrade blows off
+        // v13.5: say what was actually lost -- at tier 2 you never had the
+        // chin turret, so "TURRET SHOT OFF" was announcing hardware you
+        // never owned. Pods strip at 2->1, the turret at 3->2.
+        this.ev({ e: 'banner', k: this.tier === 2 ? 'heliStripped' : 'heliStrippedPods' });
         for (let i = 0; i < 3; i++) this.boom(280 + i * 30, this.hy + 60, 0);
       }
       if (this.pips === 1) this.ev({ e: 'banner', k: 'heliCritical' });
@@ -155,7 +203,9 @@ export class DoorGun extends RailBase {
     // because kills here are spawn-capped, not aim-capped, so skill bought
     // about 3 seconds. Shorter timer and a slightly lower quota, since this is
     // the longest single block of runtime in the game.
-    super(44000, 62);
+    // v13.5 (+50% level length between cutscenes, Dylan): 44s -> 66s, quota
+    // scaled with it since kills here are spawn-capped.
+    super(66000, 112); // v13.5: 66s ceiling; a good gunner (132 kills possible) exits ~10s early
     this.hy = 300;              // heli altitude
     this.gunCd = 0;
     this.started = false;
@@ -165,8 +215,10 @@ export class DoorGun extends RailBase {
     // visibly LOSES that hardware as it takes damage, and dying in it is a
     // screen-clearing event rather than a quiet failure.
     this.tier = 1;              // 1 stock -> 2 gunship -> 3 warthog
-    this.pips = 4; this.pipsMax = 4;   // armour, independent of the player's lives
-    this.upgradeAt = [10000, 22000, 36000]; // crate release times (collected by flying into them)
+    this.pips = 6; this.pipsMax = 6;   // v13.5: armour scaled with the +50% run (armour-per-second parity, lives stay at Dylan's 9)
+    // v13.5: tier 3 used to drop at 36s of 44 -- eight seconds of warthog. With
+    // the longer run the drops come earlier in proportion: every tier gets flown.
+    this.upgradeAt = [8000, 21000, 36000]; // crate release times (shoot it or fly into it)
     this.upIdx = 0;
     this.turretCd = 0;
     this.aimA = 0;               // v11 (Dylan: "you need to be able to aim it") — A/D sweeps the M60 barrel independent of altitude
@@ -294,11 +346,14 @@ export class DoorGun extends RailBase {
     }
     for (const su of (this.supplies || [])) {
       su.y += su.vy * dts; su.x -= 74 * dts;
+      for (const s2 of this.shots) {
+        if (s2.t > 0 && aabb(s2.x, s2.y, su.x, su.y, 42)) { s2.t = 0; su.shotDown = 1; break; }
+      }
       // rest height 560, not the deck: the Huey's floor is hy 500 and the
       // collect window is 84px, so a crate on the actual ground was reachable
       // by only 4px -- technically collectable, unreadably tight
       if (su.y > GY - 80) su.y = GY - 80;
-      if (aabb(su.x, su.y, 240, this.hy + 40, 84)) {
+      if (su.shotDown || aabb(su.x, su.y, 240, this.hy + 40, 84)) {
         su.got = 1;
         this.ev({ e: 'sfx', n: 'sfx_purr' });
         if (this.tier < 3) {
@@ -528,20 +583,8 @@ export class DoorGun extends RailBase {
         drawMuzzleBurst(ctx, gx + cA * 62, gy2 + sA * 62, ang, this.fireT / 70);
       }
     }
-    // parachute supply crates — fly the Huey into one to take the upgrade
-    for (const su of (this.supplies || [])) {
-      ctx.save();
-      ctx.translate(su.x + Math.sin(now / 420 + su.x * 0.01) * 8, su.y);
-      ctx.fillStyle = 'rgba(233,226,200,0.92)';
-      ctx.beginPath(); ctx.arc(0, -46, 30, Math.PI, 0); ctx.fill();
-      ctx.strokeStyle = 'rgba(60,54,40,0.9)'; ctx.lineWidth = 2;
-      for (const rx of [-26, 0, 26]) { ctx.beginPath(); ctx.moveTo(rx, -46); ctx.lineTo(0, -12); ctx.stroke(); }
-      ctx.fillStyle = '#8a7448'; ctx.fillRect(-16, -14, 32, 26);
-      ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.strokeRect(-16, -14, 32, 26);
-      ctx.fillStyle = PAL.redAccent; ctx.font = 'bold 16px monospace'; ctx.textAlign = 'center';
-      ctx.fillText('★', 0, 6);
-      ctx.restore();
-    }
+    // parachute supply crates — fly the Huey into one, or shoot it down to you
+    for (const su of (this.supplies || [])) drawSupplyCrate(ctx, su.x, su.y, now);
     this.drawBooms(ctx);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();
@@ -572,9 +615,9 @@ export class Skyraider extends RailBase {
     // quota 42 -> 34: with napalm halved below, 42 is out of reach (a naive
     // run now lands 22-30) and the section always ran its full timer again.
     // 34 sits just above a no-aim run, so it's the gun that gets you out early.
-    super(52000, 20);
+    super(72000, 95); // v13.5: 72s ceiling; sustained ~1.6 kills/s makes accuracy buy ~11s
     this.py = 260; this.spd = 340;
-    this.pips = 3; this.pipsMax = 3;
+    this.pips = 4; this.pipsMax = 4;   // v13.5: +50% run, armour scaled with it
     // napalm 8 -> 4: measured, the dominant Skyraider strategy was to NOT fly
     // -- sit at a fixed altitude mashing K, where napalm supplied 31 of 40
     // kills (77%) and taking the aim axis (altitude) was actively the worst
@@ -668,7 +711,13 @@ export class Skyraider extends RailBase {
     for (const su of this.supplies) {
       su.y += su.vy * dts; su.x -= (95 + this.spd * 0.28) * dts;
       if (su.y > GY - 30) su.y = GY - 30;
-      if (aabb(su.x, su.y, 280, this.py, 74)) {
+      // shooting the crate pops the chute and claims it too (Dylan: "make it
+      // so you can just shoot it and get the power-up")
+      let shot = false;
+      for (const s2 of this.shots) {
+        if (s2.t > 0 && aabb(s2.x, s2.y, su.x, su.y, 42)) { s2.t = 0; shot = true; break; }
+      }
+      if (shot || aabb(su.x, su.y, 280, this.py, 74)) {
         su.got = 1;
         this.ev({ e: 'sfx', n: 'sfx_purr' });
         if (su.k === 'napalm') { this.napalm = Math.min(12, this.napalm + 3); this.ev({ e: 'banner', k: 'skyNapalmUp' }); }
@@ -991,22 +1040,8 @@ export class Skyraider extends RailBase {
         : q.green ? `rgba(120,230,60,${(qa * 0.95).toFixed(2)})` : `rgba(150,25,20,${(qa * 0.95).toFixed(2)})`;
       ctx.fillRect(q.x - 3, q.y - 3, 6, 6);
     }
-    // supply drops: parachute crates you fly into
-    for (const su of this.supplies) {
-      ctx.save();
-      const sway = Math.sin(now / 420 + su.x * 0.01) * 8;
-      ctx.translate(su.x + sway, su.y);
-      ctx.fillStyle = 'rgba(233,226,200,0.92)';
-      ctx.beginPath(); ctx.arc(0, -46, 30, Math.PI, 0); ctx.fill();      // canopy
-      ctx.strokeStyle = 'rgba(60,54,40,0.9)'; ctx.lineWidth = 2;
-      for (const rx of [-26, 0, 26]) { ctx.beginPath(); ctx.moveTo(rx, -46); ctx.lineTo(0, -12); ctx.stroke(); }
-      ctx.fillStyle = '#8a7448'; ctx.fillRect(-16, -14, 32, 26);          // crate
-      ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.strokeRect(-16, -14, 32, 26);
-      ctx.fillStyle = su.k === 'napalm' ? PAL.boom2 : su.k === 'guns' ? PAL.redAccent : '#8CdF3B';
-      ctx.font = 'bold 15px monospace'; ctx.textAlign = 'center';
-      ctx.fillText(su.k === 'napalm' ? 'K' : su.k === 'guns' ? 'GG' : '+', 0, 5);
-      ctx.restore();
-    }
+    // supply drops: fly into one, or just SHOOT it -- either way it's yours
+    for (const su of this.supplies) drawSupplyCrate(ctx, su.x, su.y, now);
     // tracers
     ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
     for (const s of this.shots) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke(); }
