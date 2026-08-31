@@ -13,18 +13,101 @@ const GY = 640;
 
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
-function drawWater(ctx, scroll, tint) {
-  const grd = ctx.createLinearGradient(0, 0, 0, H);
-  grd.addColorStop(0, '#3a5c66');
-  grd.addColorStop(0.45, tint || '#2a6f6b');
-  grd.addColorStop(1, '#173c3f');
-  ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
-  // scrolling wave-glint lines, cheap parallax
-  ctx.strokeStyle = 'rgba(200,230,225,0.18)'; ctx.lineWidth = 2;
-  for (let i = 0; i < 14; i++) {
-    const y = (i * 57 + (scroll * 40) % 57) % H;
-    const x0 = (i * 173 - scroll * 90) % (W + 300) - 150;
-    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + 90, y + 6); ctx.stroke();
+// v13.4, rebuilt from scratch (Dylan: "it doesn't look like water. It just
+// looks like a boat with some cut-off water bullshit... Make it look realistic
+// and awesome. Don't have any cut-off, lazy feathering with lines in it. It
+// should look like waves and shimmering water.") The old version was a flat
+// gradient with 14 dashed lines. This one builds an actual river:
+//   - dusk sky with a low sun and a far-bank jungle silhouette
+//   - water in PERSPECTIVE: swell bands that widen and speed up toward the
+//     camera, each a continuous sinusoidal ribbon (no cut-off segments)
+//   - crest highlights and foam flecks riding the swells
+//   - a shimmering sun-glint column that flickers on the chop
+//   - fast dark foreground streaks for speed
+function drawWater(ctx, scroll, tint, now) {
+  now = now || 0;
+  const HOR = H * 0.26;
+  // sky
+  const sky = ctx.createLinearGradient(0, 0, 0, HOR);
+  sky.addColorStop(0, '#5c4a3a'); sky.addColorStop(1, '#8a6a48');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, HOR);
+  // low sun + glow
+  const sunX = W * 0.68;
+  const sg = ctx.createRadialGradient(sunX, HOR - 26, 4, sunX, HOR - 26, 130);
+  sg.addColorStop(0, 'rgba(255,225,170,0.95)'); sg.addColorStop(0.25, 'rgba(255,190,120,0.4)'); sg.addColorStop(1, 'rgba(255,170,90,0)');
+  ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sunX, HOR - 26, 130, 0, 7); ctx.fill();
+  // far-bank jungle silhouette, two parallax rows
+  for (const [spd, hgt, col] of [[6, 26, '#2c3a22'], [11, 38, '#1f2c18']]) {
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.moveTo(0, HOR);
+    for (let x = 0; x <= W; x += 24) {
+      const n = Math.sin((x + scroll * spd) * 0.013) + Math.sin((x + scroll * spd) * 0.037 + 2);
+      ctx.lineTo(x, HOR - hgt * 0.4 - n * hgt * 0.3);
+    }
+    ctx.lineTo(W, HOR); ctx.closePath(); ctx.fill();
+  }
+  // water body
+  const grd = ctx.createLinearGradient(0, HOR, 0, H);
+  grd.addColorStop(0, '#5c6e5a');                       // sky reflection at the horizon
+  grd.addColorStop(0.22, tint || '#2a6f6b');
+  grd.addColorStop(1, '#12333a');
+  ctx.fillStyle = grd; ctx.fillRect(0, HOR, W, H - HOR);
+  // swell bands in perspective: near bands are taller, faster, more displaced
+  for (let b2 = 0; b2 < 6; b2++) {
+    const k = b2 / 5;                                    // 0 far .. 1 near
+    const yBase = HOR + 14 + Math.pow(k, 1.6) * (H - HOR - 20);
+    const amp = 2 + k * 13;
+    const wl = 190 - k * 60;                             // wavelength tightens slightly
+    const phase = scroll * (26 + k * 150) + now / (900 - k * 550) * wl;
+    ctx.beginPath();
+    ctx.moveTo(-20, yBase);
+    for (let x = -20; x <= W + 20; x += 16) {
+      const yv = Math.sin((x + phase) / wl * Math.PI * 2) * amp
+               + Math.sin((x + phase * 1.7) / (wl * 0.43) * Math.PI * 2) * amp * 0.35;
+      ctx.lineTo(x, yBase + yv);
+    }
+    ctx.lineTo(W + 20, H + 40); ctx.lineTo(-20, H + 40); ctx.closePath();
+    ctx.fillStyle = `rgba(10,30,34,${(0.10 + k * 0.10).toFixed(2)})`;   // trough shading
+    ctx.fill();
+    // crest highlight: stroke the same ribbon's top edge
+    ctx.beginPath();
+    for (let x = -20; x <= W + 20; x += 16) {
+      const yv = Math.sin((x + phase) / wl * Math.PI * 2) * amp
+               + Math.sin((x + phase * 1.7) / (wl * 0.43) * Math.PI * 2) * amp * 0.35;
+      if (x === -20) ctx.moveTo(x, yBase + yv - 1.5); else ctx.lineTo(x, yBase + yv - 1.5);
+    }
+    ctx.strokeStyle = `rgba(190,225,215,${(0.10 + k * 0.14).toFixed(2)})`;
+    ctx.lineWidth = 1.5 + k * 1.5;
+    ctx.stroke();
+    // foam flecks on the near crests
+    if (k > 0.4) {
+      ctx.fillStyle = `rgba(225,240,235,${(0.18 + k * 0.2).toFixed(2)})`;
+      for (let i = 0; i < 7; i++) {
+        const fx = ((i * 197 + phase * 1.3) % (W + 60)) - 30;
+        const fy = yBase + Math.sin((fx + phase) / wl * Math.PI * 2) * amp - 2;
+        ctx.fillRect(fx, fy, 5 + k * 6, 2);
+      }
+    }
+  }
+  // sun-glint column: shimmering dashes under the sun, dense near the horizon
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 26; i++) {
+    const gk = i / 26;
+    const gy = HOR + 6 + Math.pow(gk, 1.5) * (H - HOR) * 0.75;
+    const spread = 40 + gk * 260;
+    const gx = sunX + Math.sin(i * 13.7 + now / (240 + i * 17)) * spread * 0.5;
+    const tw = 0.25 + 0.75 * Math.abs(Math.sin(now / (160 + i * 23) + i * 2.6));
+    ctx.fillStyle = `rgba(255,220,160,${(0.05 + 0.13 * tw * (1 - gk * 0.5)).toFixed(3)})`;
+    ctx.fillRect(gx - (8 + gk * 26) / 2, gy, 8 + gk * 26, 1.5 + gk * 1.5);
+  }
+  ctx.restore();
+  // foreground rush: fast dark streaks closest to camera
+  ctx.strokeStyle = 'rgba(8,24,28,0.35)'; ctx.lineWidth = 3;
+  for (let i = 0; i < 5; i++) {
+    const fx = W - ((scroll * 480 + i * 300) % (W + 340)) + 170;
+    const fy = H - 60 + (i % 3) * 20;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + 120, fy + 4); ctx.stroke();
   }
 }
 
@@ -104,7 +187,7 @@ export class PTBoat extends RailBase {
     for (const f of this.foes) {
       if (f.k === 'gunboat') {
         f.x -= 150 * dts; f.cd -= dt;
-        if (f.cd <= 0 && f.x > 260 && f.x < W) { f.cd = 1500; this.shots.push({ x: f.x, y: f.y, vx: -640, vy: 0, t: 1200, foe: true }); this.ev({ e: 'sfx', n: 'sfx_laser' }); }
+        if (f.cd <= 0 && f.x > 260 && f.x < W) { f.cd = 950; this.shots.push({ x: f.x, y: f.y, vx: -640, vy: 0, t: 1200, foe: true }); this.ev({ e: 'sfx', n: 'sfx_laser' }); }
       } else if (f.k === 'raider') {
         f.x -= 260 * dts; f.ph += dts * 3;
         f.y += Math.sin(f.ph) * 60 * dts;
@@ -151,7 +234,7 @@ export class PTBoat extends RailBase {
   render(ctx, now) {
     const sx = this.shake ? (Math.random() - 0.5) * this.shake : 0;
     ctx.save(); ctx.translate(sx, 0);
-    drawWater(ctx, this.scroll, '#2a6f6b');
+    drawWater(ctx, this.scroll, '#2a6f6b', now);
     // boss_ship_1 — huge, hazy, high overhead, purely atmospheric (see step())
     if (this.flyby) {
       const img = IMG.boss_ship_1;
@@ -249,14 +332,34 @@ export class Surf extends RailBase {
     if ((bits & C.FIRE) && this.gunCd <= 0) {
       this.gunCd = 130; this.fireT = 70;
       this.ev({ e: 'sfx', n: 'sfx_shot' });
-      this.shots.push({ x: 300, y: this.py - 10, vx: 880, vy: 0, t: 900 });
+      // v13.4 (Dylan: "he's got a pistol on the surfboard, but it's not
+      // firing and recoiling. He's just holding it, and a random bullet's
+      // coming out of a random place.") The muzzle of the raised pistol sits
+      // at u 0.570 / v 0.027 of surf_hero.png -- measured, not guessed. Rounds
+      // leave THAT point, arcing forward-down to the water line, and the
+      // recoil timer kicks the whole sprite back for the render.
+      this.recoilT = 110;
+      this.shots.push({ x: 228, y: this.py - 57, vx: 880, vy: 150, t: 900 });
     }
-    for (const s of this.shots) { s.x += s.vx * dts; s.t -= dt; }
+    for (const s of this.shots) {
+      s.x += s.vx * dts; s.y += (s.vy || 0) * dts; s.t -= dt;
+      if (!s.foe && s.vy > 0 && s.y > this.py + 4) s.vy = 0;   // level off at the water line
+    }
     this.shots = this.shots.filter(s => s.t > 0);
 
     for (const f of this.foes) {
       if (f.k === 'raider') {
         f.x -= 230 * dts; f.ph += dts * 3; f.y += Math.sin(f.ph) * 50 * dts;
+        // v13.4 (Dylan: "all the enemies on the water level, they're not
+        // shooting at you enough. In general, you should be getting shot at
+        // more.") Surf raiders now take aimed shots instead of only ramming.
+        f.cd = (f.cd || 900) - dt;
+        if (f.cd <= 0 && f.x > 280 && f.x < W) {
+          f.cd = 1000 + Math.random() * 500;
+          const dy = this.py - f.y;
+          this.shots.push({ x: f.x, y: f.y, vx: -600, vy: Math.max(-260, Math.min(260, dy * 0.9)), t: 1300, foe: true });
+          this.ev({ e: 'sfx', n: 'sfx_laser' });
+        }
         if (this.dive <= 0 && aabb(f.x, f.y, 260, this.py, 58)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
       } else if (f.k === 'diver' || f.k === 'shark') {
         f.t += dt; f.x -= (f.k === 'shark' ? 240 : 140) * dts;
@@ -274,6 +377,11 @@ export class Surf extends RailBase {
       }
     }
     this.foes = this.foes.filter(f => f.hp > 0 && f.x > -140);
+    // incoming raider fire connects -- and the duck-dive (K) is the dodge,
+    // which finally gives that move a job against ranged fire
+    for (const s of this.shots) {
+      if (s.foe && this.dive <= 0 && aabb(s.x, s.y, 220, this.py, 48)) { s.t = 0; this.hurt(p, 1); }
+    }
 
     if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'surfDone' }); }
     this.prevBits = bits;
@@ -282,7 +390,7 @@ export class Surf extends RailBase {
   render(ctx, now) {
     const sx = this.shake ? (Math.random() - 0.5) * this.shake : 0;
     ctx.save(); ctx.translate(sx, 0);
-    drawWater(ctx, this.scroll, '#1e5a72');
+    drawWater(ctx, this.scroll, '#1e5a72', now);
     // the wave face — a big diagonal swell the whole scene rides on
     ctx.fillStyle = 'rgba(255,255,255,0.14)';
     ctx.beginPath();
@@ -305,8 +413,17 @@ export class Surf extends RailBase {
       const sh = 120, sw = sh * (si.width / si.height);
       ctx.save();
       if (this.dive > 0) ctx.globalAlpha = 0.55;
-      ctx.drawImage(si, 220 - sw / 2, this.py - sh / 2 + bob, sw, sh);
+      // recoil: the whole body rocks back around the board as the pistol kicks
+      this.recoilT = Math.max(0, (this.recoilT || 0) - 16.7);
+      const rk = (this.recoilT || 0) / 110;
+      if (rk > 0) {
+        ctx.translate(220, this.py + bob);
+        ctx.rotate(-rk * 0.11);
+        ctx.translate(-220, -(this.py + bob));
+      }
+      ctx.drawImage(si, 220 - sw / 2 - rk * 5, this.py - sh / 2 + bob, sw, sh);
       ctx.restore();
+      if (rk > 0.2) drawMuzzleBurst(ctx, 228 + 6, this.py - 57 + bob, 0.16, rk);
     } else {
       ctx.save(); if (this.dive > 0) ctx.globalAlpha = 0.55;
       ctx.fillStyle = PAL.khaki; ctx.fillRect(190, this.py - 44 + bob, 60, 40);
