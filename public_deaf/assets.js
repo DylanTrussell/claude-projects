@@ -149,14 +149,20 @@ export const audio = {
       this.humSrc = null;
     }
   },
-  eng(onoff) {
-    if (!this.ctx || !SND.sfx_bike) return;
-    if (onoff && !this.engSrc) {
+  // v13.4 (Dylan: "both the plane and the motorcycle seem to have the same
+  // sound effects"). They literally did -- this hardwired SND.sfx_bike, so the
+  // A-1's 'engine' event started the motorcycle loop. The emitter now names
+  // its engine, and switching vehicles swaps the loop instead of stacking it.
+  eng(onoff, name) {
+    if (!this.ctx) return;
+    const want = name || 'sfx_bike';
+    if (onoff && this.engSrc && this.engName !== want) { try { this.engSrc.stop(); } catch (_) {} this.engSrc = null; }
+    if (onoff && !this.engSrc && SND[want]) {
       const s = this.ctx.createBufferSource();
-      s.buffer = SND.sfx_bike; s.loop = true;
+      s.buffer = SND[want]; s.loop = true;
       const g = this.ctx.createGain(); g.gain.value = 0.28;
       s.connect(g).connect(this.masterSfxGain); s.start();
-      this.engSrc = s;
+      this.engSrc = s; this.engName = want;
     } else if (!onoff && this.engSrc) {
       try { this.engSrc.stop(); } catch (_) {}
       this.engSrc = null;

@@ -540,7 +540,22 @@ export class Skyraider extends RailBase {
     // kills (77%) and taking the aim axis (altitude) was actively the worst
     // policy in the game. Halving the free canisters makes the gun, and
     // therefore moving, matter again.
-    this.gunCd = 0; this.napalm = 4; this.cans = []; this.fires = [];
+    // v13.4 (Dylan: "Double the amount of napalm that we have. Running out
+    // sucks. You can only run out at the end, maybe.") 4 -> 8. The original
+    // nerf existed because the gun could not hit the ground so napalm was the
+    // only tool; the dive-strafe below fixes the actual cause, so the ceiling
+    // can come back up. More arrives by supply drop mid-run.
+    this.gunCd = 0; this.napalm = 8; this.cans = []; this.fires = [];
+    // v13.4 DIVE-STRAFE (Dylan: "There's no way when I'm in the A-1 to shoot
+    // the mice on the ground... make it so the plane can dive down and shoot
+    // the ground, but has to pull up before it gets too low... you should be
+    // able to kill some of the rats with your propeller, blood flying
+    // everywhere"). This is the mechanic that separates the plane from the
+    // helicopter: the Huey aims its gun, the A-1 aims ITSELF.
+    this.warnT = 0;              // time spent below the hard deck
+    this.tier = 1;               // 1 stock guns -> 2 twin wing guns (supply drop)
+    this.supplies = []; this.supplyT = 5000;
+    this.propGore = [];          // prop-kill viscera
     // v13.3: the A-1 gets a hull, same as the Huey. Measured, this section
     // killed the reference bot FIVE times against the door gun's one -- with
     // lives: 9 that alone ended most runs before the boss, and simtest could
@@ -555,17 +570,73 @@ export class Skyraider extends RailBase {
     this.stepCommon(dt, p);
     const dts = dt / 1000;
     this.gunCd -= dt;
-    if (!this.started) { this.started = true; this.ev({ e: 'banner', k: 'actSkyraider' }); this.ev({ e: 'hint', k: 'skyControls' }); this.ev({ e: 'engine', on: true }); }
+    if (!this.started) { this.started = true; this.ev({ e: 'banner', k: 'actSkyraider' }); this.ev({ e: 'hint', k: 'skyControls' }); this.ev({ e: 'engine', on: true, name: 'sfx_plane' }); }
 
     // a ~0.4s-stale altitude for the treeline gunners to aim at, so climbing or
     // diving actually shakes their shots instead of dragging them along with you
     this.lastPy = this.lastPy === undefined ? this.py : this.lastPy + (this.py - this.lastPy) * Math.min(1, dts * 2.5);
     if (bits & C.UP) this.py -= 300 * dts;
-    if (bits & C.DOWN) this.py += 300 * dts;
-    this.py = Math.max(90, Math.min(540, this.py));
+    if (bits & C.DOWN) this.py += 330 * dts;
+    // floor extended 540 -> 600: the strafing run. Below 470 the guns angle
+    // down at the treeline; below 552 the PULL UP warning flashes; touch 585
+    // and you have flown the airframe into Vietnam -- one hull hit and an
+    // automatic bounce back to altitude.
+    this.py = Math.max(90, Math.min(600, this.py));
+    this.diving = this.py > 470;
+    if (this.py > 552) {
+      this.warnT += dt;
+      if ((this.warnT % 400) < 20) this.ev({ e: 'sfx', n: 'sfx_reload' }); // warning tick
+      if (this.py >= 585) { this.hurt(p, 1); this.py = 380; this.warnT = 0; this.ev({ e: 'banner', k: 'skyGroundStrike' }); }
+    } else this.warnT = 0;
+    // PROP KILL: on the deck, the propeller arc IS a weapon. Nose sits ~76px
+    // ahead of centre; any ground rat walking into the disc is churned into
+    // gore. Dylan: "blood flying everywhere."
+    // 530, not 505: the prop disc only reaches the rats when you are INSIDE
+    // the PULL UP band, so mowing with the propeller means flirting with the
+    // ground the whole time -- measured, a riskless 505 cleared the whole
+    // quota by prop alone in 13 seconds.
+    if (this.py > 530) {
+      for (const f of this.foes) {
+        if (f.k === 'rat' && f.hp > 0 && !f.dying && f.x > 300 && f.x < 372 && this.py > 530) {
+          f.hp = 0; this.kills++; this.ev({ e: 'fpsKill' });
+          this.ev({ e: 'sfx', n: 'sfx_gore' });
+          this.shake = Math.max(this.shake, 8);
+          for (let i = 0; i < 26; i++) {
+            this.propGore.push({ x: 336 + (Math.random() - 0.5) * 30, y: this.py + 20 + (Math.random() - 0.5) * 40,
+              vx: 120 + Math.random() * 340, vy: -260 + Math.random() * 380,
+              t: 0, T: 500 + Math.random() * 400, green: Math.random() < 0.7 ? 1 : 0 });
+          }
+        }
+      }
+    }
+    for (const q of this.propGore) { q.t += dt; q.x += q.vx * dts - this.spd * 0.3 * dts; q.y += q.vy * dts; q.vy += 900 * dts; }
+    this.propGore = this.propGore.filter(q => q.t < q.T);
     if (bits & C.L) this.spd = Math.max(230, this.spd - 320 * dts);
     if (bits & C.R) this.spd = Math.min(540, this.spd + 320 * dts);
     this.scroll += this.spd * dts / 340;
+
+    // v13.4 SUPPLY DROPS, for both aircraft: parachute crates you have to FLY
+    // INTO, so an upgrade is something you went and got rather than a gift on
+    // a wall clock (the Metal Slug review's point, verbatim: "nothing is
+    // earned"). Cycle: napalm, twin wing guns, hull repair.
+    this.supplyT -= dt;
+    if (this.supplyT <= 0) {
+      this.supplyT = 9000 + Math.random() * 3000;
+      const kinds = ['napalm', 'guns', 'repair'];
+      this.supplies.push({ x: W + 70, y: 90, vy: 34, k: kinds[(this._supN = ((this._supN || 0) + 1)) % 3] });
+    }
+    for (const su of this.supplies) {
+      su.y += su.vy * dts; su.x -= (95 + this.spd * 0.28) * dts;
+      if (su.y > GY - 30) su.y = GY - 30;
+      if (aabb(su.x, su.y, 280, this.py, 74)) {
+        su.got = 1;
+        this.ev({ e: 'sfx', n: 'sfx_purr' });
+        if (su.k === 'napalm') { this.napalm = Math.min(12, this.napalm + 3); this.ev({ e: 'banner', k: 'skyNapalmUp' }); }
+        else if (su.k === 'guns') { this.tier = 2; this.ev({ e: 'banner', k: 'skyGunsUp' }); }
+        else { this.pips = Math.min(this.pipsMax, this.pips + 1); this.ev({ e: 'banner', k: 'skyRepair' }); }
+      }
+    }
+    this.supplies = this.supplies.filter(su => !su.got && su.x > -80);
 
     // spawns: treeline rats, flak bursts, diving saucers
     // v11.2 (Dylan: "the mice aren't shooting at you enough, neither are the
@@ -585,16 +656,30 @@ export class Skyraider extends RailBase {
     if ((bits & C.FIRE) && this.gunCd <= 0) {
       this.gunCd = 110; this.fireT = 70;
       this.ev({ e: 'sfx', n: 'sfx_shot' });
-      this.shots.push({ x: 330, y: this.py + 12, vx: 1050, vy: 0, t: 1000 });
+      // diving pitches the guns into the ground ahead -- the strafing run.
+      // Level flight fires flat, exactly as before.
+      const dvy = this.diving ? 620 : 0;
+      this.shots.push({ x: 330, y: this.py + 12, vx: 1050, vy: dvy, t: 1000 });
+      if (this.tier >= 2) this.shots.push({ x: 330, y: this.py + 26, vx: 1040, vy: dvy + 60, t: 1000 }); // twin wing guns
     }
-    for (const s of this.shots) { s.x += s.vx * dts; s.t -= dt; }
+    for (const s of this.shots) {
+      s.x += s.vx * dts; s.y += (s.vy || 0) * dts; s.t -= dt;
+      // strafing rounds chew the dirt where they land
+      if (s.y > GY + 6) { s.t = 0; this.propGore.push({ x: s.x, y: GY + 4, vx: -this.spd * 0.3, vy: -180 - Math.random() * 160, t: 0, T: 260, green: 2 }); }
+    }
     this.shots = this.shots.filter(s => s.t > 0);
 
     // napalm: K drops a tumbling canister
     if ((bits & C.GREN) && !(this.prevBits & C.GREN)) {
       if (this.napalm > 0) {
         this.napalm--;
-        this.cans.push({ x: 300, y: this.py + 30, vx: this.spd * 0.55, vy: 60, r: 0 });
+        // v13.4: the canister used to release at vx spd*0.55 and land ~70px
+        // ahead of the nose -- and the fire then scrolled off screen before
+        // the incoming rat stream ever reached it, which is why napalm only
+        // ever caught whatever was already point-blank. Thrown properly
+        // forward it lands ~700px downrange, IN the stream, and the wall of
+        // fire finally does what a wall of fire is for.
+        this.cans.push({ x: 300, y: this.py + 30, vx: this.spd * 1.5, vy: -60, r: 0 });
         this.ev({ e: 'sfx', n: 'sfx_meow' });
       } else this.ev({ e: 'banner', k: 'napalmOut' });
     }
@@ -602,7 +687,7 @@ export class Skyraider extends RailBase {
       cn.x += (cn.vx - this.spd * 0.35) * dts; cn.y += cn.vy * dts; cn.vy += 500 * dts; cn.r += dts * 6;
       if (cn.y >= GY - 6) {
         cn.y = 9999;
-        this.fires.push({ x: cn.x, w: 300, t: 0 });
+        this.fires.push({ x: cn.x, w: 340, t: 0 });
         this.boom(cn.x, GY - 20, 1);
         this.ev({ e: 'sfx', n: 'sfx_napalm' });
       }
@@ -631,13 +716,23 @@ export class Skyraider extends RailBase {
       if (f.flash > 0) f.flash -= dt; // v12: decay the hit flash
       // burning: it runs, alight, and then it drops -- the kill is the END of
       // the animation rather than the start of it
-      if (f.burning > 0) {
+      // v13.4 (Dylan: "when I'm napalming the rats... have them set on fire
+      // and have a new animation of them dying, because right now it's not
+      // that good"). No more explosion at the end of the burn -- a napalmed
+      // rat is not a bomb. It burns, staggers, then CRUMPLES: keels over,
+      // sinks into the fire and chars away, flames riding it the whole way.
+      if (f.burning > 0 && !f.dying) {
         f.burning -= dt;
         if (f.burning <= 0 && f.hp > 0) {
-          f.hp = 0; this.kills++;
-          this.boom(f.x, f.y - 18, 0);
-          this.ev({ e: 'fpsKill' });
+          f.dying = 620; f.dying0 = 620;
+          this.kills++; this.ev({ e: 'fpsKill' });
+          this.ev({ e: 'sfx', n: 'sfx_gore' });
         }
+      }
+      if (f.dying) {
+        f.dying -= dt;
+        if (f.dying <= 0) { f.hp = 0; }
+        continue;                      // a crumpling rat no longer walks or shoots
       }
       if (f.k === 'rat') {
         f.x -= (120 + this.spd * 0.35) * dts; f.cd -= dt;
@@ -721,12 +816,27 @@ export class Skyraider extends RailBase {
     const sx = this.shake ? (Math.random() - 0.5) * this.shake : 0;
     ctx.save(); ctx.translate(sx, 0);
     this.drawSky(ctx, 220);
-    // treeline strip the napalm eats
-    ctx.fillStyle = '#1d2b12';
-    for (let i = 0; i < 16; i++) {
-      const x = W - ((this.scroll * 340 * 0.7 + i * 120) % (W + 240)) + 120;
-      const th = 60 + (i * 37 % 50);
-      ctx.beginPath(); ctx.moveTo(x - 40, GY + 34); ctx.lineTo(x, GY + 34 - th); ctx.lineTo(x + 40, GY + 34); ctx.fill();
+    // v13.4 (Dylan: "weird green triangles in the foreground"). The treeline
+    // was a row of bare triangles. Palm silhouettes now: curved trunk, a burst
+    // of drooping fronds, varied heights and leans, still cheap to draw.
+    ctx.fillStyle = '#1d2b12'; ctx.strokeStyle = '#1d2b12';
+    for (let i = 0; i < 12; i++) {
+      const x = W - ((this.scroll * 340 * 0.7 + i * 160) % (W + 320)) + 160;
+      const th = 70 + (i * 37 % 60);
+      const lean = ((i * 53 % 21) - 10) * 0.02;
+      const topX = x + lean * th * 3, topY = GY + 34 - th;
+      ctx.lineWidth = 7 - th * 0.02;
+      ctx.beginPath(); ctx.moveTo(x, GY + 36); ctx.quadraticCurveTo(x + lean * th * 1.4, GY + 34 - th * 0.6, topX, topY); ctx.stroke();
+      for (let fnd = 0; fnd < 6; fnd++) {                       // fronds droop from the crown
+        const fa = -Math.PI * 0.9 + fnd * (Math.PI * 0.8 / 5) + lean;
+        const fl = 26 + (i * 7 + fnd * 11) % 14;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(topX, topY);
+        ctx.quadraticCurveTo(topX + Math.cos(fa) * fl, topY + Math.sin(fa) * fl,
+          topX + Math.cos(fa) * fl * 1.5, topY + Math.sin(fa) * fl * 0.9 + 13);
+        ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(topX, topY, 5, 0, 7); ctx.fill();  // coconut crown
     }
     // rats + saucers + flak
     for (const f of this.foes) {
@@ -742,10 +852,22 @@ export class Skyraider extends RailBase {
       if (img) {
         const h2 = f.k === 'ufo' ? 70 : 84;
         const w2 = h2 * (img.width / img.height);
-        drawImgHit(ctx, img, f.x - w2 / 2, f.y - h2, w2, h2, (f.flash || 0) / 150, f.hpMax ? f.hp / f.hpMax : 1);
-        // alight: flame tongues licking up the body, brightest at the start
-        if (f.burning > 0) {
-          const bk = Math.min(1, f.burning / 700);
+        // the napalm crumple: keel over, sink into the burn, char to black
+        const dyK = f.dying ? 1 - f.dying / (f.dying0 || 620) : 0;
+        ctx.save();
+        if (dyK > 0) {
+          ctx.translate(f.x, f.y);
+          ctx.rotate(dyK * 1.45);
+          ctx.translate(-f.x, -(f.y - dyK * 16));
+          ctx.globalAlpha = Math.max(0.15, 1 - dyK * 0.85);
+        }
+        drawImgHit(ctx, img, f.x - w2 / 2, f.y - h2, w2, h2, (f.flash || 0) / 150,
+          f.dying ? 0.05 : (f.hpMax ? f.hp / f.hpMax : 1));
+        ctx.restore();
+        // alight: flame tongues licking up the body — and they RIDE the body
+        // down through the whole crumple rather than cutting out
+        if (f.burning > 0 || f.dying) {
+          const bk = f.dying ? Math.max(0.35, f.dying / (f.dying0 || 620)) : Math.min(1, f.burning / 700);
           ctx.save();
           ctx.globalCompositeOperation = 'lighter';
           for (let i = 0; i < 5; i++) {
@@ -776,19 +898,74 @@ export class Skyraider extends RailBase {
     for (const cn of this.cans) {
       ctx.save(); ctx.translate(cn.x, cn.y); ctx.rotate(cn.r); ctx.fillRect(-14, -5, 28, 10); ctx.restore();
     }
+    // v13.4 (Dylan: "napalm fire is pointed... weird triangles coming up from
+    // the ground... get rid of that and just make more fire"). The old flames
+    // were literally quadratic-curve TRIANGLES. Real fire now, built the same
+    // way as the muzzle flash that already reads right: additive radial
+    // gradients, white-hot at the root cooling to orange and ember red,
+    // billowing puffs that rise and flicker independently, smoke on top.
     for (const fr of this.fires) {
-      const k = Math.min(1, fr.t / 400);
+      const k = Math.min(1, fr.t / 350);
       const die = Math.max(0, 1 - Math.max(0, fr.t - 2000) / 800);
-      for (let i = 0; i < 12; i++) {
-        const fx = fr.x - fr.w / 2 + (i / 11) * fr.w;
-        const fh = (60 + Math.sin(now / 90 + i * 2.7) * 26 + (i % 3) * 22) * k * die;
-        ctx.fillStyle = `rgba(255,${120 + (i % 3) * 40},30,${(0.85 * die).toFixed(2)})`;
-        ctx.beginPath();
-        ctx.moveTo(fx - 16, GY + 30); ctx.quadraticCurveTo(fx - 4, GY + 30 - fh * 0.7, fx, GY + 30 - fh);
-        ctx.quadraticCurveTo(fx + 6, GY + 30 - fh * 0.6, fx + 16, GY + 30); ctx.fill();
+      if (die <= 0) continue;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 16; i++) {
+        const seed = i * 2.399 + fr.x * 0.013;
+        const fx = fr.x - fr.w / 2 + ((i + 0.5) / 16) * fr.w + Math.sin(now / 140 + seed * 3) * 7;
+        const wob = 0.72 + 0.28 * Math.sin(now / 75 + seed * 5);
+        const fh = (52 + (i * 29 % 34)) * k * die * wob;
+        const fy = GY + 26 - fh * (0.35 + 0.45 * ((now / (600 + i * 37)) % 1));
+        const r = (18 + (i * 13 % 14)) * k * die * wob;
+        const gr2 = ctx.createRadialGradient(fx, fy, 0, fx, fy, r);
+        gr2.addColorStop(0, `rgba(255,244,200,${(0.5 * die).toFixed(2)})`);
+        gr2.addColorStop(0.4, `rgba(255,160,40,${(0.4 * die).toFixed(2)})`);
+        gr2.addColorStop(1, 'rgba(140,40,10,0)');
+        ctx.fillStyle = gr2;
+        ctx.beginPath(); ctx.arc(fx, fy, r, 0, 7); ctx.fill();
       }
-      ctx.fillStyle = `rgba(50,44,40,${(0.5 * die).toFixed(2)})`;
-      ctx.beginPath(); ctx.ellipse(fr.x, GY - 90 - fr.t * 0.03, fr.w * 0.5, 40, 0, 0, 7); ctx.fill();
+      // white-hot bed at the root of the burn
+      const bed = ctx.createLinearGradient(0, GY + 30, 0, GY - 18);
+      bed.addColorStop(0, `rgba(255,250,220,${(0.55 * k * die).toFixed(2)})`);
+      bed.addColorStop(1, 'rgba(255,120,30,0)');
+      ctx.fillStyle = bed;
+      ctx.fillRect(fr.x - fr.w / 2, GY - 18, fr.w, 48);
+      // embers popping off
+      for (let i = 0; i < 7; i++) {
+        const et = (now / (300 + i * 53) + i) % 1;
+        const ex = fr.x - fr.w / 2 + ((i * 83) % fr.w) + Math.sin(now / 90 + i) * 10;
+        ctx.fillStyle = `rgba(255,${170 + (i % 3) * 30},60,${((1 - et) * 0.8 * die).toFixed(2)})`;
+        ctx.fillRect(ex, GY + 10 - et * 120, 3, 3);
+      }
+      ctx.restore();
+      // smoke column (normal blend, above the flames)
+      ctx.fillStyle = `rgba(48,42,38,${(0.42 * die).toFixed(2)})`;
+      ctx.beginPath(); ctx.ellipse(fr.x + Math.sin(now / 700) * 14, GY - 100 - fr.t * 0.03, fr.w * 0.42, 44, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = `rgba(58,52,46,${(0.3 * die).toFixed(2)})`;
+      ctx.beginPath(); ctx.ellipse(fr.x - 20, GY - 160 - fr.t * 0.045, fr.w * 0.3, 34, 0, 0, 7); ctx.fill();
+    }
+    // prop-kill viscera + strafe dirt
+    for (const q of this.propGore) {
+      const qa = Math.max(0, 1 - q.t / q.T);
+      ctx.fillStyle = q.green === 2 ? `rgba(180,150,90,${(qa * 0.9).toFixed(2)})`
+        : q.green ? `rgba(120,230,60,${(qa * 0.95).toFixed(2)})` : `rgba(150,25,20,${(qa * 0.95).toFixed(2)})`;
+      ctx.fillRect(q.x - 3, q.y - 3, 6, 6);
+    }
+    // supply drops: parachute crates you fly into
+    for (const su of this.supplies) {
+      ctx.save();
+      const sway = Math.sin(now / 420 + su.x * 0.01) * 8;
+      ctx.translate(su.x + sway, su.y);
+      ctx.fillStyle = 'rgba(233,226,200,0.92)';
+      ctx.beginPath(); ctx.arc(0, -46, 30, Math.PI, 0); ctx.fill();      // canopy
+      ctx.strokeStyle = 'rgba(60,54,40,0.9)'; ctx.lineWidth = 2;
+      for (const rx of [-26, 0, 26]) { ctx.beginPath(); ctx.moveTo(rx, -46); ctx.lineTo(0, -12); ctx.stroke(); }
+      ctx.fillStyle = '#8a7448'; ctx.fillRect(-16, -14, 32, 26);          // crate
+      ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.strokeRect(-16, -14, 32, 26);
+      ctx.fillStyle = su.k === 'napalm' ? PAL.boom2 : su.k === 'guns' ? PAL.redAccent : '#8CdF3B';
+      ctx.font = 'bold 15px monospace'; ctx.textAlign = 'center';
+      ctx.fillText(su.k === 'napalm' ? 'K' : su.k === 'guns' ? 'GG' : '+', 0, 5);
+      ctx.restore();
     }
     // tracers
     ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
@@ -829,6 +1006,15 @@ export class Skyraider extends RailBase {
     ctx.fillStyle = PAL.cheese; ctx.fillRect(W / 2 - 200, 14, 400 * Math.min(1, this.t / this.dur), 10);
     ctx.font = 'bold 20px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = PAL.boom2;
     ctx.fillText('NAPALM ' + '▮'.repeat(this.napalm), 24, 86);
+    // PULL UP: the dive's hard-deck warning. Big, red, flashing — the one
+    // instruction that earns being text, because the punishment is immediate.
+    if (this.warnT > 0 && Math.floor(now / 160) % 2 === 0) {
+      ctx.save();
+      ctx.font = 'bold 44px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText('PULL UP', W / 2 + 3, H * 0.36 + 3);
+      ctx.fillStyle = '#ff4234'; ctx.fillText('PULL UP', W / 2, H * 0.36);
+      ctx.restore(); ctx.textAlign = 'left';
+    }
     // The A-1 has armour pips like the Huey; without a readout the player has
     // no idea the plane is soaking hits for them, so losing the last one reads
     // as an arbitrary death rather than the end of a resource they were

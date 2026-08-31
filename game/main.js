@@ -288,7 +288,7 @@ function handleEvents(evs) {
       case 'music': audio.music(ev.n); break;
       case 'hum': audio.hum(!!ev.on); break;
       case 'engine':
-        audio.eng(!!ev.on);
+        audio.eng(!!ev.on, ev.name || 'sfx_bike');
         // v11: bike-ride start is the last quiet moment before the river/LZ
         // content — warm both new chunks now so most players never see the
         // loading beat, same reasoning as the tunnel prefetch at boot.
