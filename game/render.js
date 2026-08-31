@@ -6,9 +6,17 @@ import { IMG, SHEET, drawSheet, drawImg } from './assets.js';
 import { LEVEL, islandTop } from './sim.js';
 import { STR } from './strings.js';
 
+// v13.5: floor-pickup banners, muted -- the HUD and the pickup sound already
+// carry these, and Dylan asked for half the text gone.
+const PICKUP_MUTE = new Set(['gotGrenades', 'gotHealth', 'gotRocket', 'gotLife',
+  'gotCheese', 'gotSkip', 'gotShotgunW', 'gotFlame']);
+
 export const FX = {
   parts: [], shake: 0, flash: 0, hitPause: 0,
   banners: [], hints: [], rays: [], slashes: [],
+  // v13.5: hint keys already shown this run -- a hint repeats only if the
+  // player restarts, so a recurring trigger stops re-teaching the same thing
+  hintSeen: new Set(),
   flashes: [], // muzzle flashes: {x, y, ang, t, T}
   splats: [], // persistent blood decals: {x, y, r, a}
   booms: [],  // sprite-sheet explosion instances: {x, y, t, s, flip}
@@ -195,7 +203,21 @@ export function fxEvent(ev) {
     // fight at x=7000. Anything more than two deep is stale by the time it
     // would show, so drop it rather than display it late.
     case 'banner':
-      if (FX.banners.length < 3) FX.banners.push({ k: ev.k, t: 2100, d: FX.banners.length * 900 });
+      // v13.5 (Dylan: "there's just too much text all over the game. Just cut
+      // the text in half and let people figure it out a little bit."). A full
+      // run fired 23 banners and 7 of them were floor pickups -- announcing in
+      // words what the HUD had already changed to show and the pickup chime
+      // had already said. They are the half that goes; the story beats, act
+      // cards and warnings stay. (Story rewards like the Mittens gatling keep
+      // their banner -- that one is a payoff, not a pickup.)
+      if (PICKUP_MUTE.has(ev.k)) break;
+      // (Dylan: "some of it's doubled up in the beginning. You don't
+      // need to have multiple lines saying the same thing"). Repeating an
+      // event -- pressing K on an empty napalm rack, say -- queued the SAME
+      // banner again behind the first, so "NAPALM DRY" stacked twice down the
+      // screen. One line per message, and two on screen at most.
+      if (FX.banners.some(b => b.k === ev.k)) break;
+      if (FX.banners.length < 2) FX.banners.push({ k: ev.k, t: 2100, d: FX.banners.length * 900 });
       break;
     // Hints queue for the same reason banners do -- three at once (goal +
     // controls + "PRESS L") stack across the bottom of the screen right where
@@ -205,9 +227,18 @@ export function fxEvent(ev) {
     // the one message that is useless if it arrives after you've respawned and
     // started fighting again.
     case 'hint': {
+      // v13.5 (Dylan: "there's just too much text all over the game. Just cut
+      // the text in half and let people figure it out a little bit."). Hints
+      // are the half that goes: ONE on screen instead of three, each key shown
+      // at most once per run instead of re-firing every time its trigger
+      // repeats, and a shorter dwell. Death causes still jump the queue.
       const urgent = typeof ev.k === 'string' && ev.k.startsWith('died');
       if (urgent) FX.hints.length = 0;
-      if (FX.hints.length < 3) FX.hints.push({ k: ev.k, t: 4200, d: urgent ? 0 : FX.hints.length * 1500 });
+      else {
+        if (FX.hintSeen.has(ev.k)) break;
+        FX.hintSeen.add(ev.k);
+      }
+      if (FX.hints.length < 1) FX.hints.push({ k: ev.k, t: 3000, d: 0 });
       break;
     }
     case 'ray': FX.rays.push({ x: ev.x, t: 900 }); break; // telegraph before boss beam
@@ -1144,17 +1175,38 @@ function drawTailRotor(ctx, cx, cy, r, t) {
 // a shimmering ellipse instead of a real rotor (at 38px wide a rotor disc is
 // two pixels of information and the shimmer IS the read).
 const VALK = { born: 0, ships: null };
-function buildValkyries() {
+// distance haze, applied to the silhouette's own colour instead of as a box
+// behind it: lerp toward the warm sky tint by the layer's haze amount.
+function hazeFill(r, g, b, a, haze) {
+  const H2 = [125, 90, 58]; // '#7d5a3a', the old haze colour
+  const m = (c, i) => Math.round(c + (H2[i] - c) * haze);
+  return `rgba(${m(r, 0)},${m(g, 1)},${m(b, 2)},${a})`;
+}
+export function buildValkyries() {
+  // v13.5 (Dylan: "those aren't Hueys... there should be a few different ones,
+  // different sizes, flying in a V if possible, and then a few flying the
+  // other way"). The flock is now an actual V: an apex ship out front with two
+  // trailing arms stepping back and outward, sizes tapering toward the tips so
+  // the arms read as distance rather than as a row of stamps. dir -1 ships are
+  // a second flight crossing the other way at a different altitude.
+  // [layer, xOff, yOff, w, dir]
   const rows = [
-    // [layer, xOff, yOff, w] -- hand-placed, never randomised: no two share an
-    // x within 40 or a y within 18, and two far ships are deliberate stragglers
-    [0, -340, -132, 40], [0, -180, -128, 38], [0, -20, -134, 42], [0, 150, -126, 39],
-    [0, -262, -170, 33], [0, 68, -166, 34],                       // <- stragglers, smaller + higher
-    [1, -290, -58, 70], [1, -120, -50, 64], [1, 90, -60, 76], [1, 240, -46, 66],
-    [2, 0, 0, 162],
+    // far V -- apex leads (they fly left, so the apex is the LEFTMOST ship)
+    [0, -300, -138, 44, 1],
+    [0, -228, -158, 40, 1], [0, -228, -114, 41, 1],   // first pair, stepped back + spread
+    [0, -150, -176, 35, 1], [0, -150,  -98, 36, 1],   // second pair, wider
+    [0,  -68, -192, 31, 1], [0,  -68,  -84, 32, 1],   // wing tips, smallest + widest
+    // a second flight crossing the other way, higher and sparser
+    [0,  210, -186, 30, -1], [0,  318, -168, 34, -1],
+    // mid echelon -- a shallow V of three, big enough to read as airframes
+    [1, -250,  -54, 72, 1],
+    [1, -132,  -76, 66, 1], [1, -128,  -30, 68, 1],
+    [1,  128,  -62, 58, -1],                          // one mid ship crossing back
+    // the lead ship: close enough for the real art
+    [2,    0,    0, 162, 1],
   ];
   return rows.map((r, i) => ({
-    layer: r[0], xOff: r[1], yOff: r[2], w: r[3],
+    layer: r[0], xOff: r[1], yOff: r[2], w: r[3], dir: r[4],
     ph: i * 1.37,                                   // deterministic phase: never sync
     jx: Math.sin(i * 2.9) * 22, jy: Math.cos(i * 3.7) * 14,
     // v13.4 per-airframe variety (Dylan: "you just lazily copied the same
@@ -1166,48 +1218,94 @@ function buildValkyries() {
     nose: ((i * 53) % 7 - 3) * 0.012,               // nose droop / climb attitude
     cab: 0.9 + ((i * 29) % 8) / 30,                 // cabin height mult
     skids: (i % 3) !== 1,
-    flipH: (i % 4) === 2 ? -1 : 1,                  // a couple crab the other way
+    flipH: r[4],                                    // facing follows the direction it flies
   }));
 }
 
-// A hand-drawn Huey side profile in one path: bulbous cabin, tapering tail
-// boom, fin, skids, rotor mast — plus a spinning rotor BLUR, not a frozen bar.
-function drawHueySilhouette(ctx, x, y, w, sh, t, ph) {
-  const h = w * 0.34 * sh.cab;
+// A UH-1 "Huey" side profile, drawn to the real airframe (v13.5 -- Dylan:
+// "those aren't Hueys. Look up a Huey silhouette and replace that."). The
+// features that actually make a Huey readable at silhouette size, in order of
+// how much they carry the read: the LONG thin tail boom (over half the total
+// length), the swept vertical fin with the tail rotor on it, the small
+// horizontal stabiliser out on the boom, the fat greenhouse cabin with its
+// forward-drooping nose, the tubular skids, and above all the TWO-BLADE
+// teetering rotor -- one straight bar far wider than the aircraft is long.
+// Built from separate filled shapes rather than one path so each stays legible.
+export function drawHueySilhouette(ctx, x, y, w, sh, t, ph) {
+  const h = w * 0.38 * sh.cab;                // Huey cabin is tall and slab-sided
+  const boom = w * (0.27 + 0.18 * sh.tail);  // tail boom length
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(sh.flipH, 1);
   ctx.rotate(sh.nose);
+
+  // --- cabin: drooping nose, greenhouse windshield, flat roof, sloped back ---
   ctx.beginPath();
-  ctx.moveTo(-w * 0.18, -h * 0.15);                              // nose top
-  ctx.quadraticCurveTo(-w * 0.02, -h * 0.62, w * 0.16, -h * 0.5); // cabin roof
-  ctx.lineTo(w * 0.24, -h * 0.28);                                // cabin back
-  ctx.lineTo(w * (0.24 + 0.42 * sh.tail), -h * 0.18);             // boom top
-  ctx.lineTo(w * (0.26 + 0.46 * sh.tail), -h * 0.52);             // tail fin up
-  ctx.lineTo(w * (0.30 + 0.46 * sh.tail), -h * 0.48);
-  ctx.lineTo(w * (0.30 + 0.44 * sh.tail), -h * 0.02);             // fin back down
-  ctx.lineTo(w * 0.24, h * 0.08);                                 // boom belly
-  ctx.quadraticCurveTo(w * 0.05, h * 0.5, -w * 0.16, h * 0.32);   // belly
-  ctx.quadraticCurveTo(-w * 0.24, h * 0.05, -w * 0.18, -h * 0.15);// nose
+  ctx.moveTo(-w * 0.40, h * 0.10);                                  // nose tip, low and forward
+  ctx.quadraticCurveTo(-w * 0.40, -h * 0.42, -w * 0.24, -h * 0.66);  // windshield rake
+  ctx.lineTo(-w * 0.02, -h * 0.72);                                  // cabin roof
+  ctx.lineTo(w * 0.10, -h * 0.52);                                   // roof steps down
+  ctx.lineTo(w * 0.16, -h * 0.20);                                   // cabin rear into the boom
+  ctx.lineTo(w * 0.16, h * 0.34);
+  ctx.quadraticCurveTo(-w * 0.10, h * 0.52, -w * 0.32, h * 0.40);    // belly
+  ctx.quadraticCurveTo(-w * 0.42, h * 0.32, -w * 0.40, h * 0.10);    // chin bubble
   ctx.closePath();
   ctx.fill();
-  ctx.fillRect(-w * 0.01, -h * 0.72, w * 0.04, h * 0.24);         // rotor mast
+
+  // --- tail boom: long, thin, tapering (the single strongest Huey cue) ---
+  ctx.beginPath();
+  ctx.moveTo(w * 0.12, -h * 0.24);
+  ctx.lineTo(w * 0.12 + boom, -h * 0.20);
+  ctx.lineTo(w * 0.12 + boom, h * 0.02);
+  ctx.lineTo(w * 0.12, h * 0.18);
+  ctx.closePath();
+  ctx.fill();
+
+  // --- swept vertical fin, tail rotor mounted on it ---
+  const fx = w * 0.12 + boom;
+  ctx.beginPath();
+  ctx.moveTo(fx - w * 0.05, -h * 0.20);
+  ctx.lineTo(fx + w * 0.07, -h * 0.86);              // leading edge sweeps back
+  ctx.lineTo(fx + w * 0.13, -h * 0.84);
+  ctx.lineTo(fx + w * 0.11, h * 0.06);
+  ctx.closePath();
+  ctx.fill();
+  // lower fin stub under the boom
+  ctx.beginPath();
+  ctx.moveTo(fx + w * 0.02, h * 0.02);
+  ctx.lineTo(fx + w * 0.10, h * 0.30);
+  ctx.lineTo(fx + w * 0.13, h * 0.04);
+  ctx.closePath();
+  ctx.fill();
+
+  // --- horizontal stabiliser, out on the boom ---
+  ctx.fillRect(w * 0.12 + boom * 0.55, -h * 0.22, boom * 0.30, h * 0.07);
+
+  // --- skids: tubes fore and aft, on struts ---
   if (sh.skids) {
-    ctx.fillRect(-w * 0.16, h * 0.46, w * 0.36, h * 0.055);       // skid
-    ctx.fillRect(-w * 0.10, h * 0.32, w * 0.03, h * 0.16);        // struts
-    ctx.fillRect(w * 0.12, h * 0.32, w * 0.03, h * 0.16);
+    ctx.fillRect(-w * 0.34, h * 0.72, w * 0.46, h * 0.06);
+    ctx.fillRect(-w * 0.24, h * 0.40, w * 0.035, h * 0.34);
+    ctx.fillRect(-w * 0.02, h * 0.44, w * 0.035, h * 0.30);
   }
-  // rotor blur: a thin sweeping bar whose apparent length breathes at rotor
-  // rate, over a faint full-span disc
-  const sweep = Math.abs(Math.sin(t / 70 + ph));
-  ctx.globalAlpha *= 0.55;
-  ctx.fillRect(-w * 0.55, -h * 0.78, w * 1.1, h * 0.05);
-  ctx.globalAlpha *= (0.4 + sweep * 0.6) / 0.55;
-  ctx.fillRect(-w * (0.2 + sweep * 0.35), -h * 0.80, w * (0.4 + sweep * 0.7), h * 0.08);
-  // tail rotor tick
-  ctx.fillRect(w * (0.29 + 0.45 * sh.tail), -h * (0.3 + sweep * 0.18), w * 0.02, h * (0.24 + sweep * 0.3));
+
+  // --- mast, then the two-blade rotor: one straight bar, wider than the ship ---
+  ctx.fillRect(-w * 0.05, -h * 1.00, w * 0.06, h * 0.30);
+  const sweep = Math.abs(Math.sin(t / 70 + ph));         // blades edge-on vs broadside
+  const a = ctx.globalAlpha;
+  ctx.globalAlpha = a * 0.30;                             // full disc, faint
+  ctx.fillRect(-w * 0.60, -h * 1.06, w * 1.20, h * 0.05);
+  ctx.globalAlpha = a * (0.45 + sweep * 0.55);            // the blade bar itself
+  ctx.fillRect(-w * (0.14 + sweep * 0.46), -h * 1.09, w * (0.28 + sweep * 0.92), h * 0.075);
+  ctx.globalAlpha = a * (0.35 + sweep * 0.45);            // tail rotor disc on the fin
+  ctx.beginPath();
+  ctx.ellipse(fx + w * 0.10, -h * 0.62, w * 0.012 + w * 0.02 * sweep, h * 0.30, 0, 0, 7);
+  ctx.fill();
+  ctx.globalAlpha = a;
   ctx.restore();
 }
+// dev-only: replay the opening squadron on demand (it is a 26s set piece that
+// has usually already flown by the time a verification script finishes booting)
+export function __devReplayValkyries() { VALK.ships = null; VALK.born = 0; }
 function drawValkyries(ctx, t, cam) {
   if (!VALK.ships) { VALK.ships = buildValkyries(); VALK.born = t; }
   const el = t - VALK.born;
@@ -1228,8 +1326,10 @@ function drawValkyries(ctx, t, cam) {
     const ease = 1 - Math.pow(1 - k, 3);
     const bob = Math.sin(el / 620 + s.ph) * (2.5 + s.layer * 1.6);
     const sway = Math.sin(el / 2400 + s.ph) * 9;
-    const x = anchorX + s.xOff + s.jx + sway - drift - cam * L.par
-            + (1 - ease) * (W + 420) + out * -520;
+    // dir -1 ships are the flight crossing the other way: they drift right
+    // instead of left and enter from the opposite edge.
+    const x = anchorX + s.xOff + s.jx + sway - drift * s.dir - cam * L.par
+            + (1 - ease) * (W + 420) * s.dir + out * -520 * s.dir;
     const y = anchorY + s.yOff + s.jy + bob - out * 90;
     const w = s.w, h = w * 0.54;
     if (x < -240 || x > W + 300) continue;
@@ -1243,23 +1343,24 @@ function drawValkyries(ctx, t, cam) {
       drawRotor(ctx, x + (1 - 0.475) * w, y + 0.05 * h, 0.46 * w, t);
       drawTailRotor(ctx, x + (1 - 0.910) * w, y + 0.160 * h, 0.078 * w, t);
     } else if (s.layer === 1) {
-      ctx.fillStyle = 'rgba(38,42,29,0.96)';
+      ctx.fillStyle = hazeFill(38, 42, 29, 0.96, L.haze);
       drawHueySilhouette(ctx, x + w / 2, y + h / 2, w, s, t, s.ph);
     } else {
       // far rank: tiny individual silhouettes too — each with its own
       // geometry — under the rotor shimmer, so even the specks are aircraft
-      ctx.fillStyle = 'rgba(44,48,34,0.9)';
+      ctx.fillStyle = hazeFill(44, 48, 34, 0.9, L.haze);
       drawHueySilhouette(ctx, x + w / 2, y + h / 2, w, s, t, s.ph);
       const rh = 2 + Math.abs(Math.sin(el / 90 + s.ph)) * 2;
       ctx.fillStyle = 'rgba(230,225,210,0.18)';
       ctx.beginPath(); ctx.ellipse(x + w * 0.5, y + 0.06 * h, w * 0.475, rh, 0, 0, 7); ctx.fill();
     }
     ctx.translate(x + w / 2, y + h / 2); ctx.rotate(-pitch); ctx.translate(-(x + w / 2), -(y + h / 2));
-    if (L.haze > 0) { // distance haze so the far rank sits behind the weather
-      ctx.globalAlpha = L.haze * (1 - out);
-      ctx.fillStyle = '#7d5a3a';
-      ctx.fillRect(x, y, w, h);
-    }
+    // v13.5 (Dylan: "Fix the squares on the helicopters outlined in the
+    // background. There's weird rectangles around them."). The distance haze
+    // was a solid fillRect over each ship's BOUNDING BOX -- a brown rectangle
+    // painted around every silhouette. Haze belongs in the silhouette's own
+    // colour, so it is folded into the fill below instead and nothing is
+    // painted outside the aircraft's shape.
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -1702,13 +1803,17 @@ export function render(ctx, view, t, myPid, dbg) {
     ctx.globalAlpha = 1;
     by += 44;
   }
-  let hby = H - 96;
+  // v13.5 (Dylan: "I don't like the green text coming up, going over where the
+  // cat is walking"). Hints sat at H-96 -- ground level, directly across the
+  // player and whatever is shooting at him. They now sit in the dead strip
+  // below the action, out of the fight.
+  let hby = H - 26;
   for (const h2 of FX.hints) {
-    if ((h2.d || 0) > 0) continue; // still queued behind an earlier hint
-    ctx.globalAlpha = Math.min(1, h2.t / 500);
-    hudText(ctx, STR[h2.k] || h2.k, W / 2, hby, 16, 'center', PAL.acid);
+    if ((h2.d || 0) > 0) continue;
+    ctx.globalAlpha = Math.min(1, h2.t / 500) * 0.9;
+    hudText(ctx, STR[h2.k] || h2.k, W / 2, hby, 15, 'center', PAL.acid);
     ctx.globalAlpha = 1;
-    hby -= 26;
+    hby -= 22;
   }
 
   if (dbg) {

@@ -197,22 +197,10 @@ export const CUT_MEOWS = {
     [3.1, 'meow_b', 0.75],  // thrown from the boat -- the long underwater wail
     [6.8, 'meow_c', 1.5],   // Charlie paddling after him, squeaky and indignant
   ],
-  truce: [
-    [13.45, 'meow_a', 1.35],   // "What the hell is that?"  -- startled, high
-    [14.30, 'meow_c', 1.55],
-    [15.45, 'meow_a', 0.92],   // "Looks like we got a rat problem." -- deadpan
-    [16.40, 'meow_d', 0.85],
-    [17.55, 'meow_c', 1.15],   // "Well I know how to set traps."
-    [18.50, 'meow_a', 1.05],
-    // the long speech: a run of meows with a rising, ranting cadence
-    [19.95, 'meow_a', 0.88],
-    [20.75, 'meow_c', 1.10],
-    [21.45, 'meow_d', 0.95],
-    [22.10, 'meow_a', 1.22],
-    [22.85, 'meow_c', 1.40],
-    [23.45, 'meow_b', 0.80],   // "...Hell." -- the long warbling one
-    [24.45, 'meow_c', 1.62],   // "I'm in." -- squeaky little agreement
-  ],
+  // v13.5: the truce film's meows are now BAKED INTO ITS AUDIO TRACK (see
+  // chunks.js), RMS-matched to the film's own dialogue. Firing this layer on
+  // top as well would double every line, so the film carries it alone.
+  truce: [],
 };
 
 Object.assign(STR, {

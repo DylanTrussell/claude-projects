@@ -16,7 +16,7 @@ function attachSubs(vid, subEl, cues) {
 }
 import { loadAll, audio, IMG, ensureChunk, prefetchChunk } from './assets.js';
 import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState } from './sim.js';
-import { render, fxEvent, fxUpdate, FX, drawRotor, TUNNEL_TRANS_MS } from './render.js';
+import { render, fxEvent, fxUpdate, FX, drawRotor, TUNNEL_TRANS_MS, __devReplayValkyries } from './render.js';
 import { Tunnel } from './fps.js';
 import { VIDEO_URLS } from './chunks.js';
 import { DoorGun, Skyraider } from './rails.js';
@@ -134,6 +134,7 @@ function optBtn(id, key) {
 // ---------- game flow ----------
 function startGame() {
   g = makeGame((Math.random() * 0xffffffff) >>> 0, [{ pid: 'p1', hero: 'us' }]);
+  FX.hintSeen.clear();   // v13.5: hints teach once per run, so a fresh run re-arms them
   const warp = +(new URLSearchParams(location.search).get('warp') || 0);
   if (dev && warp > 0) { // dev-only section warp for verification
     g.phase = 'play';
@@ -859,6 +860,8 @@ window.__AM = () => {
   };
 };
 if (dev) {
+  window.__AMvalk = () => { __devReplayValkyries(); return 'replaying'; }; // dev-only: re-run the opening Huey squadron
+  window.__AMtier = (n) => { if (rail) { rail.tier = n; return rail.tier; } return null; }; // dev-only: force a vehicle upgrade tier for verification
   window.__AMtp = (x, y, ang) => { if (tunnel) { tunnel.px = x; tunnel.py = y; if (ang !== undefined) tunnel.ang = ang; } }; // dev-only teleport for verification
   window.__AMtun = () => tunnel && { items: tunnel.items.map(i => ({ kind: i.kind, x: i.x, y: i.y, got: !!i.got })), enemies: tunnel.enemies.map(e => ({ x: e.x, y: e.y, st: e.st, dead: !!e.dead })), mittens: tunnel.mittens, exit: tunnel.exit };
   window.__AMlook = (tx, ty) => { if (tunnel) tunnel.ang = Math.atan2(ty - tunnel.py, tx - tunnel.px); };

@@ -263,7 +263,18 @@ export const VIDEO_URLS = {
   // the original (untouched) video stream so lip-sync and the rest of the
   // scene's timing are unaffected. Re-verified post-splice via waveform
   // peak scan (not just "the ffmpeg command didn't error").
-  truce: CDN + '64045a3a-13e1-4c19-a45a-255dd8b0bf9d.mp4',
+  // v13.5 THE MEOW FIX, for real this time (Dylan, ~20 asks: "fix the meowing
+  // during the big speech -- get rid of the roaring"). Every previous pass
+  // replaced 19.9-24.3s, the SUBTITLE window of the speech. Spectral analysis
+  // of the actual film shows the roar is at 17.6-19.6s -- the line BEFORE it
+  // ("Well I know how to set traps") -- measuring rms 14.6k with 45% of its
+  // energy below 120Hz, the loudest event in the whole film, while the window
+  // everyone kept editing had already been ducked to rms 2.9k, i.e. inaudible.
+  // So the roar was never touched and the replacement was never heard. Now:
+  // the roar window is ducked to 7% and every dialogue line carries a meow
+  // performance RMS-matched to the film's own vocal level (~7-8k, vs the 2.9k
+  // the old splice left). Video stream copied, not re-encoded -- MD5 identical.
+  truce: CDN + '2bf7ea94-e9da-4a34-9066-da10ee44ac76.mp4',
   // v13.4 story films (Dylan: "everything needs to have a cut scene"). All five
   // generated with ONE model (Seedance 2.0) using frames extracted from the
   // original intro/truce films as identity references, so the whole set reads

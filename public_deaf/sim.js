@@ -78,7 +78,7 @@ const WAVES = [
   { x: 700,  lock: 1, spawn: [['gruntVC', 1, 'tunnel'], ['gruntUS', 1, 'right']] },
   { x: 1300, lock: 1, spawn: [['gruntVC', 1, 'tunnel'], ['gruntUS', 2, 'right']] },
   { x: 2150, lock: 1, spawn: [['gruntUS', 3, 'right'], ['gruntVC', 2, 'tunnel']] },
-  { x: 2650, lock: 1, pin: 1, spawn: [['gruntVC', 3, 'tunnel'], ['gruntUS', 3, 'right'], ['gruntVC', 2, 'left']] }, // exam A: pinned down -> air support
+  { x: 2650, lock: 1, spawn: [['gruntVC', 3, 'tunnel'], ['gruntUS', 3, 'right'], ['gruntVC', 2, 'left']] }, // exam A
   // ESCALATION (Dylan: "have the thing get progressively crazier"). Each new
   // rat type gets ONE clean introduction before it's ever mixed in, which is
   // the Metal Slug rule -- teach it solo, then stack it.
@@ -86,7 +86,19 @@ const WAVES = [
   { x: 4650, lock: 1, spawn: [['ratjet', 2, 'sky']] },                                          // teach: rocket packs
   { x: 4800, lock: 1, spawn: [['alien', 3, 'right'], ['ufo', 1, 'sky']] },
   { x: 5200, lock: 1, spawn: [['ratbig', 1, 'right']] },                                        // teach: the charger, solo
-  { x: 5600, lock: 1, spawn: [['alien', 3, 'right'], ['ratjet', 2, 'sky'], ['alien', 2, 'left']] },
+  // v13.5 AIR SUPPORT MOVED (Dylan: "I like the call-in air support... but
+  // right now it's getting lost with the tunnel happening right after, or
+  // right before -- the air support prompt happens in BOTH places. Maybe it
+  // should go later in the game? Maybe at some point they get overrun by the
+  // big robot rats and they have to call in air support."). It was pinned to
+  // the x=2650 wave -- 350px before the tunnel mouth at 3000 -- so the offer
+  // opened just before you dropped underground and, since nothing cancelled
+  // it, the re-prompt was still firing when you climbed back out: the same
+  // prompt on both sides of the tunnel, exactly as reported. It now hangs off
+  // THIS wave instead: the Act II overrun, aliens closing from both sides with
+  // rocket packs overhead, 2600px clear of the tunnel and leading naturally
+  // into the Skyraider strike that follows.
+  { x: 5600, lock: 1, pin: 1, spawn: [['alien', 3, 'right'], ['ratjet', 2, 'sky'], ['alien', 2, 'left']] },
   // v13.3: this comment claimed a solo teaching wave and shipped a mech PLUS
   // two aliens flanking from the left. The mech is the biggest HP jump in the
   // game (40 against the previous hardest at 14) and it is the first thing you
@@ -633,7 +645,7 @@ export function step(g, dt, inputs) {
       fireBullet(g, p.x + p.face * 20, p.y - 70, p.face * CFG.grenadeVx, CFG.grenadeVy, 3, 1);
     }
     if ((bits & C.CHEESE) && !(p.prevC & C.CHEESE)) {
-      if (!g.invasion && g.airSupport === 'ready') { // L before the invasion = the radio
+      if (g.airSupport === 'ready') { // L is the radio while a strike is pending, cheese after
         g.airSupport = 'inbound'; g.airT = 2400;
         evPush(g, { e: 'banner', k: 'airInbound' });
         evPush(g, { e: 'hint', k: 'ctlCrouch' });
@@ -849,7 +861,7 @@ export function step(g, dt, inputs) {
 
   // pinned-down beat -> air support (the L key becomes the radio)
   const pinWave = g.waves.find(w => w.pin);
-  if (pinWave && pinWave.done && pinWave.alive.length > 2 && !g.pinned && !g.invasion) {
+  if (pinWave && pinWave.done && pinWave.alive.length > 2 && !g.pinned) {
     g.pinned = true; g.airSupport = 'ready';
     evPush(g, { e: 'banner', k: 'pinned' });
     evPush(g, { e: 'hint', k: 'airHint' });
@@ -859,7 +871,7 @@ export function step(g, dt, inputs) {
   // fired 17 times a run and kept nagging "PRESS L -- CALL IN AIR SUPPORT" long
   // after the invasion flipped L over to throwing cheese, i.e. telling the
   // player to do something the code no longer lets them do.
-  if (g.airSupport === 'ready' && g.pinned && !g.invasion && (g.airHints || 0) < 3 &&
+  if (g.airSupport === 'ready' && g.pinned && (g.airHints || 0) < 1 &&
       (Math.floor(g.t / 6000) !== Math.floor((g.t - dt) / 6000))) {
     g.airHints = (g.airHints || 0) + 1;
     evPush(g, { e: 'hint', k: 'airHint' });

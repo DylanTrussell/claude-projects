@@ -14,6 +14,63 @@ python3 tools/serve.py 8934 public
 Then http://127.0.0.1:8934/ — full audio. `?tunnel=1` boots the tunnel.
 `public_deaf/` on port 8951 is the silent twin for agent playtesting.
 
+## v13.6 — the screenshot notes (2026-08-31)
+
+**THE MEOWS — actually fixed this time.** Every previous pass replaced
+19.9-24.3s, the subtitle window of the big speech. Spectral analysis says the
+roar is at **17.5-19.7s** — the line *before* it ("Well I know how to set
+traps") — rms 14,619 with 45% of its energy below 120 Hz, the loudest event in
+the film. The window everyone kept editing had already been ducked to rms 2,875,
+i.e. inaudible. So the roar was never touched and the replacement was never
+heard. Now the roar window is ducked to 7% (sub-120 energy 0.38 -> 0.02) and
+every dialogue line carries a meow performance RMS-matched to the film's own
+vocal level (~7-8k). Video stream copied, not re-encoded — MD5 identical.
+CUT_MEOWS.truce cleared so the game layer no longer doubles it.
+
+**The A-1.** Propeller was drawn at the sprite's bounding-box edge, and that box
+still holds the empty margin where the painted blades were erased — so it hung
+in clear air ahead of the nose. Measured the art (spinner cone at u 0.003-0.097,
+cowl centre v 0.627); blades now root at the cowl face and are drawn as real
+tapered blades in the sprite's style, grey with dark outlines and yellow tips,
+foreshortening as they turn. **Twin wing guns** are real: gun pods on the wing,
+each with its own muzzle flash, and the rounds leave those barrels (one shared
+GUN_PORTS table drives step() and render()). **Napalm** was tossed upward and
+sailed 485px; released nose-down with a heavier pull it now averages ~53° and
+lands ~230px ahead of the nose. **Fire** no longer ends in a vertical line at
+each side — the puffs taper and the white-hot bed is a tapered ellipse, not a
+fillRect. Rats catch fire from the wall's edge too, and burn with 8 tongues.
+
+**Helicopters.** The "weird rectangles" were the distance haze: a solid
+fillRect over each ship's bounding box. Haze is now folded into the silhouette's
+own colour, so nothing is painted outside the aircraft. Silhouette rewritten to
+an actual UH-1 — long thin boom, swept fin with tail rotor, horizontal
+stabiliser, skids, two-blade teetering rotor. They fly a real V (apex leading,
+arms stepping back and outward, sizes tapering) plus a second flight crossing
+the other way.
+
+**Text, cut roughly in half.** Green hints sat at H-96 — ground level, right
+across the cat. They now sit below the action. One hint at a time instead of
+three, each shown once per run, shorter dwell. Banners dedupe by key (that was
+the doubled "NAPALM DRY"), cap at two, and the 8 floor-pickup banners are muted
+— the HUD and the pickup chime already say it.
+
+**Air support moved.** It hung off the x=2650 wave, 350px before the tunnel
+mouth, and nothing cancelled the offer — so the re-prompt was still firing when
+you climbed back out: the same prompt on both sides of the tunnel, exactly as
+reported. It now hangs off the Act II overrun at x=5600 (aliens both sides,
+rocket packs overhead), ~1700px clear of the tunnel, and L is the radio while a
+strike is pending and cheese otherwise.
+
+**Tunnel guns.** 12% of the shotgun's visible pixels were semi-transparent —
+the white-key had eaten interior highlights, so the tunnel showed through the
+gun. Filled the enclosed holes on all six viewmodels (1,805 px on the shotgun).
+
+**Supply drops** break open — lid and side panels tumbling off, contents
+flaring — and pay out when the break finishes, instead of vanishing.
+
+**Verified.** simtest 12/12 GREEN, ladder: casual/good/expert all complete end
+to end (casual now finishes too, up from a finale death last round).
+
 ## v13.5 — the second feedback list (2026-08-31)
 
 **Pacing (+50%, except tunnel→truce which Dylan called perfect).** Door gun

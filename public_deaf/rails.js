@@ -13,7 +13,40 @@ const GY = 640; // rail ground line
 // cooler"). One shared crate, drawn in the game's own language: thick dark
 // outlines, flat PAL colours, a stencilled star, panel-seamed olive canopy
 // with a torn edge, swinging in its own rig lines.
-function drawSupplyCrate(ctx, x, y, now) {
+function drawSupplyCrate(ctx, x, y, now, su) {
+  // v13.5: a crate that has been shot BREAKS OPEN -- the chute is cut, the lid
+  // tears off, the sides fall away and what was inside flares out -- and only
+  // then does it pay (Dylan: "right now they just disappear. You should have
+  // it break open, and then you get awarded the thing").
+  const pop = su && su.pop > 0 ? 1 - su.pop / 300 : 0;
+  if (pop > 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    // the prize flaring out of the wreck
+    ctx.globalCompositeOperation = 'lighter';
+    const fl = ctx.createRadialGradient(0, 0, 0, 0, 0, 26 + pop * 46);
+    fl.addColorStop(0, `rgba(255,245,200,${(0.85 * (1 - pop)).toFixed(2)})`);
+    fl.addColorStop(0.5, `rgba(255,190,70,${(0.5 * (1 - pop)).toFixed(2)})`);
+    fl.addColorStop(1, 'rgba(255,140,40,0)');
+    ctx.fillStyle = fl;
+    ctx.beginPath(); ctx.arc(0, 0, 26 + pop * 46, 0, 7); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    // lid and two side panels tumbling off
+    const panels = [[-1, -1, -0.9], [1, -0.6, 0.8], [0, 1, 0.3]];
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 3;
+    for (const [dx, dy, spin] of panels) {
+      ctx.save();
+      ctx.translate(dx * pop * 54, dy * pop * 44 + pop * pop * 26);
+      ctx.rotate(spin * pop * 2.4);
+      ctx.globalAlpha = Math.max(0, 1 - pop * 0.9);
+      ctx.fillStyle = PAL.khaki; ctx.fillRect(-16, -7, 32, 14);
+      ctx.fillStyle = PAL.khakiDark; ctx.fillRect(-16, -7, 32, 4);
+      ctx.strokeRect(-16, -7, 32, 14);
+      ctx.restore();
+    }
+    ctx.restore();
+    return;
+  }
   const sway = Math.sin(now / 420 + x * 0.01) * 9;
   const rock = Math.sin(now / 420 + x * 0.01 + 0.5) * 0.08;
   ctx.save();
@@ -220,6 +253,16 @@ export class DoorGun extends RailBase {
     // the longer run the drops come earlier in proportion: every tier gets flown.
     this.upgradeAt = [8000, 21000, 36000]; // crate release times (shoot it or fly into it)
     this.upIdx = 0;
+    this.claimCrate = () => {
+      this.ev({ e: 'sfx', n: 'sfx_purr' });
+      if (this.tier < 3) {
+        this.tier++;
+        this.ev({ e: 'banner', k: this.tier === 2 ? 'heliT2' : 'heliT3' });
+      } else {
+        this.pips = Math.min(this.pipsMax || 4, this.pips + 1);
+        this.ev({ e: 'banner', k: 'heliPatched' });
+      }
+    };
     this.turretCd = 0;
     this.aimA = 0;               // v11 (Dylan: "you need to be able to aim it") — A/D sweeps the M60 barrel independent of altitude
   }
@@ -345,24 +388,28 @@ export class DoorGun extends RailBase {
       this.supplies.push({ x: W + 50, y: -50, vy: 52 });
     }
     for (const su of (this.supplies || [])) {
+      // v13.5: shot crates break open and pay out at the end of the break
+      // (Dylan: "you should have it break open, and then you get awarded")
+      if (su.pop > 0) {
+        su.pop -= dt;
+        if (su.pop <= 0) { su.got = 1; this.claimCrate(); }
+        continue;
+      }
       su.y += su.vy * dts; su.x -= 74 * dts;
       for (const s2 of this.shots) {
-        if (s2.t > 0 && aabb(s2.x, s2.y, su.x, su.y, 42)) { s2.t = 0; su.shotDown = 1; break; }
+        if (s2.t > 0 && aabb(s2.x, s2.y, su.x, su.y, 42)) {
+          s2.t = 0; su.pop = 300; su.chute = 0;
+          this.ev({ e: 'sfx', n: 'sfx_explosion' });
+          break;
+        }
       }
+      if (su.pop > 0) continue;
       // rest height 560, not the deck: the Huey's floor is hy 500 and the
       // collect window is 84px, so a crate on the actual ground was reachable
       // by only 4px -- technically collectable, unreadably tight
       if (su.y > GY - 80) su.y = GY - 80;
-      if (su.shotDown || aabb(su.x, su.y, 240, this.hy + 40, 84)) {
-        su.got = 1;
-        this.ev({ e: 'sfx', n: 'sfx_purr' });
-        if (this.tier < 3) {
-          this.tier++;
-          this.ev({ e: 'banner', k: this.tier === 2 ? 'heliT2' : 'heliT3' });
-        } else {
-          this.pips = Math.min(this.pipsMax || 4, this.pips + 1);
-          this.ev({ e: 'banner', k: 'heliPatched' });
-        }
+      if (aabb(su.x, su.y, 240, this.hy + 40, 84)) {
+        su.got = 1; this.claimCrate();
       } else if (su.x < -60) {          // missed -- another bird will re-drop it
         su.got = 1;
         this.upgradeAt.push(this.t + 8000);
@@ -584,7 +631,7 @@ export class DoorGun extends RailBase {
       }
     }
     // parachute supply crates — fly the Huey into one, or shoot it down to you
-    for (const su of (this.supplies || [])) drawSupplyCrate(ctx, su.x, su.y, now);
+    for (const su of (this.supplies || [])) drawSupplyCrate(ctx, su.x, su.y, now, su);
     this.drawBooms(ctx);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();
@@ -629,6 +676,18 @@ export class Skyraider extends RailBase {
     // only tool; the dive-strafe below fixes the actual cause, so the ceiling
     // can come back up. More arrives by supply drop mid-run.
     this.gunCd = 0; this.napalm = 8; this.cans = []; this.fires = [];
+    // where the guns actually are, relative to the plane's draw origin (260,
+    // py). Tier 1 is the cowl gun; tier 2+ adds the two wing pods, and both
+    // step() and render() read this so the muzzle flashes sit on the barrels.
+    this.gunPorts = () => (this.tier >= 2
+      ? [{ dx: 6, dy: 30, wing: 1 }, { dx: -2, dy: 42, wing: 1 }]
+      : [{ dx: 44, dy: 12, wing: 0 }]);
+    this.claimSupply = (su) => {
+      this.ev({ e: 'sfx', n: 'sfx_purr' });
+      if (su.k === 'napalm') { this.napalm = Math.min(12, this.napalm + 3); this.ev({ e: 'banner', k: 'skyNapalmUp' }); }
+      else if (su.k === 'guns') { this.tier = 2; this.ev({ e: 'banner', k: 'skyGunsUp' }); }
+      else { this.pips = Math.min(this.pipsMax, this.pips + 1); this.ev({ e: 'banner', k: 'skyRepair' }); }
+    };
     // v13.4 DIVE-STRAFE (Dylan: "There's no way when I'm in the A-1 to shoot
     // the mice on the ground... make it so the plane can dive down and shoot
     // the ground, but has to pull up before it gets too low... you should be
@@ -713,16 +772,29 @@ export class Skyraider extends RailBase {
       if (su.y > GY - 30) su.y = GY - 30;
       // shooting the crate pops the chute and claims it too (Dylan: "make it
       // so you can just shoot it and get the power-up")
+      // v13.5 (Dylan: "when you shoot one of the supply drops, right now they
+      // just disappear. You should have it break open, and then you get
+      // awarded the thing."). A shot crate now bursts its lid, spills the
+      // contents and pays out when the break finishes -- flying into one
+      // still claims it instantly, because that IS the catch.
+      if (su.pop > 0) {
+        su.pop -= dt;
+        if (su.pop <= 0) { su.got = 1; this.claimSupply(su); }
+        continue;
+      }
       let shot = false;
       for (const s2 of this.shots) {
         if (s2.t > 0 && aabb(s2.x, s2.y, su.x, su.y, 42)) { s2.t = 0; shot = true; break; }
       }
-      if (shot || aabb(su.x, su.y, 280, this.py, 74)) {
-        su.got = 1;
-        this.ev({ e: 'sfx', n: 'sfx_purr' });
-        if (su.k === 'napalm') { this.napalm = Math.min(12, this.napalm + 3); this.ev({ e: 'banner', k: 'skyNapalmUp' }); }
-        else if (su.k === 'guns') { this.tier = 2; this.ev({ e: 'banner', k: 'skyGunsUp' }); }
-        else { this.pips = Math.min(this.pipsMax, this.pips + 1); this.ev({ e: 'banner', k: 'skyRepair' }); }
+      if (shot) {
+        su.pop = 300; su.chute = 0;
+        this.ev({ e: 'sfx', n: 'sfx_explosion' });
+        for (let d = 0; d < 7; d++) {
+          this.propGore.push({ x: su.x + (Math.random() - 0.5) * 30, y: su.y + (Math.random() - 0.5) * 24,
+            vx: (Math.random() - 0.5) * 260, vy: -140 - Math.random() * 160, t: 0, T: 420, crate: 1 });
+        }
+      } else if (aabb(su.x, su.y, 280, this.py, 74)) {
+        su.got = 1; this.claimSupply(su);
       }
     }
     this.supplies = this.supplies.filter(su => !su.got && su.x > -80);
@@ -748,8 +820,17 @@ export class Skyraider extends RailBase {
       // diving pitches the guns into the ground ahead -- the strafing run.
       // Level flight fires flat, exactly as before.
       const dvy = this.diving ? 620 : 0;
-      this.shots.push({ x: 330, y: this.py + 12, vx: 1050, vy: dvy, t: 1000 });
-      if (this.tier >= 2) this.shots.push({ x: 330, y: this.py + 26, vx: 1040, vy: dvy + 60, t: 1000 }); // twin wing guns
+      // v13.5 (Dylan: "it says you got twin wing guns, but it's still just
+      // shooting from the front. If you're going to make it have twin wing
+      // guns you've got to animate it properly -- muzzle flashes coming out
+      // of the wings, actual guns that mount onto the wings"). Both streams
+      // used to spawn at x=330, the nose, with a single burst drawn there.
+      // GUN_PODS is now the one source of truth for where the guns are: step()
+      // fires from it and render() draws the pods and their flashes at the
+      // same offsets, so the rounds leave the barrels you can see.
+      for (const gp of this.gunPorts()) {
+        this.shots.push({ x: 260 + gp.dx + 26, y: this.py + gp.dy, vx: 1050, vy: dvy, t: 1000 });
+      }
     }
     for (const s of this.shots) {
       s.x += s.vx * dts; s.y += (s.vy || 0) * dts; s.t -= dt;
@@ -768,12 +849,19 @@ export class Skyraider extends RailBase {
         // ever caught whatever was already point-blank. Thrown properly
         // forward it lands ~700px downrange, IN the stream, and the wall of
         // fire finally does what a wall of fire is for.
-        this.cans.push({ x: 300, y: this.py + 30, vx: this.spd * 1.5, vy: -60, r: 0 });
+        // v13.5 (Dylan: "fix the napalm. It's going too far forward and needs
+        // to go more at a 45-degree angle down"). It was TOSSED UP (vy -60)
+        // and then sailed: a shallow arc landing ~485px downrange. Released
+        // nose-down with a heavier pull instead, the arc averages ~53 degrees
+        // and lands ~230px ahead of the nose -- still out in the rat stream,
+        // which is what the v13.4 range fix was protecting, but now it reads
+        // as a bomb being dropped rather than thrown.
+        this.cans.push({ x: 300, y: this.py + 30, vx: this.spd * 1.35, vy: 150, r: 0 });
         this.ev({ e: 'sfx', n: 'sfx_meow' });
       } else this.ev({ e: 'banner', k: 'napalmOut' });
     }
     for (const cn of this.cans) {
-      cn.x += (cn.vx - this.spd * 0.35) * dts; cn.y += cn.vy * dts; cn.vy += 500 * dts; cn.r += dts * 6;
+      cn.x += (cn.vx - this.spd * 0.35) * dts; cn.y += cn.vy * dts; cn.vy += 900 * dts; cn.r += dts * 6;
       if (cn.y >= GY - 6) {
         cn.y = 9999;
         this.fires.push({ x: cn.x, w: 340, t: 0 });
@@ -793,7 +881,10 @@ export class Skyraider extends RailBase {
       // catch fire now and run burning for most of a second before they drop,
       // which is what makes it read as napalm instead of a cull.
       for (const f of this.foes) {
-        if (f.k === 'rat' && !f.burning && Math.abs(f.x - fr.x) < fr.w / 2 && fr.t < 2400) {
+        // v13.5: catch anything touching the wall, not only its exact span,
+        // and stay lethal for the wall's whole life (Dylan: "rats should be
+        // burning"). A rat clipping the edge of a fire is on fire.
+        if (f.k === 'rat' && !f.burning && Math.abs(f.x - fr.x) < fr.w / 2 + 26 && fr.t < 2600) {
           f.burning = 700 + Math.random() * 400;
           this.ev({ e: 'sfx', n: 'sfx_screech' });
         }
@@ -959,9 +1050,9 @@ export class Skyraider extends RailBase {
           const bk = f.dying ? Math.max(0.35, f.dying / (f.dying0 || 620)) : Math.min(1, f.burning / 700);
           ctx.save();
           ctx.globalCompositeOperation = 'lighter';
-          for (let i = 0; i < 5; i++) {
-            const fx = f.x + (i - 2) * (w2 * 0.16);
-            const fh = (26 + Math.sin(now / 60 + i * 1.9 + f.x) * 12) * (0.6 + bk * 0.6);
+          for (let i = 0; i < 8; i++) {                 // v13.5: 5 -> 8 tongues, taller
+            const fx = f.x + (i - 3.5) * (w2 * 0.13);
+            const fh = (34 + Math.sin(now / 60 + i * 1.9 + f.x) * 15) * (0.6 + bk * 0.6);
             const gr = ctx.createRadialGradient(fx, f.y - h2 * 0.45, 0, fx, f.y - h2 * 0.45, fh);
             gr.addColorStop(0, `rgba(255,240,190,${(0.55 * bk).toFixed(2)})`);
             gr.addColorStop(0.45, `rgba(255,150,40,${(0.40 * bk).toFixed(2)})`);
@@ -1001,8 +1092,15 @@ export class Skyraider extends RailBase {
       ctx.globalCompositeOperation = 'lighter';
       for (let i = 0; i < 16; i++) {
         const seed = i * 2.399 + fr.x * 0.013;
-        const fx = fr.x - fr.w / 2 + ((i + 0.5) / 16) * fr.w + Math.sin(now / 140 + seed * 3) * 7;
-        const wob = 0.72 + 0.28 * Math.sin(now / 75 + seed * 5);
+        const u = (i + 0.5) / 16;
+        // v13.5 (Dylan: "redo fire, it looks bad and ends abruptly on sides
+        // instead of fading out"). The wall was a constant-height row of puffs
+        // over a hard-edged rectangle, so it stopped at a vertical line at
+        // each end. Puffs now die off toward both ends and the bed below is a
+        // tapered ellipse, so the burn feathers into the ground.
+        const edge = Math.pow(Math.sin(Math.PI * u), 0.55);
+        const fx = fr.x - fr.w / 2 + u * fr.w + Math.sin(now / 140 + seed * 3) * 7;
+        const wob = (0.72 + 0.28 * Math.sin(now / 75 + seed * 5)) * edge;
         const fh = (52 + (i * 29 % 34)) * k * die * wob;
         const fy = GY + 26 - fh * (0.35 + 0.45 * ((now / (600 + i * 37)) % 1));
         const r = (18 + (i * 13 % 14)) * k * die * wob;
@@ -1013,12 +1111,14 @@ export class Skyraider extends RailBase {
         ctx.fillStyle = gr2;
         ctx.beginPath(); ctx.arc(fx, fy, r, 0, 7); ctx.fill();
       }
-      // white-hot bed at the root of the burn
-      const bed = ctx.createLinearGradient(0, GY + 30, 0, GY - 18);
+      // white-hot bed at the root of the burn -- an ellipse with a radial
+      // falloff, so it fades out at both ends instead of being cut off square
+      const bed = ctx.createRadialGradient(fr.x, GY + 6, 0, fr.x, GY + 6, fr.w * 0.5);
       bed.addColorStop(0, `rgba(255,250,220,${(0.55 * k * die).toFixed(2)})`);
+      bed.addColorStop(0.5, `rgba(255,170,50,${(0.34 * k * die).toFixed(2)})`);
       bed.addColorStop(1, 'rgba(255,120,30,0)');
       ctx.fillStyle = bed;
-      ctx.fillRect(fr.x - fr.w / 2, GY - 18, fr.w, 48);
+      ctx.beginPath(); ctx.ellipse(fr.x, GY + 6, fr.w * 0.5, 30, 0, 0, 7); ctx.fill();
       // embers popping off
       for (let i = 0; i < 7; i++) {
         const et = (now / (300 + i * 53) + i) % 1;
@@ -1036,12 +1136,13 @@ export class Skyraider extends RailBase {
     // prop-kill viscera + strafe dirt
     for (const q of this.propGore) {
       const qa = Math.max(0, 1 - q.t / q.T);
-      ctx.fillStyle = q.green === 2 ? `rgba(180,150,90,${(qa * 0.9).toFixed(2)})`
+      ctx.fillStyle = q.crate ? `rgba(196,170,110,${(qa * 0.95).toFixed(2)})`   // splintered crate timber
+        : q.green === 2 ? `rgba(180,150,90,${(qa * 0.9).toFixed(2)})`
         : q.green ? `rgba(120,230,60,${(qa * 0.95).toFixed(2)})` : `rgba(150,25,20,${(qa * 0.95).toFixed(2)})`;
       ctx.fillRect(q.x - 3, q.y - 3, 6, 6);
     }
     // supply drops: fly into one, or just SHOOT it -- either way it's yours
-    for (const su of this.supplies) drawSupplyCrate(ctx, su.x, su.y, now);
+    for (const su of this.supplies) drawSupplyCrate(ctx, su.x, su.y, now, su);
     // tracers
     ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
     for (const s of this.shots) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke(); }
@@ -1073,25 +1174,93 @@ export class Skyraider extends RailBase {
       // it. The baked blades are gone from the art; this is now the only
       // propeller: a full-disc blur with three rotating blade streaks and the
       // spinner glint, at the actual nose (u 0.997, v 0.623 of the art).
-      const nx2 = pw / 2 - 3, ny2 = ph * 0.123;
+      // v13.5 (Dylan, on the screenshot: "FIX PROPELLOR -- the old propellor
+      // looked good but didnt spin; this one is in front of the plane and
+      // makes no sense"). It was drawn at pw/2, the sprite's BOUNDING-BOX
+      // edge -- and the box still contains the empty margin where the old
+      // painted blades were erased, so the disc floated in clear air ahead of
+      // the nose. Measured the art: the spinner cone runs u 0.003-0.097 and
+      // the cowl centre sits at v 0.627, so the blade root belongs at u~0.05.
+      // The disc now sits ON the spinner, is dense enough to read as a moving
+      // propeller rather than a smudge, and has 4 blades (an A-1 has 4).
+      // v13.5 (Dylan, on the screenshot: "FIX PROPELLOR -- the old propellor
+      // looked good but didnt spin; this one is in front of the plane and
+      // makes no sense"). Two faults. It was drawn at pw/2, the sprite's
+      // BOUNDING-BOX edge, and that box still holds the empty margin where the
+      // painted blades were erased -- so the disc hung in clear air ahead of
+      // the nose. And it was three translucent hairlines, which reads as a
+      // smudge, not a propeller. Measured the art: spinner cone at u
+      // 0.003-0.097, cowl centre at v 0.627. The blades now root at the COWL
+      // FACE and are drawn as real tapered blades in the sprite's own style --
+      // grey with a dark outline and yellow tips, foreshortening as they turn,
+      // so it looks like the old painted prop and is unmistakably spinning.
+      const nx2 = pw * 0.398, ny2 = ph * 0.127;
       ctx.save();
       ctx.translate(nx2, ny2);
-      ctx.fillStyle = 'rgba(225,225,215,0.16)';
-      ctx.beginPath(); ctx.ellipse(0, 0, 9, ph * 0.46, 0, 0, 7); ctx.fill();
-      const spin = now / 24;
-      for (let bl = 0; bl < 3; bl++) {
-        const ba = spin + bl * (Math.PI * 2 / 3);
-        const ext = Math.abs(Math.sin(ba)) * ph * 0.44;      // vertical projection of the blade
-        const sgn = Math.sin(ba) >= 0 ? 1 : -1;
-        ctx.strokeStyle = `rgba(210,210,200,${(0.30 + 0.25 * Math.abs(Math.cos(ba))).toFixed(2)})`;
-        ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ba) * 6, sgn * ext); ctx.stroke();
+      const R = ph * 0.50;
+      // faint swept disc behind the blades
+      const disc = ctx.createLinearGradient(0, -R, 0, R);
+      disc.addColorStop(0, 'rgba(226,226,216,0.03)');
+      disc.addColorStop(0.5, 'rgba(226,226,216,0.24)');
+      disc.addColorStop(1, 'rgba(226,226,216,0.03)');
+      ctx.fillStyle = disc;
+      ctx.beginPath(); ctx.ellipse(0, 0, pw * 0.034, R, 0, 0, 7); ctx.fill();
+      const spin = now / 22;
+      for (let bl = 0; bl < 4; bl++) {
+        const ba = spin + bl * (Math.PI / 2);
+        const sn = Math.sin(ba);
+        const face = Math.abs(sn);                   // 1 broadside, 0 edge-on
+        if (face < 0.06) continue;                   // edge-on: effectively invisible
+        const ext = sn * R;                          // signed tip offset
+        const halfW = 2.0 + face * 3.4;              // blade chord, foreshortened
+        const lean = Math.cos(ba) * 4;               // slight pitch as it comes round
+        ctx.globalAlpha = 0.20 + 0.50 * face;   // blur, not a pole
+        ctx.beginPath();
+        ctx.moveTo(-halfW * 0.7, 0);
+        ctx.quadraticCurveTo(lean - halfW, ext * 0.55, lean - halfW * 0.55, ext);
+        ctx.lineTo(lean + halfW * 0.55, ext);
+        ctx.quadraticCurveTo(lean + halfW, ext * 0.55, halfW * 0.7, 0);
+        ctx.closePath();
+        ctx.fillStyle = '#8f9086';
+        ctx.fill();
+        ctx.strokeStyle = PAL.outline; ctx.lineWidth = 1.4; ctx.stroke();
+        ctx.fillStyle = '#e8c341';                   // yellow tip cap, as on the art
+        ctx.beginPath();
+        ctx.moveTo(lean - halfW * 0.55, ext);
+        ctx.lineTo(lean + halfW * 0.55, ext);
+        ctx.lineTo(lean + halfW * 0.4, ext - Math.sign(ext || 1) * 6 * face);
+        ctx.lineTo(lean - halfW * 0.4, ext - Math.sign(ext || 1) * 6 * face);
+        ctx.closePath(); ctx.fill();
       }
-      ctx.fillStyle = '#8a8a80';
-      ctx.beginPath(); ctx.arc(0, 0, 6, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+      // spinner cone over the roots so the blades come out of the aircraft
+      ctx.fillStyle = '#6f7066';
+      ctx.beginPath(); ctx.ellipse(4, 0, 6, 9, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(4, 0, 6, 9, 0, 0, 7); ctx.stroke();
+      ctx.fillStyle = '#a3a499';
+      ctx.beginPath(); ctx.ellipse(3, -2, 2.6, 4, 0, 0, 7); ctx.fill();
       ctx.restore();
       ctx.restore();
-      if (this.fireT > 0) drawMuzzleBurst(ctx, 330 + 14, this.py + 12, 0, this.fireT / 70); // v11.2: real fire burst
+      // v13.5 wing guns: gun pods bolted under the wing, each with its own
+      // muzzle flash, so "TWIN WING GUNS" is something you can see.
+      for (const gp of this.gunPorts()) {
+        const gx = 260 + gp.dx, gy = this.py + gp.dy;
+        if (gp.wing) {
+          ctx.save();
+          ctx.translate(gx, gy);
+          ctx.fillStyle = '#3b4030';                       // pod body
+          ctx.fillRect(-16, -6, 30, 12);
+          ctx.fillStyle = '#23271c';                       // pylon up to the wing
+          ctx.fillRect(-8, -13, 7, 9);
+          ctx.fillStyle = '#6a6d5e';                       // barrel
+          ctx.fillRect(14, -2.5, 22, 5);
+          ctx.fillStyle = '#8c8f80';                       // flash hider
+          ctx.fillRect(33, -3.5, 5, 7);
+          ctx.restore();
+        }
+        if (this.fireT > 0) drawMuzzleBurst(ctx, gx + (gp.wing ? 42 : 14), gy, 0, this.fireT / 70);
+      }
     } else { ctx.fillStyle = PAL.khaki; ctx.fillRect(200, this.py - 20, 120, 40); }
     this.drawBooms(ctx);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }

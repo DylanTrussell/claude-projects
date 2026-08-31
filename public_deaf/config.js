@@ -112,7 +112,7 @@ export const BIND = {
   Space: C.JUMP,
   KeyJ: C.FIRE,
   KeyK: C.GREN,
-  KeyL: C.CHEESE,                  // context: air support before the invasion, cheese lure after
+  KeyL: C.CHEESE,                  // context: the radio while an air strike is pending, cheese lure otherwise
 };
 // standard gamepad mapping
 export const PADBIND = { 0: C.JUMP, 2: C.FIRE, 1: C.GREN, 3: C.CHEESE, 12: C.UP, 13: C.DOWN, 14: C.L, 15: C.R };
