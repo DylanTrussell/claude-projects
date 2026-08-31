@@ -663,7 +663,9 @@ function drawEntity(ctx, e2, cam, t, inv) {
   // the body never reacted. While the kick is live the whole sprite now rocks
   // back around its base and judders vertically at fire rate -- Metal Slug's
   // trick: the trigger pull is visible on the body, not only at the muzzle.
-  const firingRock = (kick || 0) > 0.5;
+  // grunt-kinds only: the boss and pow branches return early, and an early
+  // return with this transform open would leak a ctx.save
+  const firingRock = (kick || 0) > 0.5 && (k === 'gruntUS' || k === 'gruntVC' || k === 'alien' || k === 'buddy');
   if (firingRock) {
     ctx.save();
     ctx.translate(sx, y);
