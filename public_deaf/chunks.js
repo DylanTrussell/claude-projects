@@ -276,5 +276,10 @@ export const VIDEO_URLS = {
   dock: HF + 'hf_20260831_011525_bedb12c0-ff64-4c86-ba47-4082c2d8bf4c.mp4',
   parley: HF + 'hf_20260831_011546_db265157-b126-4641-a4a3-0f7b31fef11e.mp4',
   grimdeath: HF + 'hf_20260831_011600_27fd01fc-3bce-4ffd-990a-d0d87b382fbd.mp4',
-  victory: CDN + '364475d2-1cc9-43f3-8491-846801935086.mp4',
+  // v13.4: the old victory film was a painterly cartoon that matched nothing
+  // (Dylan: "not only was it absolutely god-awful, but it didn't match at
+  // all"). Redone in the same photoreal style as every other film: dawn over
+  // the paddies, the crashed checkered flagship oozing molten cheese, the
+  // tired high-five. The molten cheese thread pays off here on purpose.
+  victory: HF + 'hf_20260831_013940_297316a1-49cb-4e7a-bf21-78ba7f6820f8.mp4',
 };

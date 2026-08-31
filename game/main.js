@@ -181,6 +181,13 @@ function endGame(won) {
   $('btn-continue').style.display = canContinue ? '' : 'none';
   $('btn-continue').textContent = STR.continueRun + ' (' + continuesLeft + ')';
   $('t-result').textContent = won ? STR.victory : STR.gameOver;
+  // the part-two tease rides under the END OF PART ONE card
+  const sub = document.getElementById('t-sub2') || (() => {
+    const el = document.createElement('div');
+    el.id = 't-sub2'; el.style.cssText = 'font-size:15px;color:#8CFF3B;letter-spacing:2px;margin-top:4px';
+    $('t-result').after(el); return el;
+  })();
+  sub.textContent = won ? STR.victorySub : '';
   $('t-result').style.color = won ? '#8CFF3B' : '#c8372d';
   // Read the LIVE game state, not lastView. lastView is only re-serialized by
   // the side-scroller step, so it is frozen at whatever it was when you
@@ -285,6 +292,8 @@ function handleEvents(evs) {
     fxEvent(ev);
     switch (ev.e) {
       case 'sfx': audio.sfx(ev.n); break;
+      case 'meow': audio.sfx(ev.n, 1.0, ev.r || 1); break;
+      case 'meowLate': setTimeout(() => audio.sfx(ev.n, 1.0, ev.r || 1), 650); break;
       case 'music': audio.music(ev.n); break;
       case 'hum': audio.hum(!!ev.on); break;
       case 'engine':

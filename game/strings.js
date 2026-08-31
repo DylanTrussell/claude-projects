@@ -25,7 +25,10 @@ export const STR = {
   pressToRise: "PRESS J — GET UP AND FIGHT",
   livesLeft: "LIVES",
   gameOver: "MISSION FAILED",
-  victory: "MISSION ACCOMPLISHED",
+  // v13.4 (Dylan: "I think the Chancellor Grimtail thing is the end of part
+  // one, and then there's part two.")
+  victory: "END OF PART ONE",
+  victorySub: "TO BE CONTINUED — PART TWO",
   playAgain: "START OVER",
   continueRun: "CONTINUE FROM CHECKPOINT",
   continued: "BACK IN THE FIGHT",

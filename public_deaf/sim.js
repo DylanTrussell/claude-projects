@@ -930,6 +930,16 @@ export function step(g, dt, inputs) {
     // The mecha film just showed WHY you are on this bike: what is behind you.
     // Rats, jetpacks and the debuting MECHS spawn on the LEFT and pursue;
     // UFOs still cut across the sky ahead so the front is not empty.
+    // v13.4 (Dylan's screenshot labelled "Needs meows" -- the bike scene):
+    // the two of them CHAT on the ride. Whiskers barks low, Charlie answers
+    // high from the sidecar, on an irregular beat so it reads as banter.
+    g.rideMeowT = (g.rideMeowT || 2600) - dt;
+    if (g.rideMeowT <= 0) {
+      g.rideMeowT = 5200 + g.rng() * 4200;
+      const duet = g.rng() < 0.5;
+      evPush(g, { e: 'meow', n: g.rng() < 0.5 ? 'meow_a' : 'meow_c', r: 0.85 + g.rng() * 0.25 });
+      if (duet) evPush(g, { e: 'meowLate', n: 'meow_c', r: 1.35 + g.rng() * 0.3 });
+    }
     g.rideSpawnT = (g.rideSpawnT || 0) - dt;
     // chasers that fall too far behind the bike are out of the fight -- cull
     // them, or the live cap fills with stragglers and the chase goes empty

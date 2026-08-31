@@ -658,6 +658,18 @@ function drawEntity(ctx, e2, cam, t, inv) {
       ctx.fillStyle = PAL.tealDark; ctx.fillRect(sx - pw / 2, y - ph2 * 0.4, pw, ph2 * 0.5);
     }
   }
+  // v13.4 (Dylan's screenshot: "the cat is firing the gun, but it's
+  // stationary" / "he's frozen"). The recoil shove moved the buddy's FEET but
+  // the body never reacted. While the kick is live the whole sprite now rocks
+  // back around its base and judders vertically at fire rate -- Metal Slug's
+  // trick: the trigger pull is visible on the body, not only at the muzzle.
+  const firingRock = (kick || 0) > 0.5;
+  if (firingRock) {
+    ctx.save();
+    ctx.translate(sx, y);
+    ctx.rotate(-face * 0.055 * Math.min(1, kick / 4));
+    ctx.translate(-sx, -(y - Math.abs(Math.sin(t / 30)) * 2.5));
+  }
   if (k === 'alien' && SHEET.sheet_alien_walk && st !== 'emerge') {
     const s = SHEET.sheet_alien_walk;
     const fr = Math.floor(t / (1000 / s.fps)) % s.frames;
@@ -685,6 +697,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
     }
     hitFlash(ctx, sprId, sx - w2 / 2, drawY, w2, hgt, hitT, flip);
   }
+  if (firingRock) ctx.restore();
   if (k === 'heli') { // spinning rotor + tail rotor (sprite blades were erased)
     const hubX = sx - w2 / 2 + (flip ? 1 - 0.475 : 0.475) * w2;
     drawRotor(ctx, hubX, drawY + 0.05 * hgt, 0.46 * w2, t);
@@ -843,9 +856,14 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
   const wepArt = { gatling: 'wep_gatling', flame: 'wep_flame', raygun: 'wep_raygun' }[weap];
   if (wepArt && IMG[wepArt] && st === 'alive' && !bike) {
     const wi = IMG[wepArt];
-    const ww = hgt * 0.92, wh2 = ww * (wi.height / wi.width);
-    // hand sits just forward of centre, a little above the hip
-    const hx = sx + face * hgt * 0.20, hy2 = y - hgt * (aimUp ? 0.72 : 0.46);
+    // v13.4 (Dylan: "main character has a phantom gun on top of his other
+    // gun... when he has a ray gun, he has that on top of his regular gun").
+    // The overlay hung at hip height (y - hgt*0.46) while the BAKED rifle's
+    // barrel measures at v 0.633 of hero_us.png -- i.e. y - hgt*0.367 -- so
+    // both guns showed at once. The overlay now sits ON the baked gun's own
+    // line and is sized up a touch so it covers it: one gun, the upgrade.
+    const ww = hgt * 1.04, wh2 = ww * (wi.height / wi.width);
+    const hx = sx + face * hgt * 0.22, hy2 = y - hgt * (aimUp ? 0.72 : 0.367);
     ctx.save();
     ctx.translate(hx, hy2);
     if (aimUp) ctx.rotate(face * -1.15);       // swing the barrel skyward with the aim-up pose
@@ -853,10 +871,9 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     ctx.drawImage(wi, -ww * 0.28, -wh2 / 2, ww, wh2);
     ctx.restore();
   }
-  if (pid === myPid) {
-    ctx.fillStyle = PAL.cheese;
-    ctx.beginPath(); ctx.moveTo(sx - 7, y - hgt - 18); ctx.lineTo(sx + 7, y - hgt - 18); ctx.lineTo(sx, y - hgt - 8); ctx.fill();
-  }
+  // (the old static self-marker triangle lived here -- removed, since the
+  // bobbing outlined chevron added for the "which cat am I" fix already marks
+  // the local player; two markers on one cat was its own confusion)
   if (transActive) ctx.restore();
 }
 
