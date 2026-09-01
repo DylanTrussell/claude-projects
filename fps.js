@@ -155,6 +155,19 @@ export class Tunnel {
         }
       }
     }
+    // v13.9: the cat standing closest to Mittens is his JAILER. Pure labelling
+    // -- he fights exactly like any other knife-cat -- but he gets his own
+    // sprite, so the rescue has a face to take Mittens back from instead of
+    // being a walk up to a glowing prop.
+    if (this.mittens && this.enemyKind !== 'rat') {
+      let best = null, bd = 1e9;
+      for (const e of this.enemies) {
+        if (e.kind === 'barrel') continue;
+        const d = Math.hypot(e.x - this.mittens.x, e.y - this.mittens.y);
+        if (d < bd) { bd = d; best = e; }
+      }
+      if (best && bd < 9) best.jailer = 1;
+    }
     for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
       if (this.solid(this.px + Math.cos(a), this.py + Math.sin(a)) === false) { this.ang = a; break; }
     }
@@ -1308,6 +1321,13 @@ export class Tunnel {
     if (this.mittens && (!this.result.rescued || this.mittensFreed > 0)) {
       sprites.push({ x: this.mittens.x, y: this.mittens.y, kind: 'mittens' });
     }
+    // v13.9: the chair he was tied to stays in the world. Before, he was a lit
+    // prop that turned into a banner; now you see the thing he was tied to, and
+    // afterwards you see it standing there empty with the ropes cut. The rescue
+    // leaves a mark on the level instead of deleting itself.
+    if (this.mittens && this.result.rescued) {
+      sprites.push({ x: this.mittens.x, y: this.mittens.y, kind: 'chair' });
+    }
     if (this.exit) sprites.push({ x: this.exit.x, y: this.exit.y, kind: 'exit' });
     for (const g of this.gore) sprites.push({ x: g.x, y: g.y, kind: 'gore', g });
     for (const s of sprites) s.dd = Math.hypot(s.x - this.px, s.y - this.py);
@@ -1505,7 +1525,7 @@ export class Tunnel {
         }
         continue;
       }
-      let size = (RH * (s.kind === 'enemy' || s.kind === 'corpse' ? 0.74 : s.kind === 'mittens' ? 0.6 : 0.34)) / d;
+      let size = (RH * (s.kind === 'enemy' || s.kind === 'corpse' ? 0.74 : (s.kind === 'mittens' || s.kind === 'chair') ? 0.62 : 0.34)) / d;
       let y0 = HORIZON + (RH * 0.5) / d / 2 - size;
       // emerging cats rise out of the floor: the billboard grows bottom-up
       // from the ground plane over the burst, anchored at the feet
@@ -1552,6 +1572,12 @@ export class Tunnel {
           else if (s.e.st === 'lunge' || s.e.st === 'wind') img = IMG.vc_knife_lunge2 || IMG.vc_knife_a || IMG.grunt_vc;
           else if (s.e.st === 'burst') img = IMG.vc_knife_a || IMG.grunt_vc;
           else img = walking ? (IMG.vc_knife_walk1 || IMG.vc_knife_a || IMG.grunt_vc) : (IMG.vc_knife_walk2 || IMG.vc_knife_b || IMG.grunt_vc);
+          // the jailer keeps his own look in every state: rope and cleaver on
+          // guard, the raised paw when he comes at you.
+          if (s.e.jailer) {
+            if (s.e.st === 'lunge' || s.e.st === 'wind') img = IMG.vc_jailer_strike || img;
+            else if (s.e.flash <= 0) img = IMG.vc_jailer || img;
+          }
         }
       } else if (s.kind === 'hole') {
         // the spider-hole: a floor mound with a woven bamboo cover. Closed =
@@ -1584,7 +1610,11 @@ export class Tunnel {
         continue;
       } else if (s.kind === 'corpse') {
         img = this.enemyKind === 'rat' ? IMG.alien_trooper : (IMG.vc_corpse || IMG.grunt_vc);
-      } else if (s.kind === 'mittens') img = IMG.grunt_us; // was hero_us -- see the vignette fix note above, same wrong-sprite bug
+      } else if (s.kind === 'chair') img = IMG.chair_empty;
+      // v13.9: he is a grey tabby tied to a chair with a black eye, and he was
+      // being drawn as grunt_us -- a US cat in a steel helmet, standing up,
+      // holding a rifle. Nothing about that read as a prisoner.
+      else if (s.kind === 'mittens') img = IMG.mittens_chair || IMG.grunt_us;
       else if (s.kind === 'shotgun') img = IMG.pickup_shotgun_glow || IMG.fps_shotgun || IMG.pickup_flame;
       else if (s.kind === 'raygun') img = IMG.pickup_raygun;
       else if (s.kind === 'tuna') img = IMG.pickup_health;
@@ -1638,6 +1668,17 @@ export class Tunnel {
       } else if (s.kind === 'tuna') {
         sc.fillStyle = `rgba(143,154,164,${b})`;
         sc.beginPath(); sc.ellipse(sx, y0 + size * 0.85, size * 0.4, size * 0.22, 0, 0, 7); sc.fill();
+      } else if (s.kind === 'mittens' && img && this.result.rescued) {
+        // v13.9: the freeing beat is now something you WATCH. He lifts up out
+        // of the chair and fades, while the empty chair behind him is already
+        // drawn -- so what you see is him getting out of it, and what stays
+        // behind is cut rope. Previously he simply stopped being drawn.
+        const k = 1 - Math.max(0, this.mittensFreed || 0) / 2000; // 0 -> 1
+        const rise = size * 0.55 * k * k;
+        const asp = img.width / img.height;
+        sc.globalAlpha = Math.max(0, 1 - k * 1.15);
+        try { sc.drawImage(img, sx - size * asp / 2, y0 - rise, size * asp, size); } catch (_) {}
+        sc.globalAlpha = 1;
       } else if (img) {
         const useCorpseSprite = s.kind === 'corpse' && this.enemyKind !== 'rat' && IMG.vc_corpse;
         if (s.kind === 'corpse' && !useCorpseSprite) {

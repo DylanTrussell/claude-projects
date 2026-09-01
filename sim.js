@@ -55,6 +55,9 @@ export const LEVEL = {
   crates: [ // breakable crates with pickups: x, kind
     [560, 'grenades'], [1180, 'shot'], [2100, 'tuna'], [2720, 'rocket'],
     [3240, 'shot'], [4350, 'flame'], [4820, 'skip'],
+    // v13.9: the laser pointer sits at the mouth of the escalation block,
+    // where the crowds get thick enough that crowd control beats more damage.
+    [5900, 'pointer'],
     // v13.3: the escalation block from 4200 to 6900 is where every measured
     // game over happens, and the game's only spare life came from the POW at
     // x=6700 -- i.e. AFTER the gauntlet that eats everyone's lives. A resource
@@ -268,6 +271,7 @@ function spawnPlayer(pid, hero, x) {
     pid, hero, x, y: CFG.groundY - 200, vx: 0, vy: 0, face: 1, onG: false,
     st: 'alive', lives: CFG.lives, hp: CFG.hpMax, invulnT: CFG.invulnMs, respT: 0,
     weap: 'rifle', ammo: 0, gren: CFG.startGrenades, cheese: 0,
+    laser: 0, laserCd: 0, laserOn: 0,   // v13.9 laser pointer battery + beam flag
     fireCd: 0, grenCd: 0, cheeseCd: 0, meleeCd: 0, meleeT: 0,
     coyote: 0, jbuf: 0, aimUp: false, deaths: 0, score: 0,
     prevC: 0, runT: 0,
@@ -567,6 +571,12 @@ export function step(g, dt, inputs) {
       evPush(g, { e: 'sfx', n: 'sfx_click' });
       if (!g.banners.click) { g.banners.click = true; evPush(g, { e: 'banner', k: 'outOfAmmo' }); }
     }
+    // v13.9: during the standoff every round you fire is a round you no longer
+    // have. Hit zero and the hammer falls on an empty chamber for real.
+    if (firePressed && p.fireCd <= 0 && p.meleeT <= 0 && !g.noFire && g.duelAmmo > 0) {
+      g.duelAmmo--;
+      if (g.duelAmmo === 0) { g.invT = 1; g.duelDry = 1; }
+    }
     if (firePressed && p.fireCd <= 0 && p.meleeT <= 0 && !g.noFire) {
       // v11 (Dylan: "if you fire when hes moving it looks like its coming
       // out of nowhere") — the muzzle-flash spawn point below is measured
@@ -685,6 +695,30 @@ export function step(g, dt, inputs) {
         p.cheese--; p.cheeseCd = 500;
         fireBullet(g, p.x + p.face * 20, p.y - 70, p.face * CFG.cheeseVx, CFG.cheeseVy, 4, 1);
         evPush(g, { e: 'sfx', n: 'sfx_meow' });
+      }
+    }
+    // v13.9 LASER POINTER -- held, not tapped. While L is down the dot is
+    // painted ahead of you and refreshed every frame, so it sweeps where you
+    // aim and the crowd follows it. Runs on its own battery and never touches
+    // your gun.
+    // TAP L is still the radio and the cheese lob (both edge-triggered, above).
+    // HOLD L is the pointer. They cannot be gated on each other: air support
+    // goes 'ready' across the whole escalation block, which is exactly where
+    // the pointer is found -- guarding on it made the pointer inert at the one
+    // place it exists to be used.
+    if ((bits & C.CHEESE) && p.laser > 0) {
+      p.laserCd = (p.laserCd || 0) - dt;
+      if (p.laserCd <= 0) {
+        p.laserCd = CFG.pointerCd;
+        p.laser -= 1;
+        const lx = p.x + p.face * CFG.pointerReach;
+        const ly = CFG.groundY - 14;
+        // one dot, moved -- not a trail of them
+        let dot = g.lures.find(l => l.laser);
+        if (dot) { dot.x = lx; dot.y = ly; dot.t = CFG.pointerLife; }
+        else g.lures.push({ id: nextId++, x: lx, y: ly, t: CFG.pointerLife, laser: 1 });
+        p.laserOn = 120;                       // renderer draws the beam this long
+        if (p.laser <= 0) evPush(g, { e: 'banner', k: 'pointerDead' });
       }
     }
 
@@ -925,8 +959,13 @@ export function step(g, dt, inputs) {
     if (g.invT <= 0) {
       g.invT = 0; g.clickT = 1700;
       g.noFire = 1; g.duelClick = 1;              // your gun's dry — and so is his
+      // a player who never fired has a full mag, so his gun did not run out --
+      // it jammed. Say the true thing either way.
+      if (!g.duelDry) g.duelJam = 1;
       for (const b of g.bullets) if (b.on) b.on = 0; // the air goes quiet
       evPush(g, { e: 'sfx', n: 'sfx_click' });
+      evPush(g, { e: 'banner', k: g.duelJam ? 'duelJam' : 'outOfAmmo' });
+      g.banners.click = true;
     }
   }
   if (g.clickT) {
@@ -1010,6 +1049,7 @@ export function step(g, dt, inputs) {
   }
   g.enemies = g.enemies.filter(e2 => e2.st !== 'gone' || e2.k === 'boss');
 
+  for (const p2 of g.players) if (p2.laserOn > 0) p2.laserOn -= dt;
   // -- lures decay --
   for (const l of g.lures) l.t -= dt;
   g.lures = g.lures.filter(l => l.t > 0);
@@ -1257,6 +1297,12 @@ function applyPickup(g, p, kind) {
     if (p.weap !== 'rifle' && p.ammo > 15) return;
     p.weap = 'raygun'; p.ammo = CFG.raygunAmmo; evPush(g, { e: 'banner', k: 'gotRaygun' }); evPush(g, { e: 'sfx', n: 'sfx_raygun' });
   }
+  // v13.9: upgrades the L-button lure, deliberately NOT your primary weapon.
+  else if (kind === 'pointer') {
+    p.laser = CFG.pointerCharge;
+    evPush(g, { e: 'banner', k: 'gotPointer' }); evPush(g, { e: 'hint', k: 'pointerHint' });
+    evPush(g, { e: 'sfx', n: 'sfx_purr' });
+  }
   else if (kind === 'flame') { p.weap = 'flame'; p.ammo = CFG.flameAmmo; evPush(g, { e: 'banner', k: 'gotFlame' }); evPush(g, { e: 'sfx', n: 'sfx_flame' }); }
   else if (kind === 'shot') { p.weap = 'shot'; p.ammo = CFG.shotAmmo; evPush(g, { e: 'banner', k: 'gotShotgunW' }); evPush(g, { e: 'sfx', n: 'sfx_shotgun' }); }
   else if (kind === 'rocket') { p.weap = 'rocket'; p.ammo = CFG.rocketAmmo; evPush(g, { e: 'banner', k: 'gotRocket' }); evPush(g, { e: 'sfx', n: 'sfx_shotgun' }); }
@@ -1350,6 +1396,8 @@ function explode(g, x, y, fromPlayer) {
   }
 }
 
+const DUEL_MAG = 7;   // v13.9: rounds left in the magazine when the duel opens
+
 function triggerInvasion(g) {
   // NO aliens yet. A lone VC cat duels you, both guns run dry, THEN the sky
   // flashes green and we cut into the film. Aliens only exist after the movie.
@@ -1359,7 +1407,16 @@ function triggerInvasion(g) {
   const duel = en('gruntVC', cx + 940, CFG.groundY, { face: -1 });
   duel.duel = 1; duel.hp = 999; // he survives the exchange — he's Charlie
   g.enemies.push(duel);
-  g.invT = 2600; // exchange fire for a beat
+  // v13.9 (Dylan: the "...HE'S OUT TOO" beat is FAKE). The old version ran a
+  // 2600ms stopwatch and then force-set g.noFire, so the click fired whether
+  // you had pulled the trigger once or never at all. You never actually ran
+  // dry. Now the standoff hands you a real magazine and counts it down per
+  // shot: the gun goes quiet because YOU emptied it.
+  //
+  // The timer survives only as a floor for a player who refuses to shoot at
+  // all -- and in that case it is not a dry mag, it is a jam, and it says so.
+  g.duelAmmo = DUEL_MAG;
+  g.invT = 9000;
 }
 
 export function spawnTunnelSkirmish(g, x0) {
@@ -1593,7 +1650,7 @@ function stepEnemy(g, e2, dt, dts) {
       if (tx === null) return;
       e2.face = tx > e2.x ? 1 : -1;
       const dist = Math.abs(tx - e2.x);
-      const speed = (lure ? CFG.alienSpd * 1.8 : CFG.alienSpd) * (e2.fast ? 3.2 : 1);
+      const speed = (lure ? CFG.alienSpd * (lure.laser ? 2.2 : 1.8) : CFG.alienSpd) * (e2.fast ? 3.2 : 1);
       // v11 (Dylan: "the rats aren't formidable enemies, theyre barely firing
       // back"): the old 260px firing range meant a ranged player (gatling,
       // rifle, raygun — all much longer reach) killed most of these before
@@ -1784,7 +1841,10 @@ export function serialize(g) {
       // serialized, so the renderer could not tell a punji-spike death from any
       // other and played the same spin-and-fall ragdoll for all of them.
       p.st === 'dead' ? (p.deathKind === 'trap' ? 1 : p.deathKind === 'pit' ? 2 : 0) : 0,
-      R(p.respT)]),
+      R(p.respT),
+      // v13.9 index 21/22: laser-pointer battery and whether the beam is live
+      // this frame, so the renderer can draw the line from his paw to the dot.
+      R(p.laser || 0), (p.laserOn > 0) ? 1 : 0]),
     en: g.enemies.filter(e2 => e2.st !== 'gone' && e2.x > g.cam - 200 && e2.x < g.cam + W + 400)
       .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0, R(Math.max(0, e2.hitT || 0))]),
     // v13: index 4 is the bullet's travel angle. Every projectile used to be
@@ -1800,7 +1860,7 @@ export function serialize(g) {
       // dissolves instead of ending on a hard edge.
       b.k === 10 ? Math.round((1 - Math.max(0, Math.min(1, b.t / CFG.flameLife))) * 100) / 100 : 0]),
     pk: g.pickups.map(pk => [R(pk.x), R(pk.y), pk.kind]),
-    lu: g.lures.map(l => [R(l.x), R(l.y)]),
+    lu: g.lures.map(l => [R(l.x), R(l.y), l.laser ? 1 : 0]),
     fi: g.fires.map(f => [R(f.x), R(f.y), R(f.t), f.big ? 1 : 0]),
     tr: g.traps.map(t2 => t2.armed ? 1 : 0),
     cr: g.crates.map(c2 => c2.hp),

@@ -42,7 +42,7 @@ export class ParleyBoss extends RailBase {
     this.gunCd = 0;
     this.bossHp = 105; this.bossHpMax = 105; // v13.5: the finale was the SHORTEST fight (~19s); +50% pass
     this.shieldUp = true;
-    this.pylons = PYLONS0.map(o => ({ ...o, hp: 4, alive: true, t: o.off, exposed: false })); // v13.5: 3 -> 4, longer finale
+    this.pylons = PYLONS0.map(o => ({ ...o, hp: 4, alive: true, t: o.off, exposed: false, flash: 0 })); // v13.5: 3 -> 4, longer finale
     this.bx = BX0; this.by = BY0;
     this.flyState = 'hover'; this.flyT = 0; this.flySide = 1; this.passY = BY0;
     this.bolts = []; // boss plasma bolts -> player
@@ -150,7 +150,7 @@ export class ParleyBoss extends RailBase {
           if (aabb(s.x, s.y, px2, py2, 46)) {
             hitSomething = true; s.t = 0;
             if (py.exposed) {
-              py.hp--; this.ev({ e: 'sfx', n: 'sfx_meow' });
+              py.hp--; py.flash = 220; this.ev({ e: 'sfx', n: 'sfx_meow' });
               // v13.7 (Dylan: "the spaceship should be glowing and changing
               // colours when it's taking damage") -- and the standing rule
               // that everything visibly reacts to every hit.
@@ -161,6 +161,7 @@ export class ParleyBoss extends RailBase {
                 this.ev({ e: 'boom', x: px2, y: py2, big: 0 });
               }
             } else {
+              py.flash = 120;            // armoured: it still flinches, it just holds
               this.sparks.push({ x: px2, y: py2, t: 0 });
             }
             break;
@@ -182,7 +183,10 @@ export class ParleyBoss extends RailBase {
               this.ev({ e: 'shake', m: 16 });
               this.ev({ e: 'banner', k: 'chancellorDown' });
               this.kills = 50; // main.js does g.score += kills*100 — parity with the mothership's 5000
-              this.doneT = 2400;
+              // v13.9: long enough to actually watch him lose. The ship comes
+              // apart, and then he drags himself out of his own wreckage --
+              // which is the ending Dylan wanted to see before committing to it.
+              this.doneT = 5200; this.wonT = 0;
             }
           }
         }
@@ -204,6 +208,7 @@ export class ParleyBoss extends RailBase {
     for (const py of this.pylons) {
       if (!py.alive) continue;
       py.t += dt;
+      if (py.flash > 0) py.flash -= dt;   // v13.9: the node's own hit reaction
       const ph = py.t % py.per;
       py.exposed = ph < EXPOSE_MS;
     }
@@ -239,6 +244,11 @@ export class ParleyBoss extends RailBase {
 
     if (this.doneT !== undefined) {
       this.doneT -= dt;
+      this.wonT = (this.wonT || 0) + dt;
+      // secondary detonations while the hull tears itself apart
+      if (this.wonT < 2600 && Math.random() < dt / 260) {
+        this.boom(this.bx - 150 + Math.random() * 300, this.by - 90 + Math.random() * 150, Math.random() < 0.4);
+      }
       if (this.doneT <= 0) this.done = true;
     }
     this.prevBits = bits;
@@ -260,6 +270,29 @@ export class ParleyBoss extends RailBase {
     // Grimtail visible ON HIS THRONE inside the lit dome baked into the art.
     // No separate floating chancellor sprite. The laugh pulse shakes the whole
     // ship, and the dome glows brighter while he speaks.
+    // v13.9 -- the trophy wall, behind him, visible through the talk beats.
+    // Rows of captured cat tags on chains under one green lamp. It says what he
+    // has been doing to your side without a line of dialogue, and it is the
+    // reason the parley goes the way it does. Fades back once shooting starts
+    // so it never competes with the fight for attention.
+    const wall = IMG.grim_trophy_wall;
+    if (wall) {
+      const talk = this.phase !== 'fight';
+      const wk = talk ? 1 : 0.28;
+      const wh = 300, ww = wh * (wall.width / wall.height);
+      ctx.save();
+      ctx.globalAlpha = 0.85 * wk * Math.min(1, this.t / 1400);
+      ctx.drawImage(wall, this.bx - ww / 2, this.by - wh * 0.95, ww, wh);
+      // the lamp above the tags breathes
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.20 * wk * (0.7 + 0.3 * Math.sin(now / 520));
+      const lg = ctx.createRadialGradient(this.bx, this.by - wh * 0.78, 0, this.bx, this.by - wh * 0.78, ww * 0.5);
+      lg.addColorStop(0, 'rgba(150,255,150,0.9)');
+      lg.addColorStop(1, 'rgba(150,255,150,0)');
+      ctx.fillStyle = lg;
+      ctx.beginPath(); ctx.arc(this.bx, this.by - wh * 0.78, ww * 0.5, 0, 7); ctx.fill();
+      ctx.restore();
+    }
     const ship = IMG.chancellor_ship;
     const bossPulse = this.laughPulse > 0 ? Math.sin(now / 60) * 6 : 0;
     if (ship) {
@@ -381,52 +414,40 @@ export class ParleyBoss extends RailBase {
       ctx.rotate(now / 2600 + py.off);           // slow, heavy -- it has mass
       const R = (ex ? 30 : 23) + beat * (ex ? 3 : 1);
 
-      // fleshy sheath
-      const flesh = ctx.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.15, 0, 0, R);
-      flesh.addColorStop(0, '#e6aebb');
-      flesh.addColorStop(0.6, '#c47f95');
-      flesh.addColorStop(1, '#8d5468');
-      ctx.fillStyle = flesh;
-      ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#3a2530'; ctx.lineWidth = 2.5; ctx.stroke();
-
-      // chrome ribs wrapping the sheath, like the hull's conduits
-      ctx.strokeStyle = 'rgba(226,232,240,0.85)'; ctx.lineWidth = 3;
-      for (let i = 0; i < 5; i++) {
-        const a0 = i * (Math.PI * 2 / 5);
-        ctx.beginPath(); ctx.arc(0, 0, R * 0.80, a0, a0 + 0.52); ctx.stroke();
-      }
-      ctx.strokeStyle = 'rgba(120,132,148,0.9)'; ctx.lineWidth = 1.5;
-      for (let i = 0; i < 5; i++) {
-        const a0 = i * (Math.PI * 2 / 5) + 0.26;
-        ctx.beginPath(); ctx.moveTo(Math.cos(a0) * R * 0.5, Math.sin(a0) * R * 0.5);
-        ctx.lineTo(Math.cos(a0) * R * 0.98, Math.sin(a0) * R * 0.98); ctx.stroke();
-      }
-      // gold collar
-      ctx.strokeStyle = `rgba(214,170,84,${ex ? 0.95 : 0.6})`; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(0, 0, R * 0.62, 0, 7); ctx.stroke();
-
-      // the iris: clenched when armoured, wide open when exposed
-      const iris = ex ? 1 : 0.32;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.62);
-      core.addColorStop(0, `rgba(255,255,240,${(ex ? 0.95 : 0.30) * (0.75 + 0.25 * beat)})`);
-      core.addColorStop(0.45, `rgba(${cr},${cg},${cb},${(ex ? 0.85 : 0.28) * (0.7 + 0.3 * beat)})`);
-      core.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = core;
-      ctx.beginPath(); ctx.arc(0, 0, R * 0.62 * (0.55 + 0.45 * iris), 0, 7); ctx.fill();
-      ctx.restore();
-      // iris blades closing over the core when armoured
-      if (!ex) {
-        ctx.fillStyle = 'rgba(58,37,48,0.92)';
-        for (let i = 0; i < 6; i++) {
-          const a0 = i * (Math.PI / 3) + now / 2600;
-          ctx.beginPath();
-          ctx.moveTo(0, 0);
-          ctx.arc(0, 0, R * 0.52, a0, a0 + 0.42);
-          ctx.closePath(); ctx.fill();
-        }
+      // v13.9: the node is real art now. v13.7 hand-drew a fleshy sheath, chrome
+      // ribs, a gold collar and an iris in canvas; the drawn sprite is that same
+      // description done properly, in three states. Dormant is clenched shut,
+      // waking is the iris cracking open, live is the eye wide and hot -- which
+      // maps exactly onto armoured / just-hit / exposed.
+      const nimg = ex ? (IMG.grim_node_live || IMG.grim_node_waking)
+                 : (py.flash > 0 ? (IMG.grim_node_waking || IMG.grim_node_dormant)
+                                 : IMG.grim_node_dormant);
+      if (nimg) {
+        const nh = R * 2.35, nw = nh * (nimg.width / nimg.height);
+        // it breathes: exposed nodes swell on the beat, armoured ones barely move
+        const sc2 = 1 + beat * (ex ? 0.07 : 0.02);
+        if (py.flash > 0) ctx.filter = 'brightness(1.9) saturate(1.4)';
+        ctx.drawImage(nimg, -nw * sc2 / 2, -nh * sc2 / 2, nw * sc2, nh * sc2);
+        ctx.filter = 'none';
+        // the core throws light on the hull around it, in the ship's own palette
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.5);
+        core.addColorStop(0, `rgba(255,255,240,${(ex ? 0.5 : 0.12) * (0.7 + 0.3 * beat)})`);
+        core.addColorStop(0.4, `rgba(${cr},${cg},${cb},${(ex ? 0.45 : 0.1) * (0.7 + 0.3 * beat)})`);
+        core.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = core;
+        ctx.beginPath(); ctx.arc(0, 0, R * 1.5, 0, 7); ctx.fill();
+        ctx.restore();
+      } else {
+        // fallback: the v13.7 drawn node, if the chunk has not landed yet
+        const flesh = ctx.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.15, 0, 0, R);
+        flesh.addColorStop(0, '#e6aebb'); flesh.addColorStop(0.6, '#c47f95'); flesh.addColorStop(1, '#8d5468');
+        ctx.fillStyle = flesh;
+        ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#3a2530'; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.strokeStyle = `rgba(214,170,84,${ex ? 0.95 : 0.6})`; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(0, 0, R * 0.62, 0, 7); ctx.stroke();
       }
       ctx.restore();
 
@@ -465,6 +486,21 @@ export class ParleyBoss extends RailBase {
     // here, but hero_us_up ships in the BASE bundle and has been available the
     // whole time. The real cat now stands there, gun up, rocking with recoil.
     if (this.phase === 'fight' || this.phase === 'laugh' || this.phase === 'reveal') {
+      // v13.9 -- Charlie is at the parley too. Standing rule: after the truce
+      // this is a two-cat war, and the finale had Whiskers facing the
+      // Chancellor alone. He holds the left flank, firing on his own cadence,
+      // slightly behind so he never crowds the player's read of his own cat.
+      const ci = IMG.charlie_ship;
+      if (ci) {
+        const chh = 92, chw = chh * (ci.width / ci.height);
+        const cx2 = Math.max(70, this.px - 190);
+        const cfire = (now % 900) < 90 && this.phase === 'fight';
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(ci, cx2 - chw / 2, GY - chh + (cfire ? 3 : 0), chw, chh);
+        ctx.restore();
+        if (cfire) drawMuzzleBurst(ctx, cx2 + 6, GY - chh - 4, -Math.PI / 2, 0.8);
+      }
       const hi = IMG.hero_us_up || IMG.hero_us;
       if (hi) {
         const hh = 104, hw = hh * (hi.width / hi.height);
@@ -481,6 +517,50 @@ export class ParleyBoss extends RailBase {
     }
 
     this.drawBooms(ctx);
+
+    // v13.9 -- THE ENDING. He does not simply pop and cut to a tally. The ship
+    // comes apart for a couple of seconds, and then the Chancellor drags
+    // himself out of his own wreckage on his elbows, trailing green blood,
+    // still crawling as the screen goes. Dylan wanted to see this one before
+    // deciding whether it belongs in the game, so it is in, and it is cheap to
+    // pull back out: delete this block.
+    if (this.won) {
+      const wt = this.wonT || 0;
+      const ci = IMG.grimtail_crawl;
+      if (ci && wt > 2200) {
+        const k = Math.min(1, (wt - 2200) / 900);         // fade up out of the smoke
+        const crawl = Math.min(1, (wt - 2200) / 3000);    // and he keeps moving
+        const gh = 200, gw = gh * (ci.width / ci.height);
+        ctx.save();
+        ctx.globalAlpha = k;
+        // he drags himself toward the player's side of the screen
+        const gx = this.bx + 120 - crawl * 240;
+        const gy = GY - gh * 0.62 + Math.sin(wt / 220) * 3;   // the effort of it
+        ctx.drawImage(ci, gx - gw / 2, gy, gw, gh);
+        ctx.restore();
+        // the trail he leaves behind him
+        ctx.save();
+        ctx.globalAlpha = k * 0.5;
+        ctx.fillStyle = 'rgba(120,230,60,0.7)';
+        for (let i = 0; i < 7; i++) {
+          const tx = gx + gw * 0.34 + i * 26 + crawl * 40;
+          ctx.beginPath(); ctx.ellipse(tx, GY - 14 + (i % 2) * 4, 13 - i, 4, 0, 0, 7); ctx.fill();
+        }
+        ctx.restore();
+      }
+      // the fires left burning in the debris field
+      ctx.save();
+      for (let i = 0; i < 7; i++) {
+        const ph = ((now / 620) + i * 0.4) % 1;
+        ctx.globalAlpha = 0.5 * (1 - ph) * Math.min(1, wt / 800);
+        ctx.fillStyle = i % 2 ? '#ff9a3c' : '#8CFF3B';
+        const fx2 = this.bx - 190 + i * 56;
+        ctx.beginPath(); ctx.arc(fx2, GY - 20 - ph * 90, 9 + ph * 15, 0, 7); ctx.fill();
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
 
     // letterbox during the scripted talk beats
