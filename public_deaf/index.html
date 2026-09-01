@@ -61,8 +61,11 @@
   #loading{display:flex;background:#0b0d09}
   #loadwrap{width:min(70vw,420px);height:18px;border:3px solid #26231c;background:#161a10}
   #loadbar{height:100%;width:0%;background:#FFC93C}
-  #t-logo{display:none;max-width:min(80vw,560px);max-height:48vh;width:auto;height:auto;image-rendering:pixelated}
-  @media (max-height:500px){ .overlay{gap:8px} #t-logo{max-height:42vh} button.primary{padding:8px 22px;font-size:16px} }
+  #t-logo{display:none;max-width:min(80vw,560px);max-height:38vh;width:auto;height:auto;image-rendering:pixelated}
+  /* v13.9: the two of them, back to back, under the logo. The title screen was
+     the one place the game never showed you that this is a two-cat war. */
+  #t-heroes{display:none;max-width:min(74vw,460px);max-height:26vh;width:auto;height:auto;image-rendering:pixelated;margin-top:-6px;filter:drop-shadow(0 6px 18px rgba(0,0,0,0.55))}
+  @media (max-height:500px){ .overlay{gap:8px} #t-logo{max-height:32vh} #t-heroes{display:none!important} button.primary{padding:8px 22px;font-size:16px} }
   #touch{display:none;position:fixed;inset:auto 0 0 0;z-index:20;justify-content:space-between;padding:0 14px 14px;pointer-events:none}
   #touch .tgroup{display:flex;gap:10px;pointer-events:auto}
   #touch button{width:74px;height:74px;border-radius:50%;font-size:20px;opacity:.75;touch-action:none}
@@ -173,6 +176,7 @@
 <div class="overlay" id="screen-title">
   <video class="bgvid" id="titlevid" loop muted playsinline></video>
   <img id="t-logo" alt="">
+  <img id="t-heroes" alt="">
   <h1 id="t-title"></h1>
   <div class="dim" id="t-sub"></div>
   <button class="primary" id="btn-start"></button>

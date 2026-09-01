@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Drop stray opaque fragments left behind by a background key."""
+"""Drop stray opaque fragments left behind by a background key.
+
+ONLY run this on sprites that went through decheck.py. Art that shipped with a
+real alpha channel has legitimate small parts -- muzzle flashes, spent shells,
+flying debris, cheese droplets -- and this will delete every one of them.
+"""
 import sys, numpy as np
 from PIL import Image
 from scipy import ndimage

@@ -39,6 +39,16 @@ export const CFG = {
   grenadeRadius: 160, shrapnelN: 9, shrapnelSpd: 540, shrapnelLife: 340,
   meleeRange: 58, meleeCd: 320, meleeDmg: 3,
   cheeseVx: 300, cheeseVy: -360, cheeseLife: 6000, cheeseRadius: 260,
+  // v13.9 LASER POINTER. Not a gun -- it never does a point of damage. It is
+  // the cheese lure upgraded: instead of lobbing a lump and waiting for it to
+  // land, you put a red dot exactly where you want it, instantly, at range,
+  // and every rat and alien in reach stops fighting to chase it. It replaces
+  // the L-button lure rather than your primary weapon, on purpose: it changes
+  // how you handle a crowd without ever taking your gun away.
+  pointerCharge: 220,      // battery, in tenths of a second of continuous use
+  pointerCd: 55,           // how often the dot can be re-placed while held
+  pointerReach: 620,       // how far ahead of you it will paint
+  pointerLife: 420,        // how long the dot lingers once you stop pointing
   // v13.3: 380ms was below the reaction floor. A typical simple visual
   // reaction is ~250ms and a slower player needs 400-600ms, so the tell
   // expired before they had moved -- and at close range (a grunt walks to

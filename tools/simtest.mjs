@@ -139,6 +139,8 @@ while (simMs < MAXMS && !victory && !gameover) {
       const key = ev.e + ':' + (ev.k || ev.which || '');
       if (!seen.has(key)) { seen.add(key); console.log((simMs / 1000).toFixed(1) + 's', key, 'x=' + Math.round(Math.max(...g.players.map(p => p.x)))); }
     }
+    if (ev.e === 'banner' && (ev.k === 'outOfAmmo' || ev.k === 'duelJam' || ev.k === 'theyreOutToo'))
+      console.log((simMs / 1000).toFixed(1) + 's DUEL BANNER:', ev.k);
     if (ev.e === 'victory') victory = true;
     if (ev.e === 'gameover') gameover = true;
   }
@@ -148,6 +150,9 @@ const maxX = Math.round(Math.max(...g.players.map(p => p.x)));
 console.log('---');
 console.log('simulated', (simMs / 1000).toFixed(0) + 's, maxX=' + maxX, 'cam=' + Math.round(g.cam), 'score=' + g.score, 'pows=' + g.pows, 'deaths=' + g.players.reduce((a, p) => a + p.deaths, 0));
 console.log('waves done:', g.waves.filter(w => w.done).length + '/' + g.waves.length, 'camLock=' + Math.round(g.camLock));
+// v13.9: prove the duel's dry-click was CAUSED. duelDry means the player shot
+// the magazine empty; duelJam means they never fired and the gun jammed instead.
+console.log('duel: standoff=' + !!g.standoff + ' invasion=' + !!g.invasion + ' ammoLeft=' + (g.duelAmmo === undefined ? 'n/a' : g.duelAmmo) + ' ranDry=' + !!g.duelDry + ' jammed=' + !!g.duelJam);
 if (victory) console.log('RESULT: VICTORY — level completable end to end');
 else {
   console.log('RESULT: FAIL — no victory. boss=', g.boss && { hp: g.boss.hp, st: g.boss.st }, 'bossDone=', g.bossDone);

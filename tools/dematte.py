@@ -17,12 +17,19 @@ Two classes of residue, handled differently:
                  key ate. Refill it by nearest-real-pixel BFS, which follows the
                  local structure instead of streaking along one axis.
 
+DO NOT RUN THIS ON GRIMTAIL'S FLEET. As of v13.9 the flagship, the scanner
+ship and the shield nodes are deliberately mottled PINK AND MAGENTA flesh over
+brass -- that is the faction's colour, not chroma residue. This tool cannot
+tell the difference and will eat the hull. Those files are listed in SKIP below
+and are excluded from both the report and --write.
+
 Idempotent: a clean sprite comes back byte-identical, so it is safe to re-run
 over the whole tree.
 
   python3 tools/dematte.py assets/sprites/*.png        # report only
   python3 tools/dematte.py --write assets/sprites/*.png
 """
+import os
 import sys
 from collections import deque
 
@@ -110,10 +117,24 @@ def clean(path, write=False, fill=False):
     return len(rim), (len(holes) if fill else 0)
 
 
+# v13.9: Grimtail's fleet is pink-and-magenta flesh BY DESIGN. The chroma key
+# cannot tell that from residue and would strip the hull, so these never pass
+# through it. Add any new pink-fleet art here.
+SKIP = {
+    'alien_scanship', 'alien_scanship_hurt', 'alien_scanship_wreck',
+    'grim_node_dormant', 'grim_node_waking', 'grim_node_live',
+    'grim_trophy_wall', 'grimtail_crawl',
+}
+
+
 def main(argv):
     write = '--write' in argv
     fill = '--fill' in argv
     files = [a for a in argv if not a.startswith('--')]
+    skipped = [f for f in files if os.path.basename(f)[:-4] in SKIP]
+    files = [f for f in files if os.path.basename(f)[:-4] not in SKIP]
+    if skipped:
+        print(f"  (skipping {len(skipped)} pink-fleet sprite(s) -- their magenta is the art)")
     if not files:
         sys.exit(__doc__)
     total = 0

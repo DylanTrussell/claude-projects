@@ -361,6 +361,59 @@ function drawGround(ctx, cam, inv) {
 }
 
 // floating islands over the long gap — hovering chunks of blasted earth
+// v13.9 -- WORLD SCENERY. Fixed props keyed to world x, drawn on the ground
+// plane behind everything that moves.
+//
+// This exists because of one note: "molten cheese is never established before
+// the payoff." The finale pays off molten cheese having never once shown you
+// molten cheese. Now the approach to the boss runs past the vats it comes out
+// of, they are visibly cooking, and the ground past them is already stained.
+const SCENERY = [
+  { x: 6180, img: 'cheese_vat', h: 150 },
+  { x: 6520, img: 'cheese_vat', h: 168 },
+  { x: 6760, img: 'cheese_vat_tipped', h: 132, pour: 1 },
+];
+
+function drawScenery(ctx, cam, t) {
+  for (const s of SCENERY) {
+    const sx = s.x - cam;
+    if (sx < -420 || sx > W + 420) continue;
+    const img = IMG[s.img];
+    if (!img) continue;
+    const h = s.h, w = h * (img.width / img.height);
+    const y = CFG.groundY - h + 6;
+    // heat haze and the glow it throws on the ground around it
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.16 + 0.06 * Math.sin(t / 420 + s.x);
+    const gl = ctx.createRadialGradient(sx + w / 2, CFG.groundY - 10, 0, sx + w / 2, CFG.groundY - 10, w * 0.9);
+    gl.addColorStop(0, 'rgba(255,170,50,0.9)');
+    gl.addColorStop(1, 'rgba(255,170,50,0)');
+    ctx.fillStyle = gl;
+    ctx.beginPath(); ctx.ellipse(sx + w / 2, CFG.groundY - 10, w * 0.9, 44, 0, 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.drawImage(img, sx, y, w, h);
+    // the tipped one leaves a spreading pool that creeps along the ground
+    if (s.pour) {
+      ctx.fillStyle = PAL.cheeseDark;
+      const pw = w * 1.5 + Math.sin(t / 900) * 10;
+      ctx.beginPath(); ctx.ellipse(sx + w * 0.75, CFG.groundY + 4, pw / 2, 11, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = PAL.cheese;
+      ctx.beginPath(); ctx.ellipse(sx + w * 0.75, CFG.groundY + 1, pw / 2.3, 7, 0, 0, 7); ctx.fill();
+    }
+    // steam off the surface
+    for (let i = 0; i < 3; i++) {
+      const ph = ((t / 1700) + i * 0.33 + s.x * 0.001) % 1;
+      ctx.globalAlpha = 0.28 * (1 - ph);
+      ctx.fillStyle = '#d8d2c4';
+      ctx.beginPath();
+      ctx.arc(sx + w * (0.3 + i * 0.2) + Math.sin(t / 500 + i) * 8, y - ph * 70, 7 + ph * 13, 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
 function drawIslands(ctx, cam, t) {
   for (const isl of LEVEL.islands) {
     if (isl.x + isl.w < cam - 80 || isl.x > cam + W + 80) continue;
@@ -501,6 +554,21 @@ function drawPickup(ctx, x, y, kind, t) {
     ctx.fillStyle = PAL.cheeseDark;
     ctx.beginPath(); ctx.arc(-2, 4, 3, 0, 7); ctx.fill();
     ctx.beginPath(); ctx.arc(7, -2, 2.4, 0, 7); ctx.fill();
+  } else if (kind === 'pointer') {
+    // v13.9: the pointer sitting on the floor, already casting its dot forward,
+    // so what it does is legible before you pick it up.
+    if (!drawImg(ctx, 'pickup_pointer', -34, -16, 68, 30, false)) {
+      ctx.fillStyle = PAL.khakiDark; ctx.fillRect(-16, -6, 30, 12); ctx.strokeRect(-16, -6, 30, 12);
+      ctx.fillStyle = '#ff3a3a'; ctx.fillRect(14, -3, 6, 6);
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const pg = ctx.createRadialGradient(40, 0, 0, 40, 0, 22);
+    pg.addColorStop(0, `rgba(255,90,80,${0.5 + 0.3 * Math.sin(t / 180)})`);
+    pg.addColorStop(1, 'rgba(255,60,60,0)');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(40, 0, 22, 0, 7); ctx.fill();
+    ctx.restore();
   } else if (kind === 'raygun') {
     if (!drawImg(ctx, 'pickup_raygun', -26, -20, 52, 34, false)) {
       ctx.fillStyle = PAL.teal; ctx.fillRect(-18, -8, 34, 12);
@@ -1475,6 +1543,7 @@ export function render(ctx, view, t, myPid, dbg) {
   else if (inv) drawAirWar(ctx, t, inv);
 
   drawGround(ctx, cam, inv);
+  drawScenery(ctx, cam, view.t || t);   // v13.9: the cheese vats, before the payoff
   drawIslands(ctx, cam, view.t || t);
   // blood splats stay on the ground where cats fell
   for (const s of FX.splats) {
@@ -1491,7 +1560,41 @@ export function render(ctx, view, t, myPid, dbg) {
   drawTraps(ctx, cam, view.tr || []);
   drawPlatforms(ctx, cam, view.crates, t);
 
-  for (const l of view.lu || []) { drawPickup(ctx, l[0] - cam, l[1] + 14, 'cheese', t); }
+  // v13.9: the beam itself, from the pointing paw to the dot. Drawn before the
+  // dot so the dot's bloom sits on top of the line's far end.
+  const ldot = (view.lu || []).find(l => l[2]);
+  if (ldot) {
+    for (const p of view.pl || []) {
+      if (!p[22]) continue;
+      const hx = p[2] - cam + p[4] * 46, hy = p[3] - 62;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = 'rgba(255,60,55,0.5)'; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(ldot[0] - cam, ldot[1] + 14); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,220,215,0.85)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(ldot[0] - cam, ldot[1] + 14); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // v13.9: a lure is either a lump of cheese on the ground or the laser dot.
+  // The dot is not a pickup drawing -- it is a hot point of light with a bloom,
+  // and it jitters the way a real pointer does in a real paw.
+  for (const l of view.lu || []) {
+    const lx = l[0] - cam, ly = l[1] + 14;
+    if (!l[2]) { drawPickup(ctx, lx, ly, 'cheese', t); continue; }
+    const jx = Math.sin(t / 47) * 2.5, jy = Math.cos(t / 61) * 1.8;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const gr = ctx.createRadialGradient(lx + jx, ly + jy, 0, lx + jx, ly + jy, 46);
+    gr.addColorStop(0, 'rgba(255,120,110,0.85)');
+    gr.addColorStop(0.35, 'rgba(255,40,40,0.35)');
+    gr.addColorStop(1, 'rgba(255,40,40,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(lx + jx, ly + jy, 46, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,238,236,0.98)';
+    ctx.beginPath(); ctx.arc(lx + jx, ly + jy, 4.2, 0, 7); ctx.fill();
+    ctx.restore();
+  }
   // v13: sim-authoritative burning ground (survives across frames, damages
   // enemies) mirrored into the client-side FX.fires list the renderer draws.
   // Matched by rounded x so a patch isn't re-added every snapshot.

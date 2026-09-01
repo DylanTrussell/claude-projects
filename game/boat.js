@@ -11,6 +11,12 @@ import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burs
 
 const GY = 640;
 
+// v13.9 -- the scanner ship's kill sequence, in ms from the moment the run
+// ends. Sweep the cone across the river, lock it on the boat, then fire.
+const KILL_LOCK = 1500;   // cone stops sweeping and sits on you
+const KILL_FIRE = 2700;   // the beam lands
+const KILL_END  = 4400;   // cut to the film
+
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
 // v13.4, rebuilt from scratch (Dylan: "it doesn't look like water. It just
@@ -120,6 +126,7 @@ export class PTBoat extends RailBase {
     this.mines = []; this.depth = []; this.started = false;
     this.wake = 0;
     this.flyby = null; this.flybySpawned = false; // boss_ship_1 background tension beat, see below
+    this.kill = null;           // v13.9: the scan-lock-burn sequence that ends the section
   }
   step(bits, dt, p) {
     if (this.done) return;
@@ -249,7 +256,39 @@ export class PTBoat extends RailBase {
       if (this.flyby.t > 11500) this.flyby = null;
     }
 
-    if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'ptboatDone' }); this.ev({ e: 'sfx', n: 'sfx_explosion' }); }
+    // v13.9 -- the boat does not just run out of clock. The scanner ship comes
+    // back, sweeps the river with a green scan cone, finds you, holds you in
+    // it, and burns the boat out from under you. THAT is why the next thing
+    // you see is a film of the cat on a surfboard. Previously the film simply
+    // happened and Dylan called it out: no cause you could see.
+    if (!this.kill && this.ended()) {
+      this.kill = { t: 0, hit: 0 };
+      this.ev({ e: 'banner', k: 'shipScan' });
+      this.ev({ e: 'sfx', n: 'sfx_ufo' });
+    }
+    if (this.kill) {
+      this.kill.t += dt;
+      const k = this.kill.t;
+      // the cone crosses the water and locks: you get to watch it find you
+      if (k > KILL_LOCK && !this.kill.locked) {
+        this.kill.locked = 1;
+        this.ev({ e: 'sfx', n: 'sfx_laser' });
+        this.ev({ e: 'banner', k: 'shipLock' });
+      }
+      // the beam lands
+      if (k > KILL_FIRE && !this.kill.hit) {
+        this.kill.hit = 1;
+        this.shake = 26;
+        this.ev({ e: 'sfx', n: 'sfx_explosion' });
+        this.ev({ e: 'shake' });
+      }
+      if (k > KILL_END) {
+        this.done = true;
+        this.ev({ e: 'banner', k: 'ptboatDone' });
+      }
+      this.prevBits = bits;
+      return;   // the boat is no longer yours to steer once the beam is on it
+    }
     this.prevBits = bits;
   }
 
@@ -318,6 +357,25 @@ export class PTBoat extends RailBase {
       ctx.strokeStyle = s.foe ? PAL.ray : PAL.tracer; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.03, s.y - s.vy * 0.03); ctx.stroke();
     }
+    // v13.9 -- Charlie came down the river too, riding a fuel drum off the
+    // boat's quarter. Same standing rule as the surf and the parley: after the
+    // truce he is in the scene, not waiting offscreen for the next cutscene.
+    const cdi = IMG.charlie_tank;
+    if (cdi && !this.kill) {
+      const cb = Math.sin(now / 300 + 2.2) * 7;
+      const dh = 96, dw = dh * (cdi.width / cdi.height);
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(cdi, 92 - dw / 2, this.py + 96 - dh / 2 + cb, dw, dh);
+      ctx.restore();
+      // his own wake, so he reads as moving with the current and not pasted on
+      ctx.strokeStyle = 'rgba(220,240,235,0.35)'; ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(92 - dw / 2 - i * 16, this.py + 122 + cb + Math.sin(this.wake * 4 + i) * 3);
+        ctx.lineTo(92 - dw / 2 - 18 - i * 16, this.py + 126 + cb); ctx.stroke();
+      }
+    }
     // the boat
     const bi = IMG.ptboat_vehicle;
     const bob = Math.sin(now / 260) * 6;
@@ -336,12 +394,101 @@ export class PTBoat extends RailBase {
     }
     if (this.fireT > 0) drawMuzzleBurst(ctx, 300, this.py - 8 + bob, 0, this.fireT / 70); // v11.2: real fire burst
     this.drawBooms(ctx);
+    // v13.9 -- scan, lock, burn. Drawn over the boat so the beam lands ON it.
+    if (this.kill) this.drawKill(ctx, now, this.py + bob);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(W / 2 - 200, 14, 400, 10);
     ctx.fillStyle = PAL.cheese; ctx.fillRect(W / 2 - 200, 14, 400 * Math.min(1, this.t / this.dur), 10);
     ctx.font = 'bold 20px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = PAL.boom2;
     ctx.fillText('CHARGES ' + '▮'.repeat(this.charges), 24, 86);
+  }
+
+  // v13.9 -- the scanner ship comes in over the river, sweeps its cone until it
+  // finds the boat, holds, and burns it. Three sprites do the work:
+  // alien_scanship (hull), alien_scan_cone (the search light), alien_scan_laser
+  // (the kill beam). The cone and beam are separate sprites precisely so they
+  // can pulse and blend here instead of sitting baked into the hull.
+  drawKill(ctx, now, boatY) {
+    const k = this.kill.t;
+    const bx = 220;                                    // the boat's x, fixed
+    // the ship slides in from the right and parks above you
+    const inK = Math.min(1, k / KILL_LOCK);
+    const ease = 1 - Math.pow(1 - inK, 3);
+    const shipX = W + 300 + (bx - (W + 300)) * ease;
+    const shipY = 120;
+    const hull = IMG.alien_scanship;
+    const hh = 190, hw = hull ? hh * (hull.width / hull.height) : 380;
+
+    // the cone: sweeps ahead of the ship while searching, snaps straight down
+    // and goes hot once it has you
+    const cone = IMG.alien_scan_cone;
+    const locked = k > KILL_LOCK;
+    const sweep = locked ? 0 : Math.sin(k / 260) * 190;
+    const coneTop = shipY + hh * 0.28;
+    const coneH = Math.max(0, boatY + 40 - coneTop);
+    if (cone && coneH > 0 && k < KILL_FIRE) {
+      const cw = coneH * (cone.width / cone.height) * 0.9;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (locked ? 0.85 : 0.5) * (0.8 + 0.2 * Math.sin(now / 90));
+      ctx.drawImage(cone, shipX + sweep - cw / 2, coneTop, cw, coneH);
+      ctx.restore();
+      // the pool of light it throws on the water, so the sweep reads on the surface
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = locked ? 0.5 : 0.28;
+      const gr = ctx.createRadialGradient(shipX + sweep, boatY, 0, shipX + sweep, boatY, 210);
+      gr.addColorStop(0, 'rgba(140,255,150,0.85)');
+      gr.addColorStop(1, 'rgba(140,255,150,0)');
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.ellipse(shipX + sweep, boatY, 210, 60, 0, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+
+    // the kill beam
+    if (k > KILL_FIRE) {
+      const bk = Math.min(1, (k - KILL_FIRE) / 260);
+      const beam = IMG.alien_scan_laser;
+      const bw = (beam ? 74 : 60) * (0.6 + bk * 0.8);
+      const top = shipY + hh * 0.25;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.95;
+      if (beam) ctx.drawImage(beam, bx - bw / 2, top, bw, boatY - top + 30);
+      else { ctx.fillStyle = 'rgba(150,255,160,0.9)'; ctx.fillRect(bx - bw / 2, top, bw, boatY - top + 30); }
+      // impact bloom on the hull
+      const ir = 90 + Math.sin(now / 40) * 26;
+      const g2 = ctx.createRadialGradient(bx, boatY, 0, bx, boatY, ir);
+      g2.addColorStop(0, 'rgba(230,255,220,0.95)');
+      g2.addColorStop(0.4, 'rgba(120,255,140,0.6)');
+      g2.addColorStop(1, 'rgba(120,255,140,0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(bx, boatY, ir, 0, 7); ctx.fill();
+      ctx.restore();
+      // the boat going up: smoke and flame climbing out of the hit
+      for (let i = 0; i < 9; i++) {
+        const ph = (now / 260 + i * 0.7) % 1;
+        ctx.globalAlpha = 0.55 * (1 - ph);
+        ctx.fillStyle = i % 3 === 0 ? '#ffb020' : '#2a2a2a';
+        const px = bx - 60 + i * 15 + Math.sin(now / 300 + i) * 12;
+        ctx.beginPath(); ctx.arc(px, boatY - ph * 150, 10 + ph * 26, 0, 7); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // the ship itself, drawn last so it sits above its own cone
+    ctx.save();
+    ctx.globalAlpha = 0.98;
+    if (hull) ctx.drawImage(hull, shipX - hw / 2, shipY - hh / 2, hw, hh);
+    else { ctx.fillStyle = '#5a3a4a'; ctx.beginPath(); ctx.ellipse(shipX, shipY, hw / 2, hh / 3, 0, 0, 7); ctx.fill(); }
+    ctx.restore();
+
+    // white-out into the film, so the cut is the beam and not a hard splice
+    if (k > KILL_END - 900) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (k - (KILL_END - 900)) / 900).toFixed(3)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 }
 
@@ -482,6 +629,19 @@ export class Surf extends RailBase {
         ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
         ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke();
       }
+    }
+    // v13.9 -- Charlie rides the same wave. Standing rule: after the truce this
+    // is a two-cat war, and the surf section had Whiskers out here on his own.
+    // Drawn first, so he sits behind and slightly up the face on his own board,
+    // bobbing on his own phase rather than moving as one unit with the player.
+    const ci = IMG.charlie_surf;
+    if (ci) {
+      const cbob = Math.sin(now / 260 + 1.7) * 6;
+      const ch = 104, cw = ch * (ci.width / ci.height);
+      ctx.save();
+      ctx.globalAlpha = this.dive > 0 ? 0.4 : 0.92;
+      ctx.drawImage(ci, 96 - cw / 2, this.py - 54 - ch / 2 + cbob, cw, ch);
+      ctx.restore();
     }
     // surfer
     const bob = Math.sin(now / 220) * 5;

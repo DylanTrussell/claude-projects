@@ -73,6 +73,9 @@ export const STR = {
   throatRipped: "THROAT. RIPPED.",
   followLight: "FOLLOW THE LIGHT",
   outOfAmmo: "*CLICK* — OUT OF AMMO",
+  // v13.9: you can reach the end of the duel without firing a shot. Then the
+  // gun did not run dry, it jammed, and the banner should not lie about it.
+  duelJam: "*CLICK* — THE GUN'S JAMMED",
   theyreOutToo: "...HE'S OUT TOO",
   actDoorgun: "RAT PATROL — MAN THE DOOR GUN",
   doorgunControls: "W/S ALTITUDE · A/D AIM GUN · J FIRE",
@@ -104,6 +107,10 @@ export const STR = {
   gotHealth: "+HEALTH",
   gotGrenades: "+3 GRENADES",
   gotCheese: "+CHEESE LURE",
+  // v13.9 laser pointer: the most cat weapon in the game. It does no damage.
+  gotPointer: "LASER POINTER! THEY CANNOT HELP THEMSELVES.",
+  pointerHint: "HOLD L — PAINT THE DOT. THEY'LL CHASE IT.",
+  pointerDead: "POINTER BATTERY DEAD",
   // v13 cheese arc (Dylan: "yes the rats are here to steal our cheese... you
   // either poison or blow up their cheese that they're stealing")
   cheeseBurned: "THEIR CHEESE. MOLTEN.",
@@ -121,7 +128,11 @@ export const STR = {
   actRiver: "ACT III, PART TWO — RIVER PATROL",
   riverControls: "W/S STEER · J BOW GUN · K DEPTH CHARGE",
   shipSighted: "SOMETHING HUGE, HIGH OVERHEAD...",
-  ptboatDone: "TORPEDOED! ABANDON SHIP!",
+  // v13.9: the boat is not torpedoed by nobody any more. The scanner ship
+  // finds you and burns it, and you watch it happen.
+  shipScan: "IT CAME BACK. IT'S SEARCHING THE RIVER.",
+  shipLock: "IT SEES YOU",
+  ptboatDone: "BOAT'S GONE! GET ON SOMETHING THAT FLOATS!",
   chargesOut: "OUT OF DEPTH CHARGES",
   actSurf: "SWIM FOR IT — THE LZ IS CLOSE",
   surfControls: "W/S CARVE · J FIRE · K DUCK-DIVE",

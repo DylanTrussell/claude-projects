@@ -897,6 +897,10 @@ if (dev) {
   // dev-only: force a weapon so the flamethrower/raygun rendering can be
   // verified without hunting down the pickup first.
   window.__AMweap = (w, ammo) => { const p = g && g.players[0]; if (p) { p.weap = w; p.ammo = ammo || 999; } };
+  // dev-only: drop the player at a world x so a section can be checked without
+  // playing up to it. __AMtp above is the tunnel's teleport; this is topside.
+  window.__AMgo = (x) => { const p = g && g.players[0]; if (!p) return null; p.x = x; g.cam = Math.max(0, x - 400); g.camLock = -1; return { x: p.x, cam: g.cam }; };
+  window.__AMlaser = (n) => { const p = g && g.players[0]; if (p) p.laser = n === undefined ? 220 : n; return p && p.laser; };
   // dev-only: force the TUNNEL weapon, so the shotgun/claw viewmodels and
   // their fire paths can be exercised without walking the whole level first
   window.__AMtweap = (w, n) => { if (tunnel) { tunnel.weap = w; if (w === 'shotgun') { tunnel.hasShotgun = true; tunnel.shells = n || 8; } } };
@@ -920,6 +924,7 @@ if (dev) {
   const tunnelMode = +(qs.get('tunnel') || 0);
   if (tunnelMode === 1 || tunnelMode === 2) {
     if (IMG.logo) { $('t-logo').src = IMG.logo.src; $('t-logo').style.display = 'block'; $('t-title').style.display = 'none'; }
+  if (IMG.heroes_backtoback) { $('t-heroes').src = IMG.heroes_backtoback.src; $('t-heroes').style.display = 'block'; }
     directTunnel = true; // loop-1: ?tunnel=2 booted to ~3s of raw black -- skip the topside fall beat
     // A browser keeps the AudioContext SUSPENDED until a real user gesture.
     // The normal route unlocks it when you click SKIP on the opening film;
@@ -944,6 +949,7 @@ if (dev) {
   }
   if (dev && +(qs.get('warp') || 0) > 0) {
     if (IMG.logo) { $('t-logo').src = IMG.logo.src; $('t-logo').style.display = 'block'; $('t-title').style.display = 'none'; }
+  if (IMG.heroes_backtoback) { $('t-heroes').src = IMG.heroes_backtoback.src; $('t-heroes').style.display = 'block'; }
     startGame();
     requestAnimationFrame(frame);
     return;
@@ -964,5 +970,6 @@ if (dev) {
   });
   // (start screen removed — title video no longer loaded)
   if (IMG.logo) { $('t-logo').src = IMG.logo.src; $('t-logo').style.display = 'block'; $('t-title').style.display = 'none'; }
+  if (IMG.heroes_backtoback) { $('t-heroes').src = IMG.heroes_backtoback.src; $('t-heroes').style.display = 'block'; }
   requestAnimationFrame(frame);
 })();

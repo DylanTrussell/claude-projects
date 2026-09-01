@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "apocalypse-meow-deaf",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["tools/serve.py", "8951", "public_deaf"],
+      "port": 8951
+    }
+  ]
+}
