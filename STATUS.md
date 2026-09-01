@@ -1,9 +1,22 @@
-# IS IT LIVE? **NO**
+# IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-Everything below is on this machine only. https://soft-cabin-573.higgsfield.gg/
-is still serving v13 — none of v13.3 or v13.4 is deployed. That URL only
-updates through the Higgsfield MCP `deploy_game` tool, game_id
-`78f224f4-218e-4c86-afbd-136b3c0abdf4`.
+v13.6 is live at **https://dylantrussell.github.io/claude-projects/** — served
+from the `gh-pages` branch, root path. Verified by curling the deployed
+`chunks.js` and confirming it points at the fixed truce film
+(`2bf7ea94-e9da-4a34-9066-da10ee44ac76.mp4`).
+
+**soft-cabin-573.higgsfield.gg is STALE (still v13)** and cannot currently be
+updated: the Higgsfield MCP `deploy_game` tool (game_id
+`78f224f4-218e-4c86-afbd-136b3c0abdf4`) is no longer present in this session's
+tool surface — confirmed absent via direct lookup, not just search — so that
+URL is orphaned until deploy_game (or an equivalent) comes back. Dylan
+authorized falling back to GitHub when this happened (2026-09-01).
+
+**To redeploy after future changes:** rebuild `public/` with
+`bash tools/assemble.sh`, then replace the contents of the `gh-pages` branch
+with it and push — see the deploy commit on that branch for the exact steps
+(worktree + copy + commit + push; Pages is already configured to serve
+`gh-pages` at `/`, so no reconfiguration is needed).
 
 ## Where to play the local build
 
