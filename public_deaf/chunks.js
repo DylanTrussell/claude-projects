@@ -281,7 +281,7 @@ export const VIDEO_URLS = {
   // LfUQipz6lQHdrWtSvlPw, but its only results-reader takes an array
   // parameter this MCP bridge cannot transmit, and the browser is signed into
   // a different ElevenLabs account -- so the audio cannot be pulled back.)
-  truce: CDN + '4e57b4fe-3fee-4de5-a1ea-4d877a0b10d2.mp4',
+  truce: CDN + '971e6fde-52d5-43eb-90dd-52525c06462a.mp4',
   // v13.4 story films (Dylan: "everything needs to have a cut scene"). All five
   // generated with ONE model (Seedance 2.0) using frames extracted from the
   // original intro/truce films as identity references, so the whole set reads
