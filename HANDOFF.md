@@ -1,6 +1,6 @@
 # HANDOFF — pick up here
 
-**IS IT LIVE?** Yes. v13.7 is deployed and verified at
+**IS IT LIVE?** Yes. v13.8 is deployed and verified at
 https://dylantrussell.github.io/claude-projects/ (GitHub Pages, `gh-pages`
 branch, root). Redeploy = `bash tools/assemble.sh`, then replace the contents
 of `gh-pages` with `public/` and push. Pages is already wired; no reconfig.
@@ -9,36 +9,19 @@ of `gh-pages` with `public/` and push. Pages is already wired; no reconfig.
 tool is not in the current toolset. Dylan authorised GitHub as the deploy
 target on 2026-09-01.
 
-## Why this handoff exists
+## The schema degradation is GONE
 
-The previous session's Higgsfield and ElevenLabs tools came through with EMPTY
-input schemas (`{"type":"object"}`, no properties), so any object/array
-argument was flattened to a string before reaching the server:
+Last session's Higgsfield/ElevenLabs tools came through with empty input
+schemas, so any array/object argument was flattened to a string. This session
+the schemas are intact and `creative_show_flow_results` worked first try. If it
+ever recurs, it is session-local — re-test one call before assuming a broken
+connector.
 
-- Higgsfield `generate_image` / `generate_video` / `generate_audio` → all
-  reject with `params: Invalid input`
-- ElevenLabs `creative_show_flow_results` → `session_ids must be an array of strings`
+## FIRST THING — DONE in v13.8
 
-Scalar-only calls worked fine (`creative_generate_in_flow`, `sandbox_exec`,
-`media_upload`/`media_confirm`, `models_explore`). Dylan confirmed Higgsfield
-works normally in another window, so this was session-local schema
-degradation, not a broken connector. **In a fresh session, re-test one
-generate call before assuming it is broken.**
-
-## FIRST THING TO DO in the new session
-
-Dylan's real ElevenLabs cat meows are already generated and completed, sitting
-in flow **`LfUQipz6lQHdrWtSvlPw`**:
-- node `0YqXfA9ti7eSSKMjLHYe` — the orange cat's big 4.4s rant
-- node `dBww84nOKLWh7LgPlPJr` — the orange cat's short wry line
-
-Pull them with `creative_show_flow_results(flow_id, session_ids=[...])` (the
-call that was blocked). Session ids for the rant:
-`KjPdgZPEVTZKYyqBOzH6`, `SR4EJRiNsWeGKvFIJ56j`, `RD0Ul9PaomNsTo0KCxGx`,
-`poDSKcxjRtaZrjz6yXCB`. For the short line: `mkZOLb1itI3ECKHW6Ycz`,
-`iSaAvyTYRu9qrmmuGu1A`, `gznC8og2BuPahI1q9hTe`, `zwPy6HhZ9VkTC6Zgzsq7`.
-
-Then swap them into the truce film in place of the current re-pitched audio.
+Dylan's real ElevenLabs meows (flow `LfUQipz6lQHdrWtSvlPw`) are in the film.
+Both orange lines are the generated tomcat now; the pitched-down black-cat
+stand-in from v13.7 is gone. See STATUS.md v13.8 for the levels and the method.
 
 ### The truce film speaker map — VERIFIED, do not get this wrong again
 

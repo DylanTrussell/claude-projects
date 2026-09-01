@@ -1,10 +1,37 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-v13.6 is live at **https://dylantrussell.github.io/claude-projects/** — served
+v13.8 is live at **https://dylantrussell.github.io/claude-projects/** — served
 from the `gh-pages` branch, root path. Verified by curling the deployed
-`chunks.js` and confirming it points at the fixed truce film
-(`2bf7ea94-e9da-4a34-9066-da10ee44ac76.mp4`).
+`chunks.js` and confirming it points at the current truce film
+(`971e6fde-52d5-43eb-90dd-52525c06462a.mp4`, HTTP 206 from the CDN).
 
+## v13.8 — the real meows are in the film (2026-09-01)
+
+Dylan's ElevenLabs takes (flow `LfUQipz6lQHdrWtSvlPw`) finally reached the
+film. v13.7 had stood in the black cat's own audio, pitched down 0.78-0.86,
+because the tool that fetches the takes was returning `session_ids must be an
+array of strings`. That was session-local schema degradation; the schemas came
+through intact this session and the call worked first try.
+
+Rebuilt from the ORIGINAL film (`64045a3a`), not from v13.7, so nothing
+compounds. Video stream copied — MD5 `eedbf4622ec9a1a9c662a22594418034` in and
+out. All three BLACK windows are sample-identical to the original: rms
+2326 / 14305 / 8080, the same fingerprint v13.7 established.
+
+| Window | Speaker | v13.8 |
+|---|---|---|
+| 13.4–15.2 "What the hell is that?" | BLACK | untouched |
+| 15.4–17.3 "…rat problem." | ORANGE | two wry deadpan meows |
+| 17.5–19.7 "I know how to set traps." | BLACK | untouched, the good take |
+| 19.9–24.3 the big speech | ORANGE | 2.30s opening + 1.92s closing yowl |
+| 24.4–25.3 "I'm in." | BLACK | untouched |
+
+The speech is cut from the 16s take at its own phrase boundaries so it
+escalates and lands, rather than fading mid-vocalisation. Original ducked to
+0.13 inside the two orange windows only, 60ms ramps. Level set by saturation
+instead of gain so nothing clips: encoded window rms 13394 / 19872, sitting
+alongside the black cat's own 20209. Centroid 3.0-3.3kHz, sub-120Hz energy
+0.01-0.04 — cat vocal, no roar.
 **soft-cabin-573.higgsfield.gg is STALE (still v13)** and cannot currently be
 updated: the Higgsfield MCP `deploy_game` tool (game_id
 `78f224f4-218e-4c86-afbd-136b3c0abdf4`) is no longer present in this session's
