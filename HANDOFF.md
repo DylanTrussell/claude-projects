@@ -1,6 +1,6 @@
 # HANDOFF — pick up here
 
-**IS IT LIVE?** Yes. v13.8 is deployed and verified at
+**IS IT LIVE?** Yes. v13.9 is deployed and verified at
 https://dylantrussell.github.io/claude-projects/ (GitHub Pages, `gh-pages`
 branch, root). Redeploy = `bash tools/assemble.sh`, then replace the contents
 of `gh-pages` with `public/` and push. Pages is already wired; no reconfig.

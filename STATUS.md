@@ -1,37 +1,64 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-v13.8 is live at **https://dylantrussell.github.io/claude-projects/** — served
-from the `gh-pages` branch, root path. Verified by curling the deployed
-`chunks.js` and confirming it points at the current truce film
-(`971e6fde-52d5-43eb-90dd-52525c06462a.mp4`, HTTP 206 from the CDN).
+v13.9 is live at **https://dylantrussell.github.io/claude-projects/** — served
+from the `gh-pages` branch, root path. Verified by curling the deployed modules
+and all 23 new sprites (HTTP 200 on every one) after the Pages rebuild.
 
-## v13.8 — the real meows are in the film (2026-09-01)
+## v13.9 — the sprites go in, three named bugs go out (2026-09-01)
 
-Dylan's ElevenLabs takes (flow `LfUQipz6lQHdrWtSvlPw`) finally reached the
-film. v13.7 had stood in the black cat's own audio, pitched down 0.78-0.86,
-because the tool that fetches the takes was returning `session_ids must be an
-array of strings`. That was session-local schema degradation; the schemas came
-through intact this session and the call worked first try.
+Sixteen new ChatGPT sprites across two batches, all wired, plus three items off
+the outstanding list.
 
-Rebuilt from the ORIGINAL film (`64045a3a`), not from v13.7, so nothing
-compounds. Video stream copied — MD5 `eedbf4622ec9a1a9c662a22594418034` in and
-out. All three BLACK windows are sample-identical to the original: rms
-2326 / 14305 / 8080, the same fingerprint v13.7 established.
+**Mittens is Mittens.** The rescue was drawing `grunt_us` — a US cat in a steel
+helmet, standing, holding a rifle — for a grey tabby tied to a chair. He is the
+real sprite now, he lifts out of the chair over the freeing beat instead of
+being deleted the frame you touch him, and the chair stays behind with its ropes
+cut. The cat standing nearest him is tagged as his **jailer** and gets his own
+art in every state. He is a VC cat, not a rat: `fps.js` level 0 is the VC
+tunnel.
 
-| Window | Speaker | v13.8 |
-|---|---|---|
-| 13.4–15.2 "What the hell is that?" | BLACK | untouched |
-| 15.4–17.3 "…rat problem." | ORANGE | two wry deadpan meows |
-| 17.5–19.7 "I know how to set traps." | BLACK | untouched, the good take |
-| 19.9–24.3 the big speech | ORANGE | 2.30s opening + 1.92s closing yowl |
-| 24.4–25.3 "I'm in." | BLACK | untouched |
+**The boat film has a cause.** The scanner ship comes back, sweeps the river
+with a scan cone, locks onto you and burns the boat out from under you. The
+cone and the kill beam are separate sprites so they blend and pulse. Previously
+the film simply happened.
 
-The speech is cut from the 16s take at its own phrase boundaries so it
-escalates and lands, rather than fading mid-vocalisation. Original ducked to
-0.13 inside the two orange windows only, 60ms ramps. Level set by saturation
-instead of gain so nothing clips: encoded window rms 13394 / 19872, sitting
-alongside the black cat's own 20209. Centroid 3.0-3.3kHz, sub-120Hz energy
-0.01-0.04 — cat vocal, no roar.
+**Both cats, every scene.** Charlie was missing from three sections and is now
+in all of them: a fuel drum off the boat's quarter, his own board in the surf,
+the left flank at the parley.
+
+**Molten cheese is established.** New world-scenery pass puts the vats on the
+approach to the boss, cooking and steaming, one already tipped and pouring. The
+finale used to pay off cheese it had never shown you.
+
+**The duel is honest.** "…HE'S OUT TOO" was a 2600ms stopwatch that force-set
+`noFire` whether you had fired once or never. You now start with a real 7-round
+magazine counted down per shot. A player who never fires gets a jam, and the
+banner says so instead of lying about running dry.
+
+**Laser pointer.** Does no damage. Upgrades the L-button lure rather than your
+primary: hold L to paint a dot at range, every alien in reach breaks off to
+chase it. Tap L is still the radio and the cheese lob. Verified headless — the
+dot lands at exactly player+reach, the battery drains, the alien stops ON the
+dot instead of continuing to the player, and its hp never moves.
+
+**Shield nodes, trophy wall, ending.** The nodes are real art in three states
+mapped onto armoured / just-hit / exposed, and they flinch on every hit. A wall
+of captured cat tags hangs behind Grimtail through the talk beats. When he
+loses, the hull comes apart and he drags himself out of his own wreckage on his
+elbows, trailing green blood.
+
+**Tooling.** `tools/decheck.py` keys the baked ChatGPT checkerboard by its
+defining property (two alternating tones; a real highlight is one flat tone), so
+it reaches pockets enclosed by the art. `tools/dematte.py` now SKIPS Grimtail's
+fleet — that art is deliberately pink and magenta and the chroma key would have
+eaten the hull.
+
+Gate 12/12 green. casual and good both complete end to end.
+
+### Known, not mine, not fixed
+`dematte` still reports chroma rim on five pre-existing fps viewmodels, worst
+`fps_pistol_reload` at 2245px. Pre-dates v13.9; `--write` would fix it but it
+changes approved art, so it is flagged rather than applied.
 **soft-cabin-573.higgsfield.gg is STALE (still v13)** and cannot currently be
 updated: the Higgsfield MCP `deploy_game` tool (game_id
 `78f224f4-218e-4c86-afbd-136b3c0abdf4`) is no longer present in this session's
