@@ -261,7 +261,18 @@ function playCutscene(which, then) {
   const vid = $('cutvid');
   cutsceneActive = true;
   touchPad(false);
-  $('cutscene').style.display = 'flex';
+  // v13.7 TRANSITIONS (Dylan: "the transitions between the levels and the cut
+  // scenes are super jarring, crazy, and not smooth, all over the place").
+  // A film used to open on top of whatever was still playing -- the mecha film
+  // literally starts the motorcycle engine loop and a rock track three events
+  // after it opens -- and it slammed in with no visual transition at all.
+  // Now: kill the gameplay audio bed, and fade the overlay in over black.
+  audio.eng(false); audio.hum(false); audio.stopMusic();
+  const cs = $('cutscene');
+  cs.style.transition = 'opacity 260ms linear';
+  cs.style.opacity = '0';
+  cs.style.display = 'flex';
+  requestAnimationFrame(() => { cs.style.opacity = '1'; });
   // v12: VIDEO_URLS was exported from chunks.js and imported by NOBODY -- the
   // only import anywhere was `{ CHUNKS }` in assets.js -- so this line always
   // played the bundled copy and the CDN entries were dead code. That is why
@@ -299,10 +310,16 @@ function playCutscene(which, then) {
     if (!cutsceneActive) return;
     cutsceneActive = false;
     if (vid._meowTick) { vid.removeEventListener('timeupdate', vid._meowTick); vid._meowTick = null; }
-    $('cutscene').style.display = 'none';
-    touchPad(true);
     vid.pause();
-    if (then) then();
+    // fade out to black rather than cutting straight back to the canvas, and
+    // hold one beat so back-to-back films don't flash the previous last frame
+    const cs2 = $('cutscene');
+    cs2.style.opacity = '0';
+    setTimeout(() => {
+      cs2.style.display = 'none';
+      touchPad(true);
+      if (then) then();
+    }, 260);
   };
   vid.onended = done;
   $('btn-skip2').onclick = done;
@@ -587,7 +604,12 @@ function frame(now) {
   requestAnimationFrame(frame);
   let dt = now - last; last = now;
   dt = Math.min(dt, 250);
-  fxUpdate(dt);
+  // v13.7: fxUpdate used to run unconditionally, so a section's act card and
+  // control hint expired while the film that introduces the section was still
+  // playing -- 'ACT III' and the ride hint are pushed in the SAME event batch
+  // as the mecha film, so the player reached the motorcycle having been shown
+  // neither. Freeze the HUD timers whenever the world is frozen.
+  if (!cutsceneActive && !loadingChunk) fxUpdate(dt);
 
   // v13.3 CONTINUE. checkpointState/restoreState have existed in sim.js the
   // whole time and nothing ever called them: running out of lives threw you
@@ -711,7 +733,13 @@ function frame(now) {
           // the rest of the batch AFTER a film/section event had fired --
           // the ride could burn its opening seconds under the mecha film.
           // Bail out and let handleEvents freeze the sim first.
-          if (g.events.some(ev => ev.e === 'cutscene' || ev.e === 'rail' || ev.e === 'victory')) break;
+          // v13.7: 'fps' and 'gameover' were missing here, so on a hitch frame
+          // the world kept stepping after the tunnel had been entered (you
+          // could walk past the door, take hits, or die AFTER the trigger) and
+          // a death in that tail started music_tunnel underneath an already
+          // displayed GAME OVER.
+          if (g.events.some(ev => ev.e === 'cutscene' || ev.e === 'rail' || ev.e === 'victory'
+                                  || ev.e === 'fps' || ev.e === 'gameover')) break;
         }
       }
       const evs = g.events.splice(0);

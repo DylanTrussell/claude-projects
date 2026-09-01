@@ -800,7 +800,7 @@ export class Tunnel {
             const bd2 = Math.max(0.2, Math.hypot(this.px - e.x, this.py - e.y));
             const spd2 = this.enemyKind === 'rat' ? 5.2 : 4.6;
             this.bolts.push({ x: e.x, y: e.y, vx: (this.px - e.x) / bd2 * spd2, vy: (this.py - e.y) / bd2 * spd2, t: 3000 });
-            this.ev({ e: 'sfx', n: 'sfx_laser' });
+            this.ev({ e: 'sfx', n: 'sfx_enemy_gun' });
           }
         }
         const see = d < 8.5 && this.los(e.x, e.y);
@@ -817,7 +817,13 @@ export class Tunnel {
             const bd = Math.max(0.2, d);
             const spd = this.enemyKind === 'rat' ? 5.2 : 4.6;
             this.bolts.push({ x: e.x, y: e.y, vx: (this.px - e.x) / bd * spd, vy: (this.py - e.y) / bd * spd, t: 3000 });
-            this.ev({ e: 'sfx', n: 'sfx_laser' });
+            // v13.7 (Dylan: "when the enemy fires at you in the tunnel it sounds
+            // like a weird electric pea shooter, when it should sound like just
+            // an enemy gun -- a gunshot, but you know it's coming from them, not
+            // you"). sfx_enemy_gun is a real gun report voiced dark and dull
+            // (spectral centroid 875Hz against the player pistol's 6812Hz), so
+            // it reads as incoming fire from over there rather than as your own.
+            this.ev({ e: 'sfx', n: 'sfx_enemy_gun' });
           }
         } else if (!see) { e.aiming = 0; e.aimT = 0; }
         continue;
@@ -889,7 +895,7 @@ export class Tunnel {
         e.flash = 320;
         e.st = 'wind'; e.t = 0;
         e.lvx = (this.px - e.x) / d; e.lvy = (this.py - e.y) / d;
-        this.ev({ e: 'sfx', n: this.enemyKind === 'rat' ? 'sfx_laser' : 'sfx_screech' });
+        this.ev({ e: 'sfx', n: this.enemyKind === 'rat' ? 'sfx_enemy_gun' : 'sfx_screech' });
       }
       if (e.flash > 0) e.flash -= dt;
     }

@@ -263,18 +263,25 @@ export const VIDEO_URLS = {
   // the original (untouched) video stream so lip-sync and the rest of the
   // scene's timing are unaffected. Re-verified post-splice via waveform
   // peak scan (not just "the ffmpeg command didn't error").
-  // v13.5 THE MEOW FIX, for real this time (Dylan, ~20 asks: "fix the meowing
-  // during the big speech -- get rid of the roaring"). Every previous pass
-  // replaced 19.9-24.3s, the SUBTITLE window of the speech. Spectral analysis
-  // of the actual film shows the roar is at 17.6-19.6s -- the line BEFORE it
-  // ("Well I know how to set traps") -- measuring rms 14.6k with 45% of its
-  // energy below 120Hz, the loudest event in the whole film, while the window
-  // everyone kept editing had already been ducked to rms 2.9k, i.e. inaudible.
-  // So the roar was never touched and the replacement was never heard. Now:
-  // the roar window is ducked to 7% and every dialogue line carries a meow
-  // performance RMS-matched to the film's own vocal level (~7-8k, vs the 2.9k
-  // the old splice left). Video stream copied, not re-encoded -- MD5 identical.
-  truce: CDN + '2bf7ea94-e9da-4a34-9066-da10ee44ac76.mp4',
+  // v13.7 THE MEOW FIX, corrected. v13.6 read the loud low-frequency event at
+  // 17.5-19.7s as "the roar" and ducked it to 7%. Pulling frames at each
+  // subtitle proves that window is the BLACK cat on screen -- it was his
+  // performance, the one Dylan calls the good meows, and v13.6 destroyed it
+  // ("the black cat had the good meows, and you got rid of those").
+  // Speaker map, verified frame by frame: BLACK 13.4-15.2, ORANGE 15.4-17.3,
+  // BLACK 17.5-19.7, ORANGE 19.9-24.3 (the big speech), BLACK 24.4-25.3.
+  // So: every BLACK window is now passed through untouched (bit-identical --
+  // measured rms 2326/14305/8080 in and out), and only the two ORANGE lines
+  // are revoiced. Their new performance is cut from the black cat's own
+  // approved take at its natural phrase dips, pitch-shifted down to 0.78-0.86
+  // for a bigger tomcat and layered as short beats (Dylan: "pick a bunch of
+  // the shorter ones and layer them in"). Same mic, same room tone, same
+  // film, so it sits natively instead of reading as library SFX.
+  // (ElevenLabs SFX was the intent and the generations DO exist in flow
+  // LfUQipz6lQHdrWtSvlPw, but its only results-reader takes an array
+  // parameter this MCP bridge cannot transmit, and the browser is signed into
+  // a different ElevenLabs account -- so the audio cannot be pulled back.)
+  truce: CDN + '4e57b4fe-3fee-4de5-a1ea-4d877a0b10d2.mp4',
   // v13.4 story films (Dylan: "everything needs to have a cut scene"). All five
   // generated with ONE model (Seedance 2.0) using frames extracted from the
   // original intro/truce films as identity references, so the whole set reads

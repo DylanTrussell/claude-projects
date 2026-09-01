@@ -151,6 +151,10 @@ export class ParleyBoss extends RailBase {
             hitSomething = true; s.t = 0;
             if (py.exposed) {
               py.hp--; this.ev({ e: 'sfx', n: 'sfx_meow' });
+              // v13.7 (Dylan: "the spaceship should be glowing and changing
+              // colours when it's taking damage") -- and the standing rule
+              // that everything visibly reacts to every hit.
+              this.hullHit = 260; this.hullDmg = Math.min(1, (this.hullDmg || 0) + 0.14);
               this.sparks.push({ x: px2, y: py2, t: 0, good: 1 });
               if (py.hp <= 0) {
                 py.alive = false;
@@ -195,6 +199,7 @@ export class ParleyBoss extends RailBase {
       this.atkT = 900; // enraged — faster next volley
     }
 
+    if (this.hullHit > 0) this.hullHit -= dt;
     // pylon armored/exposed pulse
     for (const py of this.pylons) {
       if (!py.alive) continue;
@@ -259,7 +264,52 @@ export class ParleyBoss extends RailBase {
     const bossPulse = this.laughPulse > 0 ? Math.sin(now / 60) * 6 : 0;
     if (ship) {
       const sh = 430, sw = sh * (ship.width / ship.height);
-      ctx.drawImage(ship, this.bx - sw * 0.5 + bossPulse * 0.4, this.by - sh * 0.60 + shipYOff, sw, sh);
+      const shx = this.bx - sw * 0.5 + bossPulse * 0.4, shy = this.by - sh * 0.60 + shipYOff;
+      ctx.drawImage(ship, shx, shy, sw, sh);
+      // v13.7 DAMAGE READ. A white hit-flash stamped onto the ship's OWN
+      // pixels (source-atop through an offscreen pass, the same technique the
+      // grunts use) plus a rising angry-red heat as the hull is worn down --
+      // so the flagship stops being the one thing in the game that soaks
+      // fire without reacting.
+      const hk = Math.max(0, (this.hullHit || 0) / 260);
+      const dmg = this.hullDmg || 0;
+      if (hk > 0 || dmg > 0) {
+        if (!this._hullCv || this._hullCv.width !== ship.width) {
+          this._hullCv = document.createElement('canvas');
+          this._hullCv.width = ship.width; this._hullCv.height = ship.height;
+        }
+        const hc = this._hullCv.getContext('2d');
+        hc.clearRect(0, 0, ship.width, ship.height);
+        hc.drawImage(ship, 0, 0);
+        hc.globalCompositeOperation = 'source-atop';
+        // heat first, then the flash on top of it
+        if (dmg > 0) {
+          hc.fillStyle = `rgba(255,${Math.round(90 - 60 * dmg)},${Math.round(60 - 40 * dmg)},${(0.30 * dmg * (0.7 + 0.3 * Math.sin(now / 220))).toFixed(3)})`;
+          hc.fillRect(0, 0, ship.width, ship.height);
+        }
+        if (hk > 0) {
+          hc.fillStyle = `rgba(255,255,255,${(0.85 * hk).toFixed(3)})`;
+          hc.fillRect(0, 0, ship.width, ship.height);
+        }
+        hc.globalCompositeOperation = 'source-over';
+        ctx.drawImage(this._hullCv, shx, shy, sw, sh);
+        // and it bleeds light from the wounds as it degrades
+        if (dmg > 0.25) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          for (let i = 0; i < 3; i++) {
+            const wx = shx + sw * (0.34 + i * 0.19), wy = shy + sh * (0.46 + (i % 2) * 0.12);
+            const fl = (0.5 + 0.5 * Math.sin(now / (140 + i * 60) + i)) * dmg;
+            const wg = ctx.createRadialGradient(wx, wy, 0, wx, wy, 46 * dmg + 14);
+            wg.addColorStop(0, `rgba(255,210,120,${(0.55 * fl).toFixed(2)})`);
+            wg.addColorStop(0.5, `rgba(255,110,50,${(0.30 * fl).toFixed(2)})`);
+            wg.addColorStop(1, 'rgba(255,60,20,0)');
+            ctx.fillStyle = wg;
+            ctx.beginPath(); ctx.arc(wx, wy, 46 * dmg + 14, 0, 7); ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
       // dome glow: his voice, shown not told -- pulses while he laughs/talks
       const domeX = this.bx + sw * 0.10, domeY = this.by - sh * 0.36 + shipYOff;
       const talk = this.phase !== 'fight' ? 0.5 + 0.5 * Math.sin(now / 190) : 0.25;
@@ -292,41 +342,101 @@ export class ParleyBoss extends RailBase {
       ctx.beginPath(); ctx.arc(this.bx, this.by, 190, 0, 7); ctx.fill();
     }
 
-    // pylons: shield emitter PODS -- chrome housing, energy core, and a live
-    // tether arcing back to the hull, so they read as part of the machine
-    // rather than floating circles
+    // v13.7 SHIELD NODES, redesigned (Dylan, with a screenshot: "the little
+    // coloured things that light up on the side that you shoot do not match
+    // the spacecraft at all. Design the hell out of these things."). They were
+    // grey hexagons with a flat blue dot -- generic UI buttons stuck onto a
+    // Giger-style biomechanical hull. The flagship is pink fleshy ribbing,
+    // chrome conduits and warm gold, so the nodes are now built from the SAME
+    // vocabulary: a fleshy pink sheath, chrome ribs wrapping it, a gold collar,
+    // and a core that cycles through the ship's own palette instead of sitting
+    // on one colour. Armoured = clenched shut and dim; exposed = iris opens,
+    // the core flares and the whole node breathes.
     for (const py of this.pylons) {
       if (!py.alive) continue;
       const px2 = this.bx + py.dx, py2 = this.by + py.dy;
-      // tether to the hull
-      ctx.strokeStyle = `rgba(120,190,255,${py.exposed ? 0.15 : 0.4})`;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.moveTo(px2, py2);
-      ctx.quadraticCurveTo((px2 + this.bx) / 2 + Math.sin(now / 180 + py.off) * 14, (py2 + this.by) / 2, this.bx, this.by);
-      ctx.stroke();
-      // housing: a hexagonal chrome pod
+      const ex = py.exposed;
+      const beat = 0.5 + 0.5 * Math.sin(now / (ex ? 90 : 420) + py.off);
+      // the core cycles the flagship's palette: gold -> rose -> chrome-cyan
+      const cyc = (now / 1500 + py.off) % 3;
+      const PAL3 = [[255, 214, 96], [255, 150, 190], [150, 220, 255]];
+      const c0 = PAL3[Math.floor(cyc)], c1 = PAL3[(Math.floor(cyc) + 1) % 3];
+      const f = cyc % 1;
+      const cr = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+      const cg = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+      const cb = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+
+      // living conduit back to the hull -- thick, fleshy, with a chrome core
+      const mx = (px2 + this.bx) / 2 + Math.sin(now / 180 + py.off) * 14;
+      const myy = (py2 + this.by) / 2;
+      ctx.strokeStyle = `rgba(206,138,158,${ex ? 0.5 : 0.75})`;
+      ctx.lineWidth = 9;
+      ctx.beginPath(); ctx.moveTo(px2, py2); ctx.quadraticCurveTo(mx, myy, this.bx, this.by); ctx.stroke();
+      ctx.strokeStyle = `rgba(${cr},${cg},${cb},${ex ? 0.85 : 0.35})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(px2, py2); ctx.quadraticCurveTo(mx, myy, this.bx, this.by); ctx.stroke();
+
       ctx.save();
-      ctx.translate(px2, py2); ctx.rotate(now / 900 + py.off);
-      ctx.fillStyle = '#5a5f6a'; ctx.strokeStyle = '#23252b'; ctx.lineWidth = 3;
-      ctx.beginPath();
-      for (let hx2 = 0; hx2 < 6; hx2++) {
-        const ha = hx2 * Math.PI / 3;
-        const hr = py.exposed ? 26 : 21;
-        if (hx2 === 0) ctx.moveTo(Math.cos(ha) * hr, Math.sin(ha) * hr);
-        else ctx.lineTo(Math.cos(ha) * hr, Math.sin(ha) * hr);
+      ctx.translate(px2, py2);
+      ctx.rotate(now / 2600 + py.off);           // slow, heavy -- it has mass
+      const R = (ex ? 30 : 23) + beat * (ex ? 3 : 1);
+
+      // fleshy sheath
+      const flesh = ctx.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.15, 0, 0, R);
+      flesh.addColorStop(0, '#e6aebb');
+      flesh.addColorStop(0.6, '#c47f95');
+      flesh.addColorStop(1, '#8d5468');
+      ctx.fillStyle = flesh;
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#3a2530'; ctx.lineWidth = 2.5; ctx.stroke();
+
+      // chrome ribs wrapping the sheath, like the hull's conduits
+      ctx.strokeStyle = 'rgba(226,232,240,0.85)'; ctx.lineWidth = 3;
+      for (let i = 0; i < 5; i++) {
+        const a0 = i * (Math.PI * 2 / 5);
+        ctx.beginPath(); ctx.arc(0, 0, R * 0.80, a0, a0 + 0.52); ctx.stroke();
       }
-      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(120,132,148,0.9)'; ctx.lineWidth = 1.5;
+      for (let i = 0; i < 5; i++) {
+        const a0 = i * (Math.PI * 2 / 5) + 0.26;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a0) * R * 0.5, Math.sin(a0) * R * 0.5);
+        ctx.lineTo(Math.cos(a0) * R * 0.98, Math.sin(a0) * R * 0.98); ctx.stroke();
+      }
+      // gold collar
+      ctx.strokeStyle = `rgba(214,170,84,${ex ? 0.95 : 0.6})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, R * 0.62, 0, 7); ctx.stroke();
+
+      // the iris: clenched when armoured, wide open when exposed
+      const iris = ex ? 1 : 0.32;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.62);
+      core.addColorStop(0, `rgba(255,255,240,${(ex ? 0.95 : 0.30) * (0.75 + 0.25 * beat)})`);
+      core.addColorStop(0.45, `rgba(${cr},${cg},${cb},${(ex ? 0.85 : 0.28) * (0.7 + 0.3 * beat)})`);
+      core.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = core;
+      ctx.beginPath(); ctx.arc(0, 0, R * 0.62 * (0.55 + 0.45 * iris), 0, 7); ctx.fill();
       ctx.restore();
-      // the core
-      const glow = py.exposed ? 1 : 0.35;
-      ctx.fillStyle = py.exposed ? `rgba(255,240,140,${0.75 + 0.25 * Math.sin(now / 40)})` : `rgba(90,170,255,${glow})`;
-      ctx.beginPath(); ctx.arc(px2, py2, py.exposed ? 15 : 10, 0, 7); ctx.fill();
-      ctx.strokeStyle = 'rgba(20,20,24,0.8)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(px2, py2, py.exposed ? 15 : 10, 0, 7); ctx.stroke();
-      // hp pips (4 since v13.5)
+      // iris blades closing over the core when armoured
+      if (!ex) {
+        ctx.fillStyle = 'rgba(58,37,48,0.92)';
+        for (let i = 0; i < 6; i++) {
+          const a0 = i * (Math.PI / 3) + now / 2600;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, R * 0.52, a0, a0 + 0.42);
+          ctx.closePath(); ctx.fill();
+        }
+      }
+      ctx.restore();
+
+      // hp pips, on a dark plate so they read against the hull
+      const pw2 = 4 * 12 + 6;
+      ctx.fillStyle = 'rgba(18,14,20,0.55)';
+      ctx.fillRect(px2 - pw2 / 2, py2 - (ex ? 42 : 34) - 3, pw2, 11);
       for (let i = 0; i < 4; i++) {
-        ctx.fillStyle = i < py.hp ? '#f3e9c8' : 'rgba(243,233,200,0.2)';
-        ctx.fillRect(px2 - 21 + i * 12, py2 - (py.exposed ? 34 : 28), 8, 5);
+        ctx.fillStyle = i < py.hp ? `rgb(${cr},${cg},${cb})` : 'rgba(243,233,200,0.18)';
+        ctx.fillRect(px2 - pw2 / 2 + 5 + i * 12, py2 - (ex ? 42 : 34), 8, 5);
       }
     }
 

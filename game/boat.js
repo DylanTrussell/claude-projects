@@ -381,7 +381,13 @@ export class Surf extends RailBase {
     }
 
     if ((bits & C.FIRE) && this.gunCd <= 0) {
-      this.gunCd = 130; this.fireT = 70;
+      // v13.7 (Dylan: "the surfboard cat is still holding a limp pistol and
+      // just shooting out of nowhere. Give him back his main machine gun from
+      // the game."). surf_hero.png has the pistol painted into the raised arm
+      // and cannot be regenerated right now, so the gatling he carries
+      // everywhere else (wep_gatling) is drawn OVER that arm and the rounds
+      // leave ITS barrel. Machine-gun cadence: 130ms -> 70ms.
+      this.gunCd = 70; this.fireT = 70;
       this.ev({ e: 'sfx', n: 'sfx_shot' });
       // v13.4 (Dylan: "he's got a pistol on the surfboard, but it's not
       // firing and recoiling. He's just holding it, and a random bullet's
@@ -389,8 +395,9 @@ export class Surf extends RailBase {
       // at u 0.570 / v 0.027 of surf_hero.png -- measured, not guessed. Rounds
       // leave THAT point, arcing forward-down to the water line, and the
       // recoil timer kicks the whole sprite back for the render.
-      this.recoilT = 110;
-      this.shots.push({ x: 228, y: this.py - 57, vx: 880, vy: 150, t: 900 });
+      this.recoilT = 70;                                  // lighter, faster kick
+      // the gatling muzzle, derived from the overlay transform in render()
+      this.shots.push({ x: 319, y: this.py - 52, vx: 1020, vy: 0, t: 900 });
     }
     for (const s of this.shots) {
       s.x += s.vx * dts; s.y += (s.vy || 0) * dts; s.t -= dt;
@@ -492,8 +499,20 @@ export class Surf extends RailBase {
         ctx.translate(-220, -(this.py + bob));
       }
       ctx.drawImage(si, 220 - sw / 2 - rk * 5, this.py - sh / 2 + bob, sw, sh);
+      // v13.7: the gatling, gripped at his raised hand (measured at u 0.78 /
+      // v 0.20 of surf_hero.png) and angled forward so it covers the painted
+      // pistol entirely. Same weapon he carries on foot.
+      const gi = IMG.wep_gatling;
+      if (gi) {
+        const gw = 86, gh = gw * (gi.height / gi.width);
+        ctx.save();
+        ctx.translate(250 - rk * 5, this.py - 38 + bob);
+        ctx.rotate(-0.12 - rk * 0.10);                 // muzzle rises on recoil
+        ctx.drawImage(gi, -gw * 0.18, -gh * 0.55, gw, gh);
+        ctx.restore();
+      }
       ctx.restore();
-      if (rk > 0.2) drawMuzzleBurst(ctx, 228 + 6, this.py - 57 + bob, 0.16, rk);
+      if (rk > 0.15) drawMuzzleBurst(ctx, 319 - rk * 5, this.py - 52 + bob, 0.02, rk);
     } else {
       ctx.save(); if (this.dive > 0) ctx.globalAlpha = 0.55;
       ctx.fillStyle = PAL.khaki; ctx.fillRect(190, this.py - 44 + bob, 60, 40);

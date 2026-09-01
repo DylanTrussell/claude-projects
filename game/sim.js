@@ -155,6 +155,11 @@ function stepBike(g, p, bits, dt, dts) {
   p.face = 1; p.runT += dt;
   let v = CFG.bikeBase;
   if (bits & C.R) v = CFG.bikeMax; else if (bits & C.L) v = CFG.bikeMin;
+  // v13.7: after a respawn, hold the bike at a crawl for a beat so the player
+  // gets their bearings before the throttle opens again -- otherwise you are
+  // moving at speed the instant you regain control, which is what turned one
+  // washout into a death loop.
+  if (p.bikeHold > 0) { p.bikeHold -= dt; v = Math.min(v, CFG.bikeMin); }
   p.vx = v;
   const jp = (bits & C.JUMP) && !(p.prevC & C.JUMP);
   if (jp && p.onG) { p.vy = CFG.bikeJumpVy; p.onG = false; }
@@ -331,12 +336,19 @@ function platformUnder(g, x, y, vy) {
 //
 // A respawn point now has to carry RUN_UP of clear ground ahead of it, which
 // is what makes the very next jump possible.
-function safeGroundX(g, want, fellInto) {
+function safeGroundX(g, want, fellInto, bike) {
   // v13.3 QA: "falling into the long gap skips it" -- the +/-520px search from a
   // death inside the 5100-5600 chasm found ground at ~5610, i.e. PAST the whole
   // floating-island sequence. Dying was a faster way across than playing it.
   // When we know which pit swallowed the player, respawn strictly before it.
-  const RUN_UP = 150;   // enough to be at full run before the lip (run 260px/s)
+  // v13.7 (Dylan: "I drove over a trap and the motorcycle died, and then it
+  // just kept respawning and putting me into the trap"). Reproduced headlessly
+  // at the Act III washouts: deaths at x=9493 then x=9491 three seconds later.
+  // Two causes. RUN_UP=150 is sized for a cat running at 260px/s, but the bike
+  // travels 150-400px/s and CANNOT stop, so 150px of clear ground ahead is
+  // less than half a second of runway before the same lip. And respawning
+  // strictly before the pit put the bike back on a collision course with it.
+  const RUN_UP = bike ? 420 : 150;
   const clearAhead = x => {
     for (let a = 0; a <= RUN_UP; a += 25) if (groundAt(x + a) !== CFG.groundY) return false;
     return true;
@@ -348,7 +360,7 @@ function safeGroundX(g, want, fellInto) {
         if (x < 40 || x > CFG.worldLen - 40) continue;
         if (fellInto && x > fellInto[0]) continue;      // never land past the pit you fell in
         if (groundAt(x) !== CFG.groundY) continue;
-        if (g.traps.some(tr => tr.armed && Math.abs(tr.x - x) < 60)) continue;
+        if (g.traps.some(tr => tr.armed && Math.abs(tr.x - x) < (bike ? 300 : 60))) continue;
         if (needRunway && !clearAhead(x)) continue;
         return x;
       }
@@ -461,7 +473,14 @@ export function step(g, dt, inputs) {
           // respawn them on the FAR side of it (see the note in safeGroundX)
           const fellInto = p.deathKind === 'pit'
             ? LEVEL.pits.find(([a2, b2]) => p.x >= a2 - 40 && p.x <= b2 + 40) : null;
-          p.x = safeGroundX(g, Math.max(g.cam + 260, g.checkpoint + 100), fellInto); p.y = 100; p.vx = 0; p.vy = 0;
+          const onBike = p.mode === 'bike';
+          p.x = safeGroundX(g, Math.max(g.cam + 260, g.checkpoint + 100), fellInto, onBike);
+          // v13.7: respawning at y=100 drops you 520px -- 0.81s of falling --
+          // and jump is gated on p.onG, so on the bike you were held helpless
+          // the whole descent while stepBike drove you straight back into the
+          // pit you just died in. A bike respawn now starts ON the road.
+          if (onBike) { p.y = groundAt(p.x); p.onG = true; p.vy = 0; p.vx = 0; p.bikeHold = 420; }
+          else { p.y = 100; p.vx = 0; p.vy = 0; }
           // Tell the player what killed them. deathKind has been set since v13
           // but ONLY ever picked a ragdoll animation -- the player was never
           // actually told, so repeated deaths taught nothing. Both playtesters
@@ -573,8 +592,20 @@ export function step(g, dt, inputs) {
       // (w2=102, hgt=107.5 for standing; w2=114, hgt=69 crouched) that's
       // +50/-39.5 standing and +56/-25 crouched from the feet anchor — not
       // the old +34/-58 guess, which put the flash up near the collarbone.
-      const mzX = p.x + (up ? p.face * 32 : down ? p.face * 16 : p.face * (p.crouch ? 56 : 50));
-      const mzY = down ? p.y - 20 : up ? p.y - 107 : p.crouch ? p.y - 25 : p.y - 39.5;
+      // v13.7 (Dylan, with a screenshot: "on the motorcycle I was shooting up
+      // and the gun was firing out of his head. Makes no sense."). These
+      // offsets are measured against the STANDING pose, but on the bike the
+      // riders sit inside a 210x118 rig drawn from p.y upward -- and the
+      // driver's head lands at almost exactly (p.x + 31, p.y - 100), which is
+      // where the `up` muzzle was being spawned. The bike gets its own muzzle
+      // geometry: forward off the nose of the rig, and UP in clear air above
+      // the handlebars, ahead of the rider's head rather than through it.
+      const mzX = p.bike
+        ? p.x + (up ? p.face * 52 : down ? p.face * 70 : p.face * 100)
+        : p.x + (up ? p.face * 32 : down ? p.face * 16 : p.face * (p.crouch ? 56 : 50));
+      const mzY = p.bike
+        ? (up ? p.y - 132 : down ? p.y - 50 : p.y - 74)
+        : (down ? p.y - 20 : up ? p.y - 107 : p.crouch ? p.y - 25 : p.y - 39.5);
       const mzAng = up ? -Math.PI / 2 : down ? Math.PI / 2 : (p.face < 0 ? Math.PI : 0);
       const aim = (spd, jit) => up ? [jit, -spd] : down ? [jit, spd] : [p.face * spd, jit];
       if (p.weap === 'raygun') { // stolen alien tech: piercing acid bolt
@@ -1181,6 +1212,10 @@ export function step(g, dt, inputs) {
     const lead = alivePlayers(g)[0];
     if (lead && lead.x >= CFG.sections.rideEnd) {
       g.riverStarted = true;
+      // v13.7: p.mode was set to 'bike' when the ride began and NOTHING ever
+      // cleared it, so after the surf section the hero was still drawn on --
+      // and silently auto-driven by -- a motorcycle on the beach.
+      for (const q of g.players) if (q.mode === 'bike') { q.mode = null; q.bikeHold = 0; }
       evPush(g, { e: 'engine', on: 0 });
       evPush(g, { e: 'rail', k: 'ptboat' });
     }

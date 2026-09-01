@@ -309,11 +309,22 @@ export class DoorGun extends RailBase {
     // Restoring that measured value now, for real, matching the render-side
     // muzzle flash position below.
     if ((bits & C.FIRE) && this.gunCd <= 0) {
-      this.gunCd = 95; this.fireT = 70;
+      // v13.7 (Dylan: "I got a power-up that said chin turret... and it didn't
+      // work. The gun, it's just the same gun."). He was right: tier 3 only
+      // added an auto-turret that plinked the nearest foe off-screen-left and
+      // never touched the weapon in your hands. Tier 3 now IS your gun --
+      // it spins up to a chain gun: 95ms -> 55ms cadence and a twinned barrel.
+      this.gunCd = (this.tier || 1) >= 3 ? 55 : 95; this.fireT = 70;
       this.ev({ e: 'sfx', n: 'sfx_shot' });
       const gx = 277, gyy = this.hy + 100;
       const ang = 0.598 + this.aimA, spd = 990;
       this.shots.push({ x: gx, y: gyy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, t: 1400 });
+      // the chain gun's second barrel, tightly paired so it reads as one
+      // heavier stream rather than as a separate weapon
+      if ((this.tier || 1) >= 3) {
+        this.shots.push({ x: gx, y: gyy + 7, vx: Math.cos(ang + 0.03) * spd,
+          vy: Math.sin(ang + 0.03) * spd, t: 1400 });
+      }
       // T2 rocket pods ripple two rounds off the stub wing alongside the M60,
       // so the upgrade changes how the gun FEELS and not just how it looks.
       if ((this.tier || 1) >= 2) {

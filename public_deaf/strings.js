@@ -78,7 +78,7 @@ export const STR = {
   doorgunControls: "W/S ALTITUDE · A/D AIM GUN · J FIRE",
   doorgunDone: "LZ CLEAR — WHEELS DOWN",
   heliT2: "AIR DROP! ROCKET PODS BOLTED ON",
-  heliT3: "AIR DROP! CHIN TURRET ONLINE",
+  heliT3: "AIR DROP! CHAIN GUN ONLINE",   // v13.7: Dylan -- "it should have probably said chain gun"
   heliStripped: "TURRET SHOT OFF! HULL BREACHED",
   heliStrippedPods: "ROCKET PODS SHOT OFF! HULL BREACHED",
   heliCritical: "MAYDAY — ONE HIT LEFT",
