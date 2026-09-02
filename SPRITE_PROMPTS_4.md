@@ -1,5 +1,6 @@
-Attach `design/refs/REF_grimtail.png` to prompts 1, 2 and 3.
-Attach `design/refs/REF_vccats.png` to prompt 4.
+Attach REF_grimtail.png to prompt 1.
+Attach REF_scanship.png to prompts 2 and 3.
+Attach REF_vccats.png to prompts 4 and 5.
 
 ---
 
