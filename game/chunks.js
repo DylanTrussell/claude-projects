@@ -307,7 +307,7 @@ export const VIDEO_URLS = {
   surfout: HF + 'hf_20260831_031014_9ecfd5e7-cf9e-4ee0-96c3-d930107ceb6b.mp4',
   // v13.11 FORK 2: the other way out of the river. You put the boat over the
   // wreck's fin instead of round it, and you come down in the trees.
-  rampout: CDN + 'ed91a2d6-5821-4c5b-92fe-bc675365f70f.mp4',
+  rampout: CDN + '2605cc8e-0416-41d9-80bc-1f502df28dfa.mp4',
   // v13.11 THE ENDING: Grimtail is down, the fleet pulls out, and both their
   // radios go off at once. The alien war is over. Theirs is not.
   ending: CDN + '79890436-5d17-45ac-9a12-e3744016dd9b.mp4',
