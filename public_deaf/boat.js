@@ -11,11 +11,22 @@ import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burs
 
 const GY = 640;
 
-// v13.9 -- the scanner ship's kill sequence, in ms from the moment the run
-// ends. Sweep the cone across the river, lock it on the boat, then fire.
-const KILL_LOCK = 1500;   // cone stops sweeping and sits on you
-const KILL_FIRE = 2700;   // the beam lands
-const KILL_END  = 4400;   // cut to the film
+// v13.11 -- THE FORK. The scanner ship comes in low, takes your bow-gun fire
+// and goes into the river ahead of you. It always goes down; you are already
+// shooting, so there is no skill gate on it. What IS a choice is what you do
+// with the wreck: its sheared-off fin is angled up out of the water on one
+// side of the channel, and there is clear water on the other.
+//
+//   OVER THE FIN  -> you launch, and you come down in the jungle.
+//   AROUND IT     -> the reactor lets go as you draw level, and you swim.
+//
+// One event, both outcomes. No second ship and no extra failure state.
+const DIVE_IN   = 1400;   // the ship comes down
+const WRECK_SET  = 2600;  // it settles and the fin is readable
+const COMMIT     = 5200;  // your lane is locked in
+const FORK_END   = 6600;  // cut to whichever film you earned
+const RAMP_Y     = 250;   // the fin sits up-river; steer above this line to hit it
+const RAMP_BAND  = 130;   // how close to RAMP_Y counts as hitting it
 
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
@@ -126,7 +137,8 @@ export class PTBoat extends RailBase {
     this.mines = []; this.depth = []; this.started = false;
     this.wake = 0;
     this.flyby = null; this.flybySpawned = false; // boss_ship_1 background tension beat, see below
-    this.kill = null;           // v13.9: the scan-lock-burn sequence that ends the section
+    this.fork = null;           // v13.11: the wreck-and-choose sequence that ends the section
+    this.route = null;          // 'jungle' (took the ramp) or 'surf' (went around)
   }
   step(bits, dt, p) {
     if (this.done) return;
@@ -256,38 +268,52 @@ export class PTBoat extends RailBase {
       if (this.flyby.t > 11500) this.flyby = null;
     }
 
-    // v13.9 -- the boat does not just run out of clock. The scanner ship comes
-    // back, sweeps the river with a green scan cone, finds you, holds you in
-    // it, and burns the boat out from under you. THAT is why the next thing
-    // you see is a film of the cat on a surfboard. Previously the film simply
-    // happened and Dylan called it out: no cause you could see.
-    if (!this.kill && this.ended()) {
-      this.kill = { t: 0, hit: 0 };
+    // v13.11 -- THE FORK. See the constants at the top of this file.
+    if (!this.fork && this.ended()) {
+      this.fork = { t: 0 };
       this.ev({ e: 'banner', k: 'shipScan' });
       this.ev({ e: 'sfx', n: 'sfx_ufo' });
     }
-    if (this.kill) {
-      this.kill.t += dt;
-      const k = this.kill.t;
-      // the cone crosses the water and locks: you get to watch it find you
-      if (k > KILL_LOCK && !this.kill.locked) {
-        this.kill.locked = 1;
-        this.ev({ e: 'sfx', n: 'sfx_laser' });
-        this.ev({ e: 'banner', k: 'shipLock' });
+    if (this.fork) {
+      this.fork.t += dt;
+      const k = this.fork.t;
+      // you can still steer right up to the commit point -- that IS the choice
+      if (k < COMMIT) {
+        if (bits & C.UP) this.py -= 300 * dts;
+        if (bits & C.DOWN) this.py += 300 * dts;
+        this.py = Math.max(140, Math.min(560, this.py));
       }
-      // the beam lands
-      if (k > KILL_FIRE && !this.kill.hit) {
-        this.kill.hit = 1;
-        this.shake = 26;
+      if (k > DIVE_IN && !this.fork.down) {
+        this.fork.down = 1;
+        this.shake = 20;
         this.ev({ e: 'sfx', n: 'sfx_explosion' });
         this.ev({ e: 'shake' });
+        this.ev({ e: 'banner', k: 'shipDown' });
       }
-      if (k > KILL_END) {
+      if (k > WRECK_SET && !this.fork.shown) {
+        this.fork.shown = 1;
+        this.ev({ e: 'banner', k: 'forkRamp' });
+      }
+      // lock the lane in once, at the commit point, so the outcome cannot
+      // flicker on the last frame
+      if (k > COMMIT && this.fork.ramp === undefined) {
+        this.fork.ramp = Math.abs(this.py - RAMP_Y) < RAMP_BAND ? 1 : 0;
+        if (this.fork.ramp) {
+          this.ev({ e: 'sfx', n: 'sfx_explosion' });
+          this.ev({ e: 'shake' });
+        } else {
+          this.shake = 26;
+          this.ev({ e: 'sfx', n: 'sfx_explosion' });
+          this.ev({ e: 'shake' });
+          this.ev({ e: 'banner', k: 'ptboatDone' });
+        }
+      }
+      if (k > FORK_END) {
         this.done = true;
-        this.ev({ e: 'banner', k: 'ptboatDone' });
+        this.route = this.fork.ramp ? 'jungle' : 'surf';   // main.js reads this
       }
       this.prevBits = bits;
-      return;   // the boat is no longer yours to steer once the beam is on it
+      return;
     }
     this.prevBits = bits;
   }
@@ -395,7 +421,7 @@ export class PTBoat extends RailBase {
     if (this.fireT > 0) drawMuzzleBurst(ctx, 300, this.py - 8 + bob, 0, this.fireT / 70); // v11.2: real fire burst
     this.drawBooms(ctx);
     // v13.9 -- scan, lock, burn. Drawn over the boat so the beam lands ON it.
-    if (this.kill) this.drawKill(ctx, now, this.py + bob);
+    if (this.fork) this.drawFork(ctx, now, this.py + bob);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(W / 2 - 200, 14, 400, 10);
@@ -404,89 +430,130 @@ export class PTBoat extends RailBase {
     ctx.fillText('CHARGES ' + '▮'.repeat(this.charges), 24, 86);
   }
 
-  // v13.9 -- the scanner ship comes in over the river, sweeps its cone until it
-  // finds the boat, holds, and burns it. Three sprites do the work:
-  // alien_scanship (hull), alien_scan_cone (the search light), alien_scan_laser
-  // (the kill beam). The cone and beam are separate sprites precisely so they
-  // can pulse and blend here instead of sitting baked into the hull.
-  drawKill(ctx, now, boatY) {
-    const k = this.kill.t;
-    const bx = 220;                                    // the boat's x, fixed
-    // the ship slides in from the right and parks above you
-    const inK = Math.min(1, k / KILL_LOCK);
-    const ease = 1 - Math.pow(1 - inK, 3);
-    const shipX = W + 300 + (bx - (W + 300)) * ease;
-    const shipY = 120;
+  // v13.11 -- THE FORK, drawn. The ship comes down, the wreck settles across
+  // the channel with one sheared fin angled up out of the water, and the two
+  // ways past it are legible for three full seconds before the lane locks.
+  drawFork(ctx, now, boatY) {
+    const k = this.fork.t;
+    const bx = 220;
+
+    // --- the ship coming down ---
     const hull = IMG.alien_scanship;
     const hh = 190, hw = hull ? hh * (hull.width / hull.height) : 380;
-
-    // the cone: sweeps ahead of the ship while searching, snaps straight down
-    // and goes hot once it has you
-    const cone = IMG.alien_scan_cone;
-    const locked = k > KILL_LOCK;
-    const sweep = locked ? 0 : Math.sin(k / 260) * 190;
-    const coneTop = shipY + hh * 0.28;
-    const coneH = Math.max(0, boatY + 40 - coneTop);
-    if (cone && coneH > 0 && k < KILL_FIRE) {
-      const cw = coneH * (cone.width / cone.height) * 0.9;
+    if (k < WRECK_SET) {
+      const e = Math.min(1, k / WRECK_SET);
+      const sx2 = W + 260 + (620 - (W + 260)) * e;
+      const sy2 = 120 + Math.pow(e, 2.2) * (RAMP_Y - 120);
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = (locked ? 0.85 : 0.5) * (0.8 + 0.2 * Math.sin(now / 90));
-      ctx.drawImage(cone, shipX + sweep - cw / 2, coneTop, cw, coneH);
+      ctx.translate(sx2, sy2);
+      ctx.rotate(e * 0.55);                          // nose over as it augers in
+      if (hull) ctx.drawImage(hull, -hw / 2, -hh / 2, hw, hh);
       ctx.restore();
-      // the pool of light it throws on the water, so the sweep reads on the surface
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = locked ? 0.5 : 0.28;
-      const gr = ctx.createRadialGradient(shipX + sweep, boatY, 0, shipX + sweep, boatY, 210);
-      gr.addColorStop(0, 'rgba(140,255,150,0.85)');
-      gr.addColorStop(1, 'rgba(140,255,150,0)');
-      ctx.fillStyle = gr;
-      ctx.beginPath(); ctx.ellipse(shipX + sweep, boatY, 210, 60, 0, 0, 7); ctx.fill();
-      ctx.restore();
-    }
-
-    // the kill beam
-    if (k > KILL_FIRE) {
-      const bk = Math.min(1, (k - KILL_FIRE) / 260);
-      const beam = IMG.alien_scan_laser;
-      const bw = (beam ? 74 : 60) * (0.6 + bk * 0.8);
-      const top = shipY + hh * 0.25;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.95;
-      if (beam) ctx.drawImage(beam, bx - bw / 2, top, bw, boatY - top + 30);
-      else { ctx.fillStyle = 'rgba(150,255,160,0.9)'; ctx.fillRect(bx - bw / 2, top, bw, boatY - top + 30); }
-      // impact bloom on the hull
-      const ir = 90 + Math.sin(now / 40) * 26;
-      const g2 = ctx.createRadialGradient(bx, boatY, 0, bx, boatY, ir);
-      g2.addColorStop(0, 'rgba(230,255,220,0.95)');
-      g2.addColorStop(0.4, 'rgba(120,255,140,0.6)');
-      g2.addColorStop(1, 'rgba(120,255,140,0)');
-      ctx.fillStyle = g2;
-      ctx.beginPath(); ctx.arc(bx, boatY, ir, 0, 7); ctx.fill();
-      ctx.restore();
-      // the boat going up: smoke and flame climbing out of the hit
-      for (let i = 0; i < 9; i++) {
-        const ph = (now / 260 + i * 0.7) % 1;
-        ctx.globalAlpha = 0.55 * (1 - ph);
-        ctx.fillStyle = i % 3 === 0 ? '#ffb020' : '#2a2a2a';
-        const px = bx - 60 + i * 15 + Math.sin(now / 300 + i) * 12;
-        ctx.beginPath(); ctx.arc(px, boatY - ph * 150, 10 + ph * 26, 0, 7); ctx.fill();
+      // burning as it comes
+      for (let i = 0; i < 6; i++) {
+        const ph = ((now / 220) + i * 0.4) % 1;
+        ctx.globalAlpha = 0.5 * (1 - ph) * e;
+        ctx.fillStyle = i % 2 ? '#ff9a3c' : '#2a2a2a';
+        ctx.beginPath(); ctx.arc(sx2 + 40 + i * 22, sy2 - ph * 60, 8 + ph * 16, 0, 7); ctx.fill();
       }
       ctx.globalAlpha = 1;
     }
 
-    // the ship itself, drawn last so it sits above its own cone
-    ctx.save();
-    ctx.globalAlpha = 0.98;
-    if (hull) ctx.drawImage(hull, shipX - hw / 2, shipY - hh / 2, hw, hh);
-    else { ctx.fillStyle = '#5a3a4a'; ctx.beginPath(); ctx.ellipse(shipX, shipY, hw / 2, hh / 3, 0, 0, 7); ctx.fill(); }
-    ctx.restore();
+    // --- the wreck, once it is down: hull in the water, fin up as the ramp ---
+    if (k > DIVE_IN) {
+      const set = Math.min(1, (k - DIVE_IN) / 900);
+      const wy = RAMP_Y;
+      // spray on impact
+      if (set < 1) {
+        ctx.save(); ctx.globalAlpha = (1 - set) * 0.8;
+        ctx.fillStyle = 'rgba(220,240,235,0.9)';
+        for (let i = 0; i < 16; i++) {
+          const a2 = (i / 16) * Math.PI * 2;
+          const r2 = 40 + set * 260;
+          ctx.beginPath(); ctx.arc(620 + Math.cos(a2) * r2, wy + Math.sin(a2) * r2 * 0.4, 12 * (1 - set), 0, 7); ctx.fill();
+        }
+        ctx.restore();
+      }
+      // the half-sunk hull
+      ctx.save();
+      ctx.globalAlpha = set;
+      ctx.translate(620, wy + 28);
+      ctx.rotate(0.16);
+      if (hull) ctx.drawImage(hull, -hw / 2, -hh / 2, hw, hh * 0.72);
+      ctx.restore();
+      // THE FIN. A big pale wedge angled up out of the water, lit, unmissable.
+      ctx.save();
+      ctx.globalAlpha = set;
+      ctx.translate(560, wy);
+      ctx.beginPath();
+      ctx.moveTo(-90, 62); ctx.lineTo(40, -96); ctx.lineTo(96, -58); ctx.lineTo(52, 62);
+      ctx.closePath();
+      const fg = ctx.createLinearGradient(-90, 62, 60, -96);
+      fg.addColorStop(0, '#6b4a52'); fg.addColorStop(0.6, '#b98a72'); fg.addColorStop(1, '#e8c9a4');
+      ctx.fillStyle = fg; ctx.fill();
+      ctx.strokeStyle = '#2a1c22'; ctx.lineWidth = 4; ctx.stroke();
+      // wet highlight along the leading edge, so it reads as a surface to hit
+      ctx.strokeStyle = 'rgba(255,240,210,0.85)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-84, 58); ctx.lineTo(38, -90); ctx.stroke();
+      ctx.restore();
+      // fires on the wreck
+      for (let i = 0; i < 7; i++) {
+        const ph = ((now / 340) + i * 0.4) % 1;
+        ctx.globalAlpha = 0.55 * (1 - ph) * set;
+        ctx.fillStyle = i % 3 === 0 ? '#8CFF3B' : '#ff9a3c';
+        ctx.beginPath(); ctx.arc(600 + i * 34, wy + 30 - ph * 90, 8 + ph * 15, 0, 7); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
 
-    // white-out into the film, so the cut is the beam and not a hard splice
-    if (k > KILL_END - 900) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (k - (KILL_END - 900)) / 900).toFixed(3)})`;
+    // --- the two lanes, while the choice is still open ---
+    if (k > WRECK_SET && k < COMMIT) {
+      const pulse = 0.45 + 0.3 * Math.sin(now / 190);
+      const onRamp = Math.abs(this.py - RAMP_Y) < RAMP_BAND;
+      // the ramp lane
+      ctx.save();
+      ctx.globalAlpha = onRamp ? pulse + 0.25 : pulse * 0.5;
+      ctx.strokeStyle = '#FFC93C'; ctx.lineWidth = onRamp ? 5 : 3;
+      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
+      ctx.beginPath(); ctx.moveTo(bx + 40, RAMP_Y); ctx.lineTo(540, RAMP_Y); ctx.stroke();
+      ctx.restore();
+      // the open-water lane
+      ctx.save();
+      ctx.globalAlpha = onRamp ? pulse * 0.5 : pulse + 0.25;
+      ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = onRamp ? 3 : 5;
+      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
+      ctx.beginPath(); ctx.moveTo(bx + 40, 470); ctx.lineTo(760, 470); ctx.stroke();
+      ctx.restore();
+      ctx.setLineDash([]);
+    }
+
+    // --- committed ---
+    if (this.fork.ramp === 1) {
+      // riding up the fin: the boat pitches and climbs
+      const j = Math.min(1, (k - COMMIT) / (FORK_END - COMMIT));
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.35 * j;
+      ctx.fillStyle = 'rgba(255,230,180,0.9)';
+      ctx.beginPath(); ctx.ellipse(bx + j * 300, boatY - j * 210, 140, 46, -0.5, 0, 7); ctx.fill();
+      ctx.restore();
+    } else if (this.fork.ramp === 0) {
+      // the reactor lets go as you draw level
+      const j = Math.min(1, (k - COMMIT) / 500);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g2 = ctx.createRadialGradient(600, RAMP_Y + 20, 0, 600, RAMP_Y + 20, 200 + j * 460);
+      g2.addColorStop(0, `rgba(230,255,220,${0.95 * (1 - j * 0.5)})`);
+      g2.addColorStop(0.4, `rgba(140,255,90,${0.6 * (1 - j * 0.5)})`);
+      g2.addColorStop(1, 'rgba(140,255,90,0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(600, RAMP_Y + 20, 200 + j * 460, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+
+    // white-out into whichever film you earned
+    if (k > FORK_END - 800) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (k - (FORK_END - 800)) / 800).toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
     }
   }
@@ -695,6 +762,17 @@ export class Surf extends RailBase {
 // ---------- headless autopilots (test harness only) ----------
 export function boatBot(rail, frame) {
   let b = C.FIRE;
+  // v13.11: once the fork opens, the bot stops weaving and drives the lane it
+  // was told to. rail.botRoute is set by the harness ('ramp' or 'around') so
+  // the gate can cover BOTH outcomes; without it the bot would always drift
+  // wherever its sine wave happened to be and the jungle route would never
+  // once be exercised.
+  if (rail.fork) {
+    const want = rail.botRoute === 'ramp' ? RAMP_Y : 470;
+    if (rail.py > want + 12) b |= C.UP;
+    else if (rail.py < want - 12) b |= C.DOWN;
+    return b;
+  }
   const ph = Math.sin(frame / 44);
   if (ph > 0.3) b |= C.UP; else if (ph < -0.3) b |= C.DOWN;
   if (frame % 240 === 0) b |= C.GREN;

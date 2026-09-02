@@ -8,6 +8,15 @@
   html,body{margin:0;height:100%;overflow:hidden;background:#0b0d09;font-family:'Courier New',monospace;color:#f3e9c8}
   canvas{display:block;position:fixed;inset:0;image-rendering:pixelated}
   .overlay{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:10;overflow:auto;padding:10px;box-sizing:border-box}
+  .forkrow{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .forkcard{display:flex;flex-direction:column;align-items:center;gap:6px;background:rgba(30,34,22,0.9);
+    border:3px solid #26231c;outline:2px solid #4c5d2a;padding:12px;width:min(46%,320px);min-width:220px;
+    cursor:pointer;font-family:inherit;color:inherit;text-align:center;transition:transform .08s,outline-color .08s}
+  .forkcard:hover,.forkcard:focus{outline-color:#FFC93C;transform:translateY(-3px)}
+  .forkcard img{width:100%;height:auto;image-rendering:pixelated;max-height:150px;object-fit:contain}
+  .fk-name{font-size:18px;letter-spacing:1px}
+  .fk-desc{font-size:13px;line-height:1.4}
+  @media (max-width:560px){ .forkcard{width:100%} .forkcard img{max-height:110px} }
   .panel{box-sizing:border-box;background:rgba(16,18,12,0.88);border:3px solid #26231c;outline:2px solid #4c5d2a;padding:22px 30px;max-width:640px;width:min(92vw,640px);box-shadow:0 0 60px rgba(0,0,0,.7);max-height:92vh;overflow:auto}
   h1{font-size:34px;margin:0;color:#FFC93C;text-shadow:3px 3px 0 #26231c;letter-spacing:2px;text-align:center}
   h2{font-size:18px;margin:12px 0 6px;color:#8CFF3B}
@@ -186,6 +195,27 @@
     <div id="t-stats" style="font-size:20px;line-height:1.8;margin:14px 0"></div>
     <button class="primary" id="btn-continue" style="display:none"></button>
     <button class="primary" id="btn-again"></button>
+  </div>
+</div>
+
+<!-- v13.11 FORK 1: after the truce, you pick the aircraft. The one you do not
+     pick never fires, and both routes rejoin at the same next beat. -->
+<div class="overlay" id="screen-fork">
+  <div class="panel" style="text-align:center;max-width:760px;width:min(94vw,760px)">
+    <h1 id="fk-title" style="font-size:26px;margin:0 0 4px"></h1>
+    <div class="dim" id="fk-sub" style="margin:0 0 16px"></div>
+    <div class="forkrow">
+      <button class="forkcard" id="fk-heli">
+        <img id="fk-heli-img" alt="">
+        <span class="fk-name" id="fk-heli-name"></span>
+        <span class="fk-desc dim" id="fk-heli-desc"></span>
+      </button>
+      <button class="forkcard" id="fk-sky">
+        <img id="fk-sky-img" alt="">
+        <span class="fk-name" id="fk-sky-name"></span>
+        <span class="fk-desc dim" id="fk-sky-desc"></span>
+      </button>
+    </div>
   </div>
 </div>
 

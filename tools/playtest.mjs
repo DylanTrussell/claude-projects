@@ -44,8 +44,9 @@ const noteSection = (name, o) => SECTIONS.push(Object.assign({ name }, o));
 
 const RAIL_CTOR = { skyraider: Skyraider, doorgun: DoorGun, ptboat: PTBoat, surf: Surf, parley: ParleyBoss };
 const RAIL_BOT = { ptboat: boatBot, surf: boatBot, parley: parleyBot };
-function runRail(kind, p) {
+function runRail(kind, p, setup) {
   const rail = new (RAIL_CTOR[kind] || DoorGun)();
+  if (setup) setup(rail);
   const bot = RAIL_BOT[kind] || railBot;
   const cap = kind === 'parley' ? 180000 : 90000; // parley has no built-in timer (super(999999), ends on win/death)
   let ms = 0, fr = 0; const _d0 = p.deaths;
@@ -72,6 +73,9 @@ function runRail(kind, p) {
 
 const seats = [{ pid: 'p1', hero: 'us' }];
 const g = makeGame(1337, seats);
+// v13.11: --branch=heli|sky picks the air fork. Default heli.
+g.airPick = (process.argv.find(a => a.startsWith('--branch=')) || '--branch=heli').split('=')[1] === 'sky' ? 'sky' : 'heli';
+const BOAT = (process.argv.find(a => a.startsWith('--boat=')) || '--boat=around').split('=')[1];
 // The REAL life count. simtest forces 99 so it can exercise every section even
 // when the bot is bad; a playtest that does that cannot tell you anything about
 // difficulty, which is the entire question here.
@@ -167,7 +171,12 @@ while (simMs < MAXMS && !victory && !gameover) {
       simMs += ms;
       continue;
     }
-    if (ev.e === 'cutscene' && ev.which === 'truce') { // truce film -> door-gun ride
+    if (ev.e === 'cutscene' && ev.which === 'truce') { // truce film -> the air fork
+      // the truce cleanup belongs to the truce, not the door gun -- both
+      // branches need the duel cat gone and the player back on his feet
+      for (const e of g.enemies) if (e.duel) e.st = 'gone';
+      { const p0 = g.players[0]; p0.invulnT = 2600; if (p0.st !== 'out') p0.st = 'alive'; }
+      if (g.airPick === 'sky') continue;   // this branch flies the plane later instead
       const p = g.players[0];
       const r = runRail('doorgun', p);
       for (const e of g.enemies) if (e.duel) e.st = 'gone';
@@ -182,9 +191,9 @@ while (simMs < MAXMS && !victory && !gameover) {
     }
     if (ev.e === 'rail' && ev.k === 'ptboat') { // v11: mirrors main.js's rail-done chaining exactly
       const p = g.players[0];
-      const r1 = runRail('ptboat', p);
+      const r1 = runRail('ptboat', p, (rail) => { rail.botRoute = BOAT; });
       g.score += r1.kills * 100;
-      const r2 = runRail('surf', p);
+      const r2 = r1.route === 'jungle' ? { kills: 0 } : runRail('surf', p);
       g.score += r2.kills * 100;
       p.invulnT = 2200; if (p.st !== 'out') p.st = 'alive';
       g.heliEvac = { t: 2600 }; // washed up at the LZ — evac timer resumes under normal step()

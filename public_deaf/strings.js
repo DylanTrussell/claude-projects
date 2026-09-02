@@ -77,6 +77,13 @@ export const STR = {
   // gun did not run dry, it jammed, and the banner should not lie about it.
   duelJam: "*CLICK* — THE GUN'S JAMMED",
   theyreOutToo: "...HE'S OUT TOO",
+  // v13.11 FORK 1 -- the aircraft choice after the truce
+  forkAirTitle: "TWO BIRDS ON THE PAD",
+  forkAirSub: "Pick one. The other flies without you.",
+  forkHeliName: "THE HUEY",
+  forkHeliDesc: "Somebody else flies. You hang out the door behind the gun, close to the ground, and you keep the aircraft you are standing in alive.",
+  forkSkyName: "THE SKYRAIDER",
+  forkSkyDesc: "You fly it. Guns, napalm, the whole treeline. Nobody to protect but yourself.",
   actDoorgun: "RAT PATROL — MAN THE DOOR GUN",
   doorgunControls: "W/S ALTITUDE · A/D AIM GUN · J FIRE",
   doorgunDone: "LZ CLEAR — WHEELS DOWN",
@@ -130,9 +137,12 @@ export const STR = {
   shipSighted: "SOMETHING HUGE, HIGH OVERHEAD...",
   // v13.9: the boat is not torpedoed by nobody any more. The scanner ship
   // finds you and burns it, and you watch it happen.
-  shipScan: "IT CAME BACK. IT'S SEARCHING THE RIVER.",
-  shipLock: "IT SEES YOU",
-  ptboatDone: "BOAT'S GONE! GET ON SOMETHING THAT FLOATS!",
+  shipScan: "IT CAME BACK. IT'S COMING IN LOW.",
+  // v13.11 fork: the ship goes down in front of you, and its fin is a ramp
+  shipDown: "IT'S GOING IN!",
+  forkRamp: "THAT FIN IS A RAMP. OR GO AROUND.",
+  jungleDown: "DOWN IN THE TREES. THE LZ IS EAST.",
+  ptboatDone: "SHE'S BREAKING UP! GET ON SOMETHING THAT FLOATS!",
   chargesOut: "OUT OF DEPTH CHARGES",
   actSurf: "SWIM FOR IT — THE LZ IS CLOSE",
   surfControls: "W/S CARVE · J FIRE · K DUCK-DIVE",
@@ -190,6 +200,8 @@ export const SUBS = {
   ],
   grimdeath: [],
   surfout: [], // pure action beat -- the torpedo hit and the board carry it
+  rampout: [],  // v13.11: the jump speaks for itself
+  ending: [],   // v13.11: two radios and no dialogue. Do not caption this.
 };
 
 // v13.3 (Dylan: "the long sentence that the American cat says in the cut scene

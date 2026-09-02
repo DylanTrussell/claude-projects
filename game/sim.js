@@ -836,9 +836,14 @@ export function step(g, dt, inputs) {
   if (!g.banners.A) { g.banners.A = true; evPush(g, { e: 'banner', k: 'actA' }); }
   if (!g.banners.tunnel && camMid > SEC.tunnel) { g.banners.tunnel = true; g.checkpoint = SEC.tunnel; evPush(g, { e: 'banner', k: 'actTunnel' }); }
   if (!g.standoff && !g.invasion && camMid > SEC.invasion) triggerInvasion(g);
+  // v13.11 FORK 1: this used to fire the Skyraider unconditionally, so every
+  // run played BOTH air sections. Now the player picked one right after the
+  // truce (g.airPick), and this trigger only fires for the branch that chose
+  // the plane -- and it fires it HERE rather than at the truce, because the
+  // Skyraider's own story film ('escape') belongs at this point in the run.
   if (g.invasion && !g.rail1 && !g.rideOn && camMid > 5700) { // ACT — TREELINE BURN
     g.rail1 = 'active';
-    evPush(g, { e: 'rail', k: 'skyraider' });
+    if (g.airPick !== 'heli') evPush(g, { e: 'rail', k: 'skyraider' });
   }
   if (!g.banners.boss && camMid > SEC.boss - 200) startBoss(g);
 
@@ -1899,7 +1904,7 @@ export function checkpointState(g) {
     // the player is ON THE GROUND at a checkpoint, never mid-insertion
     phase: 'play', phaseT: 99999, phaseStep: 9,
     // sections already finished must not run again
-    rail1: g.rail1, fps0: g.fps0, fps1: g.fps1, rideOn: g.rideOn,
+    rail1: g.rail1, fps0: g.fps0, fps1: g.fps1, rideOn: g.rideOn, airPick: g.airPick,
     heliEvac: g.heliEvac ? clone(g.heliEvac) : null,
     riverStarted: g.riverStarted, parleyStarted: g.parleyStarted,
     standoff: g.standoff, duelClick: g.duelClick,
@@ -1914,7 +1919,7 @@ export function restoreState(snap, seats) {
     traps: snap.traps, crates: snap.crates, bossDone: snap.bossDone, banners: snap.banners,
     // skip the insertion cinematic -- see checkpointState
     phase: snap.phase || 'play', phaseT: snap.phaseT || 99999, phaseStep: snap.phaseStep || 9,
-    rail1: snap.rail1, fps0: snap.fps0, fps1: snap.fps1, rideOn: snap.rideOn,
+    rail1: snap.rail1, fps0: snap.fps0, fps1: snap.fps1, rideOn: snap.rideOn, airPick: snap.airPick,
     heliEvac: snap.heliEvac || null,
     riverStarted: snap.riverStarted, parleyStarted: snap.parleyStarted,
     standoff: snap.standoff, duelClick: snap.duelClick,
