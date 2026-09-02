@@ -290,7 +290,7 @@ export const VIDEO_URLS = {
   // dock: the road runs out at the river. parley: the flagship descends with
   // Grimtail visible inside. grimdeath: his last breath as the ship falls.
   escape: CDN + '02f30a5b-b701-4770-9b25-1fc613a1918f.mp4',
-  mecha: CDN + 'e5755f62-7b1e-4bf2-b2f9-a4471aaec94c.mp4',
+  mecha: CDN + '8262dab6-e623-4819-9ba3-8a84b2882339.mp4',
   dock: HF + 'hf_20260831_011525_bedb12c0-ff64-4c86-ba47-4082c2d8bf4c.mp4',
   parley: HF + 'hf_20260831_011546_db265157-b126-4641-a4a3-0f7b31fef11e.mp4',
   grimdeath: HF + 'hf_20260831_011600_27fd01fc-3bce-4ffd-990a-d0d87b382fbd.mp4',
