@@ -175,12 +175,12 @@ export const SUBS = {
   ],
   mecha: [
     [8.6, 11.4, "...you have GOT to be kidding me."],
-    [14.8, 17.2, "The village! There's a bike under that tarp!"],
+    // v13.10 (Dylan): the bike line is gone. You can SEE them get on the bike;
+    // narrating it over the top is the game explaining its own picture.
   ],
-  dock: [
-    [2.4, 4.9, "I know the land. There's a dock over there."],
-    [5.3, 8.0, "I know. My side stashed a boat there."],
-  ],
+  // v13.10 (Dylan): same note as the bike. The film shows them reach the dock
+  // and take the boat, so both lines were captioning the image.
+  dock: [],
   parley: [
     [3.6, 5.8, "\"WE COME TO TALK, NOT TO FIGHT.\""],
     [6.4, 8.6, "\"LAY DOWN YOUR ARMS, KITTENS.\""],
