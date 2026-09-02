@@ -174,7 +174,10 @@ export const SUBS = {
     [11.5, 13.6, "Get in!"],
   ],
   mecha: [
-    [8.6, 11.4, "...you have GOT to be kidding me."],
+    // v13.10: +2.328s. A 2.75s crash shot was inserted at 7.05 and 0.42s of
+    // frozen frames were trimmed off the head of the shot after it, so every
+    // cue past the join moves by the difference.
+    [10.93, 13.73, "...you have GOT to be kidding me."],
     // v13.10 (Dylan): the bike line is gone. You can SEE them get on the bike;
     // narrating it over the top is the game explaining its own picture.
   ],
