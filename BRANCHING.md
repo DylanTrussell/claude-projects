@@ -39,49 +39,39 @@ back in the branch you chose.
 
 ## FORK 2 — the boat
 
-Your idea, with one change I would make.
+A real choice, made by steering. Not a menu, and not a skill check.
 
-You proposed: one path blows the boat up and puts you on the surfboard, the
-other keeps you on the boat, and a piece of a downed alien ship becomes a ramp
-that throws you back onto land.
+I was unclear before, so plainly: forget hit points and forget the lock. Here is
+the sequence.
 
-The change: **don't put this on a menu. Make the player earn it.**
+1. The scanner ship comes in low over the river, hunting, same as it does now.
+2. It takes your bow-gun fire on the way in and augers into the water ahead of
+   you. This is scripted. You are already shooting, so you will always hit it,
+   and it always goes down. No skill gate.
+3. Now the river ahead has two ways through, both visible for a good five
+   seconds before you have to commit:
+   - **OVER IT.** The wreck lies half-submerged with a sheared-off fin angled up
+     out of the water. It is obviously a ramp.
+   - **AROUND IT.** Clear open water to the left, heading for the sea.
+4. You steer. That is the choice.
 
-The boat section already ends with the scanner ship arriving, sweeping the
-river, locking on and burning your boat. That sequence went in this week. Right
-now it is unstoppable — it happens on a timer and you watch.
+**Over the ramp** → you launch, get enormous air, and come down in the jungle.
+New short section, then east to the LZ.
 
-Give it hit points instead.
+**Around it** → as you draw level, the wreck's reactor lets go and the blast
+takes your stern off. You are in the water, and you are on the board. That is
+the section that exists today, and it now has a cause you chose.
 
-- The ship comes in and starts its scan sweep, same as now.
-- While it sweeps, it is **shootable**. Your bow gun hurts it.
-- Break it before the lock completes → it comes down in the river ahead of you,
-  a fin shears off, and that fin is your ramp. You hit it, get big air, and come
-  down in the jungle.
-- Fail → it locks, burns your boat, and you are on the board. Exactly what
-  happens today.
+That last part is the piece that makes it cheap: **one event serves both
+outcomes.** The wreck either launches you or kills you, depending on which side
+of it you pass. No second ship, no extra asset, no new failure state.
 
-Why this is better than a menu:
+And it says something. The reckless line gets you the jump. The careful line
+gets you wrecked. That is funny, and it is the right lesson for this game.
 
-1. The choice is made by playing, so it feels like a thing you did rather than a
-   thing you picked.
-2. It turns a cutscene you watch into a fight you can win, which is the same
-   note as everything else on the list: no beat that just happens at you.
-3. It costs almost nothing new. It is a second ending to a level that already
-   exists, not a new level. The ship, the scan cone and the kill beam are
-   already built and already on screen.
-4. It pays off the standing rule twice over — the ramp is made of the thing you
-   shot down, in front of you.
-
-**What is actually new:** the ramp jump and the landing. Call it 15 seconds. The
-boat is already a rail with a physics-free steer, so the jump is an animation
-and a camera move, not a new system.
-
-**Where they converge:** both paths have to arrive at the LZ for the parley. The
-surf path already does. The jungle path lands you in the trees and you walk east
-into the same place. Same next beat either way.
-
----
+**What is actually new:** the ramp launch, the landing, and a short jungle
+stretch before the LZ. The boat is already a rail, so the jump is a camera move
+and an animation, not a new system.
 
 ## What this costs that is easy to miss
 
@@ -99,49 +89,53 @@ argument for stopping at two.
 
 ## Alternate endings
 
-Five, cheapest first.
+Scratch the cheese one. I checked: there are two cheese pickups in the entire
+game and they are a lure you throw, not caches you burn. The objective string
+exists and is fired from nowhere. It is not established, so an ending cannot
+stand on it.
 
-### 1. He gets up
-You kill him, the hull comes apart — and he drags himself out of the wreckage,
-still alive, reaching for a half-melted wheel of cheese. Hard cut to END OF PART
+Four better ones.
+
+### 1. The radio — this is the one
+Grimtail is down. The fleet pulls out. Whiskers and Charlie are standing in the
+smoke on the LZ, and both their radios crackle at the same moment. Their own
+armies. The alien war is over. Theirs is not.
+
+Neither of them moves. Hold on the two of them, not moving. Cut to END OF PART
 ONE.
 
-Cheapest of all: the code for it is still sitting in `boss2.js` behind a
-comment, waiting on art that matches him. It is one edit once the sprite lands.
+The whole game is two enemies who teamed up because something worse showed up.
+The only ending that means anything is the one that asks what happens when the
+worse thing is gone. It costs one shot and two radio squawks, and it is the
+ending the story has been writing for itself since the truce.
 
-### 2. The cheese ending
-The whole game says they came for the cheese and you have been burning it all
-run. So count it. Burn every cache and the fleet is starving when it reaches the
-LZ. Grimtail does not fight — he offers a trade, and the rats leave with what is
-left. You win the war by having already won it, before the boss appeared.
+### 2. They take the ship
+They win, and instead of walking away they walk INTO the flagship. Last shot is
+two cats at an alien control console, Charlie's straw hat hung on the throttle,
+lifting off. Part two is in space.
 
-This one is my favourite because it retroactively makes an existing mechanic
-matter. The player learns the cheese was the point.
+The most fun one, and the clearest promise that part two is a different game.
 
-### 3. One cat short
-If you walked out of the tunnel without Mittens, he is not on the LZ. Same
-fight, but the shot that should have been blocked lands on Charlie. You win and
-you carry him out. Costs one conditional and a sprite you already have.
+### 3. The ninth life
+The game already counts lives on the HUD. Say he has spent eight getting here.
+The ending is him spending the ninth to shove Charlie clear of the last shot —
+and part two is Charlie, alone, wearing the hat.
 
-### 4. Lay down your arms
-Grimtail says it twice in the parley and the game never lets you do it. Let you.
-He honours it, takes the island anyway, and part two starts from a loss. The
-darkest one and the strongest hook.
+Turns a number the player has been watching all game into the ending.
 
-### 5. Nine lives
-You have nine. Spend all nine and the ninth death is not a game over, it is the
-ending — you come back for part two as something else. Turns the fail state into
-a story beat instead of a wall.
+### 4. Nobody won
+You kill him and the fleet does not leave. It stops. Every ship goes dark and
+starts to drift, because he was the thing giving the orders and now there is
+nothing. The sky is full of dead ships that are all going to come down. Hold on
+the first one beginning to fall.
 
 ---
 
 ## What I would build, in order
 
-1. Fork 1. It is nearly free and it tells you whether players engage with a
-   choice at all.
-2. Ending 1. It is one edit behind a comment.
-3. Fork 2, as the earned version. The best beat of the three.
-4. Ending 2, the cheese ending, if the forks land well.
+1. Fork 1. Nearly free, and it tells you whether players engage with a choice.
+2. Ending 1, the radio. One shot, and it is the ending this story is owed.
+3. Fork 2, the ramp. The best beat of the three.
 
-Stop there. Two forks and two endings is four routes, which is the most the gate
-can cover honestly without the QA becoming the project.
+Stop there. Two forks and one strong ending is three routes, which the gate can
+still cover honestly.
