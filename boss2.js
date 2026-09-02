@@ -186,7 +186,7 @@ export class ParleyBoss extends RailBase {
               // v13.9: long enough to actually watch him lose. The ship comes
               // apart, and then he drags himself out of his own wreckage --
               // which is the ending Dylan wanted to see before committing to it.
-              this.doneT = 5200; this.wonT = 0;
+              this.doneT = 3400; this.wonT = 0;
             }
           }
         }
@@ -526,28 +526,15 @@ export class ParleyBoss extends RailBase {
     // pull back out: delete this block.
     if (this.won) {
       const wt = this.wonT || 0;
-      const ci = IMG.grimtail_crawl;
-      if (ci && wt > 2200) {
-        const k = Math.min(1, (wt - 2200) / 900);         // fade up out of the smoke
-        const crawl = Math.min(1, (wt - 2200) / 3000);    // and he keeps moving
-        const gh = 200, gw = gh * (ci.width / ci.height);
-        ctx.save();
-        ctx.globalAlpha = k;
-        // he drags himself toward the player's side of the screen
-        const gx = this.bx + 120 - crawl * 240;
-        const gy = GY - gh * 0.62 + Math.sin(wt / 220) * 3;   // the effort of it
-        ctx.drawImage(ci, gx - gw / 2, gy, gw, gh);
-        ctx.restore();
-        // the trail he leaves behind him
-        ctx.save();
-        ctx.globalAlpha = k * 0.5;
-        ctx.fillStyle = 'rgba(120,230,60,0.7)';
-        for (let i = 0; i < 7; i++) {
-          const tx = gx + gw * 0.34 + i * 26 + crawl * 40;
-          ctx.beginPath(); ctx.ellipse(tx, GY - 14 + (i % 2) * 4, 13 - i, 4, 0, 0, 7); ctx.fill();
-        }
-        ctx.restore();
-      }
+      // v13.9.1 -- the wreckage-crawl sprite is PULLED. Canon Grimtail
+      // (chancellor_boss) is a grey rat in an orange and gold papal robe under
+      // a spiked crown. The sprite that landed here was a brown rat in a blue
+      // naval admiral's coat and a tricorn hat -- my prompt said "admiral",
+      // which I invented; the game never said that. Wrong colour, wrong
+      // garment, wrong genre. Re-enable this block once the art matches:
+      //   const ci = IMG.grimtail_crawl;  ...draw at gx, gy with the trail...
+      // Until then the ending is the hull tearing itself apart, which is what
+      // it was before and reads correctly.
       // the fires left burning in the debris field
       ctx.save();
       for (let i = 0; i < 7; i++) {
