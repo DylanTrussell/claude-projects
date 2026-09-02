@@ -416,10 +416,15 @@ function handleEvents(evs) {
       case 'gameover': setTimeout(() => endGame(false), 900); break;
       // v13.4: the Chancellor's death gets its beat -- his last breath as the
       // flagship falls -- then the dawn-aftermath film, then END OF PART ONE.
-      // v13.11 -- THE ENDING. Grimtail goes down, and then the two of them are
-      // standing in the smoke when both their radios go off at once. The alien
-      // war is over. Theirs is not. It plays last, right before the tally.
-      case 'victory': setTimeout(() => playCutscene('grimdeath', () => playCutscene('ending', () => playCutscene('victory', () => endGame(true)))), 1400); break;
+      // v13.11.1 -- the radio ending is PULLED. Right idea, wrong execution:
+      // the radios had glowing indicator lights (a 1968 field set does not do
+      // that), both cats carried the same model when they are on opposite
+      // sides, and the staging was two soldiers standing to attention rather
+      // than what it should be -- the two of them flat on their backs laughing,
+      // and then ONE radio, and then, after a beat, the other. Audio only.
+      // It is also too big a note for a game this short; it wants an epic
+      // behind it. Held for later. See ENDINGS.md.
+      case 'victory': setTimeout(() => playCutscene('grimdeath', () => playCutscene('victory', () => endGame(true))), 1400); break;
       case 'fps': { // drop into the tunnels — the whole game changes
         try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'fps', map: ev.map }; lastCkptX = g.checkpoint; } catch (_) {}
         // v10: the tunnel's forward-facing gun/fire/reload art, redone enemy
