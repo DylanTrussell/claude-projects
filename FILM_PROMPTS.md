@@ -1,3 +1,11 @@
+Attach FILM_REF_ship.png to prompts 1 and 2.
+Attach FILM_REF_boat.png to prompts 3, 4, 5, 6, 7, 8 and 9.
+Attach FILM_REF_cats.png to prompts 3, 4, 5, 6, 7, 8 and 9.
+
+Add this line to every prompt: Match the attached references exactly, same ship, same boat, same two cats, same uniforms, same dusk light.
+
+---
+
 1.
 
 Photoreal cinematic film still, 16:9, gritty 1968 Vietnam war photography, warm dusk, heavy film grain. A huge alien warship, its hull corroded brass and dark iron fused with mottled pink organic flesh, red dome lights along the flank and a rat skull moulded into the prow, is exploding low over a wide brown jungle river. The blast tears the mid hull open, throwing burning debris and green flame outward across the water. Palms on both banks. Camera low and level with the water, wide. No boat in frame. No text, no captions.
