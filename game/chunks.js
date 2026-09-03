@@ -311,10 +311,15 @@ export const VIDEO_URLS = {
   // their hats between shots. They CAN hold an environment, once Seedance
   // extends real footage rather than inventing a new scene.
   // So this cut shows only what cannot go wrong: the first-person ride up the
-  // wreck's ramp and the launch. No cat is ever in frame, so no cat can be
-  // off-model. The exterior and the crash are held until the characters are
-  // locked. Verified frame by frame: same wreck, same light, real apex.
-  rampout: CDN + '4d308ae5-8f4d-446b-a5ed-f43feaca4121.mp4',
+  // wreck's ramp. No cat is ever in frame, so no cat can be off-model.
+  //
+  // v13.12.1: this is the ORIGINAL POV take, not the extension. I shipped the
+  // extension first and Dylan caught it -- it opens already on the ramp with no
+  // approach and climbs into empty sky, so it has no start point. The original
+  // has the whole move: opens on open water with the wreck ahead, crosses it,
+  // meets the ramp at 2.4s, climbs, and ends at the crest. Compare the two side
+  // by side before ever swapping this again.
+  rampout: CDN + '26872fd9-a9eb-426a-af0f-a807d26ad327.mp4',
   // v13.11 THE ENDING: Grimtail is down, the fleet pulls out, and both their
   // radios go off at once. The alien war is over. Theirs is not.
   ending: CDN + '79890436-5d17-45ac-9a12-e3744016dd9b.mp4',
