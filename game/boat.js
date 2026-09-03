@@ -438,7 +438,11 @@ export class PTBoat extends RailBase {
     const bx = 220;
 
     // --- the ship coming down ---
-    const hull = IMG.alien_scanship;
+    // v13.12: it took your bow gun on the way in, so it arrives already hurt
+    // and settles as a burnt-out wreck. Standing rule: everything that takes
+    // damage visibly reacts, and this was the one thing in the scene that
+    // soaked fire without changing.
+    const hull = IMG.alien_scanship_hurt || IMG.alien_scanship;
     const hh = 190, hw = hull ? hh * (hull.width / hull.height) : 380;
     if (k < WRECK_SET) {
       const e = Math.min(1, k / WRECK_SET);
@@ -474,12 +478,14 @@ export class PTBoat extends RailBase {
         }
         ctx.restore();
       }
-      // the half-sunk hull
+      // the half-sunk hull, burnt out now rather than merely damaged
+      const dead = IMG.alien_scanship_wreck || hull;
+      const dw = dead ? hh * (dead.width / dead.height) : hw;
       ctx.save();
       ctx.globalAlpha = set;
       ctx.translate(620, wy + 28);
       ctx.rotate(0.16);
-      if (hull) ctx.drawImage(hull, -hw / 2, -hh / 2, hw, hh * 0.72);
+      if (dead) ctx.drawImage(dead, -dw / 2, -hh / 2, dw, hh * 0.72);
       ctx.restore();
       // THE FIN. A big pale wedge angled up out of the water, lit, unmissable.
       ctx.save();
