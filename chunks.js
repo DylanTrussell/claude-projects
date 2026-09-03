@@ -305,9 +305,16 @@ export const VIDEO_URLS = {
   // cats go flying, Whiskers hauls himself onto a floating board and rides it
   // -- which is exactly the state the Surf section hands the player.
   surfout: HF + 'hf_20260831_031014_9ecfd5e7-cf9e-4ee0-96c3-d930107ceb6b.mp4',
-  // v13.11 FORK 2: the other way out of the river. You put the boat over the
-  // wreck's fin instead of round it, and you come down in the trees.
-  rampout: CDN + '2605cc8e-0416-41d9-80bc-1f502df28dfa.mp4',
+  // v13.12 FORK 2, POV ONLY. Nine attempts at this shot; the honest lesson is
+  // that generated clips cannot hold a CHARACTER across a cut -- every version
+  // gave us two orange cats instead of one orange and one black, or swapped
+  // their hats between shots. They CAN hold an environment, once Seedance
+  // extends real footage rather than inventing a new scene.
+  // So this cut shows only what cannot go wrong: the first-person ride up the
+  // wreck's ramp and the launch. No cat is ever in frame, so no cat can be
+  // off-model. The exterior and the crash are held until the characters are
+  // locked. Verified frame by frame: same wreck, same light, real apex.
+  rampout: CDN + '4d308ae5-8f4d-446b-a5ed-f43feaca4121.mp4',
   // v13.11 THE ENDING: Grimtail is down, the fleet pulls out, and both their
   // radios go off at once. The alien war is over. Theirs is not.
   ending: CDN + '79890436-5d17-45ac-9a12-e3744016dd9b.mp4',
