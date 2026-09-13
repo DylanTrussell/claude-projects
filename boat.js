@@ -18,7 +18,6 @@ const GY = 640;
 // the surf) — the jungle route's cutscene never held up, so that choice is
 // gone and the section always ends in the surf-out, same as before v13.11.
 const DIVE_IN   = 1400;   // the ship comes down
-const WRECK_SET  = 2600;  // it settles
 const COMMIT     = 5200;  // the reactor lets go
 const FORK_END   = 6600;  // cut to the surf-out film
 const RAMP_Y     = 250;   // the wreck sits up-river
@@ -255,18 +254,16 @@ export class PTBoat extends RailBase {
     if (!this.flybySpawned && this.t > 17000) {
       this.flybySpawned = true;
       this.flyby = { t: 0 };
-      this.ev({ e: 'banner', k: 'shipSighted' });
       this.ev({ e: 'sfx', n: 'sfx_ufo' });
     }
     if (this.flyby) {
       this.flyby.t += dt;
-      if (this.flyby.t > 11500) this.flyby = null;
+      if (this.flyby.t > 7500) this.flyby = null;
     }
 
     // v13.13 -- THE WRECK. See the constants at the top of this file.
     if (!this.fork && this.ended()) {
       this.fork = { t: 0 };
-      this.ev({ e: 'banner', k: 'shipScan' });
       this.ev({ e: 'sfx', n: 'sfx_ufo' });
     }
     if (this.fork) {
@@ -284,14 +281,12 @@ export class PTBoat extends RailBase {
         this.shake = 20;
         this.ev({ e: 'sfx', n: 'sfx_explosion' });
         this.ev({ e: 'shake' });
-        this.ev({ e: 'banner', k: 'shipDown' });
       }
       if (k > COMMIT && this.fork.ramp === undefined) {
         this.fork.ramp = 0;
         this.shake = 26;
         this.ev({ e: 'sfx', n: 'sfx_explosion' });
         this.ev({ e: 'shake' });
-        this.ev({ e: 'banner', k: 'ptboatDone' });
       }
       if (k > FORK_END) {
         this.done = true;
@@ -307,28 +302,37 @@ export class PTBoat extends RailBase {
     const sx = this.shake ? (Math.random() - 0.5) * this.shake : 0;
     ctx.save(); ctx.translate(sx, 0);
     drawWater(ctx, this.scroll, '#2a6f6b', now);
-    // boss_ship_1 — the deliberate flyby (see step()): eased sweep, dwell, exit
+    // boss_ship_1 -- the flyby. v13.14 (Dylan: "the spaceship flying over the
+    // boat level looks awful... it swoops in low"). It was 250px tall parked
+    // at the horizon for a 3.5s dwell, flying backwards. Now it is one
+    // continuous pass at altitude: half the size, high in the sky band, nose
+    // first, banking through, with its shadow racing over the water far below
+    // and a contrail behind it. It crosses; it does not hover.
     if (this.flyby) {
-      const k = this.flyby.t / 11500;
-      let fx, tilt;
-      if (k < 0.32) { // sweep in from the right, decelerating
-        const e = 1 - Math.pow(1 - k / 0.32, 3);
-        fx = W + 340 + (W * 0.56 - (W + 340)) * e; tilt = -0.06 * (1 - e);
-      } else if (k < 0.62) { // the dwell: drift slowly, let the player stare
-        const e = (k - 0.32) / 0.3;
-        fx = W * 0.56 - W * 0.12 * e; tilt = 0;
-      } else { // punch off the left edge, accelerating into the bank
-        const e = Math.pow((k - 0.62) / 0.38, 2.2);
-        fx = W * 0.44 + (-460 - W * 0.44) * e; tilt = 0.07 * Math.min(1, e * 2.5);
-      }
-      const fy = 118 + Math.sin(now / 700) * 8;
+      const k = Math.min(1, this.flyby.t / 7500);
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      const fx = -360 + ((W + 260) - (-360)) * e;
+      const fy = 62 + Math.sin(k * Math.PI) * 14 + Math.sin(now / 900) * 3;
+      const tilt = -0.07 + 0.14 * e;
       const img = IMG.boss_ship_1;
-      const fh = 250, fw = img ? fh * (img.width / img.height) : fh * 1.5;
-      // its shadow slides across the swells beneath it -- what sells the mass
-      ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = '#0a1210';
-      ctx.beginPath(); ctx.ellipse(fx, H * 0.26 + 46, fw * 0.34, 14, 0, 0, 7); ctx.fill();
+      const fh = 118, fw = img ? fh * (img.width / img.height) : fh * 1.5;
+      // the shadow, far below on the swells -- the height read
+      ctx.save(); ctx.globalAlpha = 0.16; ctx.fillStyle = '#06100e';
+      ctx.beginPath(); ctx.ellipse(fx - 90, 330 + Math.sin(now / 500) * 4, fw * 0.28, 9, 0, 0, 7); ctx.fill();
       ctx.restore();
-      ctx.save(); ctx.globalAlpha = 0.94; ctx.translate(fx, fy); ctx.rotate(tilt);
+      // engine glow and the contrail it leaves
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const tr = ctx.createLinearGradient(fx - fw * 0.4, 0, fx - fw * 0.4 - 420, 0);
+      tr.addColorStop(0, 'rgba(210,230,220,0.28)'); tr.addColorStop(1, 'rgba(210,230,220,0)');
+      ctx.fillStyle = tr; ctx.fillRect(fx - fw * 0.4 - 420, fy - 7, 420, 14);
+      for (let i = 0; i < 3; i++) {
+        const gx2 = fx - fw * 0.42, gy2 = fy + (i - 1) * 12;
+        const gl = ctx.createRadialGradient(gx2, gy2, 0, gx2, gy2, 16);
+        gl.addColorStop(0, 'rgba(200,255,170,0.7)'); gl.addColorStop(1, 'rgba(120,255,90,0)');
+        ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(gx2, gy2, 16, 0, 7); ctx.fill();
+      }
+      ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.96; ctx.translate(fx, fy); ctx.rotate(tilt);
       if (img) ctx.drawImage(img, -fw / 2, -fh / 2, fw, fh);
       else { ctx.fillStyle = '#2a2233'; ctx.beginPath(); ctx.ellipse(0, 0, fw / 2, fh / 2.6, 0, 0, 7); ctx.fill(); }
       ctx.restore();
@@ -427,21 +431,33 @@ export class PTBoat extends RailBase {
     // soaked fire without changing.
     const hull = IMG.alien_scanship_hurt || IMG.alien_scanship;
     const hh = 190, hw = hull ? hh * (hull.width / hull.height) : 380;
-    if (k < WRECK_SET) {
-      const e = Math.min(1, k / WRECK_SET);
+    // v13.14: the descent used to run 1.2s PAST the impact, so the diving hull
+    // and the settled wreck were on screen together, two ships apart. The hull
+    // now flies until the moment the wreck appears, and not one frame after.
+    if (k < DIVE_IN) {
+      const e = Math.min(1, k / DIVE_IN);
       const sx2 = W + 260 + (620 - (W + 260)) * e;
       const sy2 = 120 + Math.pow(e, 2.2) * (RAMP_Y - 120);
+      // fire streaming off it, laid along the path behind it
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 8; i++) {
+        const ph = ((now / 180) + i * 0.33) % 1;
+        ctx.globalAlpha = 0.5 * (1 - ph) * (0.3 + e);
+        ctx.fillStyle = i % 3 === 0 ? '#fff0b0' : i % 3 === 1 ? '#ff9a3c' : '#ff5a1e';
+        ctx.beginPath(); ctx.arc(sx2 + 40 + i * 26 + ph * 90, sy2 - 30 - i * 9 - ph * 40, 8 + ph * 16, 0, 7); ctx.fill();
+      }
+      ctx.restore();
       ctx.save();
       ctx.translate(sx2, sy2);
       ctx.rotate(e * 0.55);                          // nose over as it augers in
       if (hull) ctx.drawImage(hull, -hw / 2, -hh / 2, hw, hh);
       ctx.restore();
-      // burning as it comes
+      // the smoke it trails
       for (let i = 0; i < 6; i++) {
-        const ph = ((now / 220) + i * 0.4) % 1;
-        ctx.globalAlpha = 0.5 * (1 - ph) * e;
-        ctx.fillStyle = i % 2 ? '#ff9a3c' : '#2a2a2a';
-        ctx.beginPath(); ctx.arc(sx2 + 40 + i * 22, sy2 - ph * 60, 8 + ph * 16, 0, 7); ctx.fill();
+        const ph = ((now / 260) + i * 0.4) % 1;
+        ctx.globalAlpha = 0.45 * (1 - ph) * e;
+        ctx.fillStyle = '#2a2a2a';
+        ctx.beginPath(); ctx.arc(sx2 + 60 + i * 34 + ph * 120, sy2 - 10 - i * 14 - ph * 50, 10 + ph * 22, 0, 7); ctx.fill();
       }
       ctx.globalAlpha = 1;
     }
@@ -470,21 +486,9 @@ export class PTBoat extends RailBase {
       ctx.rotate(0.16);
       if (dead) ctx.drawImage(dead, -dw / 2, -hh / 2, dw, hh * 0.72);
       ctx.restore();
-      // THE FIN. A big pale wedge angled up out of the water, lit, unmissable.
-      ctx.save();
-      ctx.globalAlpha = set;
-      ctx.translate(560, wy);
-      ctx.beginPath();
-      ctx.moveTo(-90, 62); ctx.lineTo(40, -96); ctx.lineTo(96, -58); ctx.lineTo(52, 62);
-      ctx.closePath();
-      const fg = ctx.createLinearGradient(-90, 62, 60, -96);
-      fg.addColorStop(0, '#6b4a52'); fg.addColorStop(0.6, '#b98a72'); fg.addColorStop(1, '#e8c9a4');
-      ctx.fillStyle = fg; ctx.fill();
-      ctx.strokeStyle = '#2a1c22'; ctx.lineWidth = 4; ctx.stroke();
-      // wet highlight along the leading edge, so it reads as a surface to hit
-      ctx.strokeStyle = 'rgba(255,240,210,0.85)'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(-84, 58); ctx.lineTo(38, -90); ctx.stroke();
-      ctx.restore();
+      // (v13.14: the flat pale "fin" wedge that used to be drawn here was the
+      // ramp cue for the removed fork -- a beige triangle pasted on the wreck.
+      // Gone. The wreck art carries the shape.)
       // fires on the wreck
       for (let i = 0; i < 7; i++) {
         const ph = ((now / 340) + i * 0.4) % 1;

@@ -114,9 +114,10 @@ export class ParleyBoss extends RailBase {
         this.by += (this.passY - this.by) * Math.min(1, dts * 3);
         this.passGun = (this.passGun || 0) - dt;
         if (this.passGun <= 0 && this.bx > 120 && this.bx < W - 120) {
-          this.passGun = 260;
-          this.bolts.push({ x: this.bx, y: this.by + 60, vx: this.flySide * 120, vy: 560, tx: null });
-          this.ev({ e: 'sfx', n: 'sfx_laser' });
+          this.passGun = 340;
+          // v13.14: bombs off the belly, tumbling, not bolts
+          this.bolts.push({ k: 'bomb', x: this.bx, y: this.by + 70, vx: this.flySide * 160, vy: 80, t: 0, ang: 0, spin: this.flySide * 4 });
+          this.ev({ e: 'sfx', n: 'sfx_shot' });
         }
         if ((this.flySide > 0 && this.bx > W - 330) || (this.flySide < 0 && this.bx < 330)) {
           this.flyState = 'hover'; this.flyT = 0;
@@ -213,31 +214,71 @@ export class ParleyBoss extends RailBase {
       py.exposed = ph < EXPOSE_MS;
     }
 
-    // ---- boss plasma bolts (telegraphed) ----
+    // ---- Grimtail's guns (v13.14) ----
+    // Dylan: "firing really dumb-looking colored circles. It's just super
+    // lazy... cheese missiles, lasers, and little bombs." Three weapons, each
+    // with its own tell:
+    //  MISSILES  a pair of cheese-wedge rockets off the flanks, arcing out and
+    //            then hunting the spot you were standing on; smoke trail,
+    //            blast on the ground
+    //  LASER     a thin pink aiming line from the dome to the dirt, then the
+    //            beam itself -- sidestep while the line is up
+    //  BOMBS     dropped from the belly on the strafing pass (above), tumbling,
+    //            ground blast with a radius
     if (this.phase === 'fight' || this.phase === 'laugh') {
       this.atkT -= dt;
       if (this.tellT > 0) {
         this.tellT -= dt;
         if (this.tellT <= 0) {
           this.tellT = 0;
-          this.bolts.push({ x: this.bx, y: this.by + 60, vx: 0, vy: 620, tx: this.tellTX });
-          this.ev({ e: 'sfx', n: 'sfx_laser' });
+          if (this.tellKind === 'laser') {
+            this.beam = { x: this.tellTX, t: 0, T: 420 };
+            this.ev({ e: 'sfx', n: 'sfx_laser' }); this.ev({ e: 'shake', m: 6 });
+          } else {
+            for (const s of [-1, 1]) {
+              this.bolts.push({ k: 'missile', x: this.bx + s * 150, y: this.by + 30, vx: s * 260, vy: -220, tx: this.tellTX, t: 0, ang: 0, trail: [] });
+            }
+            this.ev({ e: 'sfx', n: 'sfx_shot' });
+          }
         }
-      } else if (this.atkT <= 0 && this.phase === 'fight') {
+      } else if (this.atkT <= 0 && this.phase === 'fight' && this.flyState === 'hover') {
         this.atkT = this.shieldUp ? (1900 + Math.random() * 900) : (1050 + Math.random() * 500);
-        this.tellT = 380; this.tellTX = this.px;
+        this.tellKind = Math.random() < 0.45 ? 'laser' : 'missile';
+        this.tellT = this.tellKind === 'laser' ? 620 : 380; this.tellTX = this.px;
       }
+    }
+    if (this.beam) {
+      this.beam.t += dt;
+      if (this.beam.t > 120 && this.beam.t < 360 && !this.beam.hit && Math.abs(this.beam.x - this.px) < 40) { this.beam.hit = 1; this.hurt(p, 1); }
+      if (this.beam.t >= this.beam.T) this.beam = null;
     }
     for (const b of this.bolts) {
-      // home in gently on the telegraphed x so a stationary dodge still works
-      b.x += (b.tx - b.x) * Math.min(1, dts * 2.2);
-      b.y += b.vy * dts;
-      if (b.y > GY - 40 && b.y < GY + 20 && !b.spent) {
-        if (Math.abs(b.x - this.px) < 54) { b.spent = true; this.hurt(p, 1); }
-        if (b.y > GY + 10) b.spent = true;
+      b.t += dt;
+      if (b.k === 'missile') {
+        // arcs out on launch, then steers onto the telegraphed spot
+        const dx = b.tx - b.x, dy = (GY - 6) - b.y;
+        const d = Math.max(1, Math.hypot(dx, dy));
+        const steer = Math.min(1, b.t / 900);
+        b.vx += ((dx / d) * 640 - b.vx) * Math.min(1, dts * 3.2 * steer);
+        b.vy += ((dy / d) * 640 - b.vy) * Math.min(1, dts * 3.2 * steer) + 260 * dts * (1 - steer);
+        b.x += b.vx * dts; b.y += b.vy * dts;
+        b.ang = Math.atan2(b.vy, b.vx);
+        if ((b.t % 60) < dt) b.trail.push({ x: b.x, y: b.y, t: 0 });
+        for (const q of b.trail) q.t += dt;
+        b.trail = b.trail.filter(q => q.t < 500);
+        if (b.y >= GY - 12 && !b.spent) {
+          b.spent = true; this.boom(b.x, GY - 20, 0);
+          if (Math.abs(b.x - this.px) < 70) this.hurt(p, 1);
+        }
+      } else { // bomb
+        b.vy += 900 * dts; b.x += b.vx * dts; b.y += b.vy * dts; b.ang += b.spin * dts;
+        if (b.y >= GY - 10 && !b.spent) {
+          b.spent = true; this.boom(b.x, GY - 16, 0);
+          if (Math.abs(b.x - this.px) < 84) this.hurt(p, 1);
+        }
       }
     }
-    this.bolts = this.bolts.filter(b => !b.spent && b.y < H + 40);
+    this.bolts = this.bolts.filter(b => !b.spent && b.y < H + 40 && b.x > -100 && b.x < W + 100);
 
     for (const sp of this.sparks) sp.t += dt;
     this.sparks = this.sparks.filter(sp => sp.t < 260);
@@ -461,24 +502,95 @@ export class ParleyBoss extends RailBase {
       }
     }
 
-    // shield sparks
+    // shield sparks -- v13.14: a burst of radiating splinters with a hot
+    // centre, not a growing disc
     for (const sp of this.sparks) {
       const k = sp.t / 260;
-      ctx.fillStyle = sp.good ? `rgba(140,255,59,${(1 - k) * 0.9})` : `rgba(90,170,255,${(1 - k) * 0.9})`;
-      ctx.beginPath(); ctx.arc(sp.x, sp.y, 6 + k * 22, 0, 7); ctx.fill();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = sp.good ? `rgba(140,255,59,${((1 - k) * 0.9).toFixed(2)})` : `rgba(90,170,255,${((1 - k) * 0.9).toFixed(2)})`;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) {
+        const a = i * 1.047 + sp.x * 0.01;
+        const r0 = 4 + k * 26, r1 = r0 + 6 + (i % 2) * 6;
+        ctx.beginPath(); ctx.moveTo(sp.x + Math.cos(a) * r0, sp.y + Math.sin(a) * r0); ctx.lineTo(sp.x + Math.cos(a) * r1, sp.y + Math.sin(a) * r1); ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(255,255,255,${((1 - k) * 0.7).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 3 + (1 - k) * 4, 0, 7); ctx.fill();
+      ctx.restore();
     }
 
     // player shots
     ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
     if (this.shots) for (const s of this.shots) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x, s.y + 26); ctx.stroke(); }
 
-    // boss bolts + telegraph
+    // Grimtail's guns (v13.14): the tells, the beam, the missiles, the bombs
     if (this.tellT > 0) {
-      ctx.fillStyle = `rgba(255,80,220,${0.5 + 0.4 * Math.sin(now / 30)})`;
-      ctx.beginPath(); ctx.arc(this.bx, this.by + 60, 16, 0, 7); ctx.fill();
+      const pulse = 0.5 + 0.4 * Math.sin(now / 30);
+      if (this.tellKind === 'laser') { // aiming line from the dome to the ground
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = `rgba(255,80,220,${(0.35 + 0.3 * pulse).toFixed(2)})`; ctx.lineWidth = 2;
+        ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 12;
+        ctx.beginPath(); ctx.moveTo(this.bx, this.by + 60); ctx.lineTo(this.tellTX, GY); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = `rgba(255,80,220,${pulse.toFixed(2)})`;
+        ctx.beginPath(); ctx.arc(this.tellTX, GY - 4, 10 + 6 * pulse, 0, 7); ctx.fill();
+        ctx.restore();
+      } else { // the missile bays on the flanks glow before the launch
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        for (const s of [-1, 1]) {
+          const g3 = ctx.createRadialGradient(this.bx + s * 150, this.by + 30, 0, this.bx + s * 150, this.by + 30, 26);
+          g3.addColorStop(0, `rgba(255,220,90,${pulse.toFixed(2)})`); g3.addColorStop(1, 'rgba(255,200,60,0)');
+          ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(this.bx + s * 150, this.by + 30, 26, 0, 7); ctx.fill();
+        }
+        ctx.restore();
+      }
     }
-    ctx.fillStyle = '#ff54d8';
-    for (const b of this.bolts) { ctx.beginPath(); ctx.arc(b.x, b.y, 10, 0, 7); ctx.fill(); }
+    if (this.beam) { // the laser: a hot core inside a pink bloom, flaring in and dying out
+      const bk = this.beam.t / this.beam.T;
+      const wdt = bk < 0.25 ? bk / 0.25 : bk > 0.7 ? (1 - bk) / 0.3 : 1;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(255,70,210,${(0.55 * wdt).toFixed(2)})`; ctx.lineWidth = 34 * wdt + 0.1;
+      ctx.beginPath(); ctx.moveTo(this.bx, this.by + 60); ctx.lineTo(this.beam.x, GY); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,235,250,${(0.95 * wdt).toFixed(2)})`; ctx.lineWidth = 9 * wdt + 0.1;
+      ctx.beginPath(); ctx.moveTo(this.bx, this.by + 60); ctx.lineTo(this.beam.x, GY); ctx.stroke();
+      const gl = ctx.createRadialGradient(this.beam.x, GY - 6, 0, this.beam.x, GY - 6, 90 * wdt + 1);
+      gl.addColorStop(0, 'rgba(255,240,250,0.9)'); gl.addColorStop(0.4, 'rgba(255,90,220,0.5)'); gl.addColorStop(1, 'rgba(255,90,220,0)');
+      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(this.beam.x, GY - 6, 90 * wdt + 1, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+    for (const b of this.bolts) {
+      if (b.k === 'missile') {
+        for (const q of b.trail) { // smoke trail
+          const qk = q.t / 500;
+          ctx.globalAlpha = 0.35 * (1 - qk); ctx.fillStyle = '#d8d2c4';
+          ctx.beginPath(); ctx.arc(q.x, q.y, 4 + qk * 12, 0, 7); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.ang); ctx.scale(1.45, 1.45);
+        ctx.globalCompositeOperation = 'lighter';   // exhaust
+        const ex = ctx.createRadialGradient(-16, 0, 0, -16, 0, 18);
+        ex.addColorStop(0, 'rgba(255,240,180,0.9)'); ex.addColorStop(1, 'rgba(255,140,40,0)');
+        ctx.fillStyle = ex; ctx.beginPath(); ctx.arc(-16, 0, 18, 0, 7); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+        // the wedge: a cheese slice with fins, holes and all
+        ctx.fillStyle = PAL.cheese;
+        ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-14, -9); ctx.lineTo(-14, 9); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = PAL.cheeseDark;
+        ctx.beginPath(); ctx.arc(2, -2, 2.4, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(-6, 3, 2, 0, 7); ctx.fill();
+        ctx.fillStyle = PAL.redAccent;
+        ctx.fillRect(-16, -12, 5, 6); ctx.fillRect(-16, 6, 5, 6);
+        ctx.restore();
+      } else { // bomb: a squat dark cylinder with a pink band and a stub fin, tumbling
+        ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.ang);
+        ctx.fillStyle = '#2b2a30'; ctx.beginPath(); ctx.ellipse(0, 0, 13, 8, 0, 0, 7); ctx.fill();
+        ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#ff54d8'; ctx.fillRect(-3, -4, 6, 8);
+        ctx.fillStyle = '#3d3c44'; ctx.fillRect(-19, -5, 7, 10);
+        ctx.restore();
+      }
+    }
 
     // v13.5 (Dylan's screenshot: "I don't know what this thing on the bottom
     // is that I'm shooting from. It makes no sense.") It was a khaki rectangle
