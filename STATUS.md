@@ -1,8 +1,18 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-v13.9 is live at **https://dylantrussell.github.io/claude-projects/** — served
-from the `gh-pages` branch, root path. Verified by curling the deployed modules
-and all 23 new sprites (HTTP 200 on every one) after the Pages rebuild.
+v13.13 is live at **https://dylantrussell.github.io/claude-projects/** — served
+from the `gh-pages` branch, root path. Verified by curling the deployed
+`main.js`/`boat.js`/`index.html` post-deploy.
+
+## v13.13 — drop both forks, one route (2026-09-13)
+
+The Huey-vs-Skyraider choice after the truce and the ramp-vs-around choice at
+the end of the river are gone. The ramp route's payoff (a boat-launch
+cutscene) never held up, so it's cut rather than patched, and the unrelated
+air-fork choice went with it. The game is a single line now: truce -> Huey
+door gun -> ... -> boat -> surf-out -> parley -> victory, same path the test
+harness already defaulted to. `tools/gate.sh` no longer rotates four branch
+combinations, just runs the one route N times (12/12 green).
 
 ## v13.9 — the sprites go in, three named bugs go out (2026-09-01)
 
