@@ -1,6 +1,6 @@
 // Boot, screens, input, and the fixed-timestep loop — single-player build.
 // (The co-op relay server and net client live in the repo for a future version.)
-import { CFG, C, BIND, PADBIND, W, H } from './config.js';
+import { CFG, C, BIND, PADBIND, W, H, BRANCHES } from './config.js';
 import { STR, SUBS, CUT_MEOWS } from './strings.js';
 
 // runtime subtitle driver: cues live in strings.js, never baked into the video
@@ -15,7 +15,7 @@ function attachSubs(vid, subEl, cues) {
   update();
 }
 import { loadAll, audio, IMG, ensureChunk, prefetchChunk } from './assets.js';
-import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState } from './sim.js';
+import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState, joinCharlie } from './sim.js';
 import { render, fxEvent, fxUpdate, FX, drawRotor, TUNNEL_TRANS_MS, __devReplayValkyries } from './render.js';
 import { Tunnel } from './fps.js';
 import { VIDEO_URLS } from './chunks.js';
@@ -105,7 +105,7 @@ function showChunkLoading(on, msg) {
 }
 
 function show(id) {
-  for (const s of ['screen-title', 'screen-lobby', 'screen-tally']) $(s).style.display = 'none';
+  for (const s of ['screen-title', 'screen-lobby', 'screen-tally', 'screen-fork']) { const el = $(s); if (el) el.style.display = 'none'; }
   if (id) $(id).style.display = 'flex';
 }
 
@@ -117,6 +117,9 @@ function tstr() {
     't-controls': 'controlsTitle', 'c1': 'controlsMove', 'c2': 'controlsFire', 'c3': 'controlsPad', 'c4': 'controlsTouch',
     't-opts': 'options', 'o-shake': 'optShake', 'o-flash': 'optFlash', 'o-text': 'optTextScale',
     'btn-again': 'playAgain', 'btn-skip': 'skip', 'btn-skip2': 'skip', 'btn-begin': 'watchIntro',
+    'fk-title': 'forkAirTitle', 'fk-sub': 'forkAirSub',
+    'fk-heli-name': 'forkHeliName', 'fk-heli-desc': 'forkHeliDesc',
+    'fk-sky-name': 'forkSkyName', 'fk-sky-desc': 'forkSkyDesc',
     'p-title': 'pausedTitle', 'p-music': 'musicVol', 'p-sfx': 'sfxVol', 'btn-resume': 'resume',
   };
   for (const [id, k] of Object.entries(map)) { const el = $(id); if (el) el.textContent = STR[k]; }
@@ -186,16 +189,37 @@ function startGame() {
 // v13.13 -- the truce used to open onto a Huey-or-Skyraider choice screen.
 // Removed: the game now always continues on the Huey door gun. g.airPick is
 // still set (a few places read it) so nothing downstream has to change.
+// v13.15: on the BRANCHES build the truce opens onto the choice screen instead
+// (Huey door gun, or fly the Skyraider yourself). The aircraft you do not pick
+// never fires, and both routes rejoin at the same next beat. On the Skyraider
+// route there is no Huey to crash, so Charlie simply walks out of the truce
+// with you.
 function resolveTruce() {
-  if (g) {
-    g.airPick = 'heli';
+  const cleanup = () => {
+    if (!g) return;
     // The truce cleanup belongs to the TRUCE, not to the door gun -- do it
     // here, once, before the rail starts.
     for (const e of g.enemies) if (e.duel) e.st = 'gone';
     const p0 = g.players[0];
     if (p0) { p0.invulnT = 2600; if (p0.st !== 'out') p0.st = 'alive'; }
+  };
+  if (!BRANCHES || !$('screen-fork')) {
+    if (g) g.airPick = 'heli';
+    cleanup();
+    handleEvents([{ e: 'rail', k: 'doorgun' }]);
+    return;
   }
-  handleEvents([{ e: 'rail', k: 'doorgun' }]);
+  const pick = (k) => {
+    if (g) { g.airPick = k; cleanup(); if (k === 'sky') joinCharlie(g); }
+    show(null);
+    handleEvents([{ e: 'rail', k: k === 'sky' ? 'skyraider' : 'doorgun' }]);
+  };
+  if (IMG.heli_us) $('fk-heli-img').src = IMG.heli_us.src;
+  if (IMG.skyraider) $('fk-sky-img').src = IMG.skyraider.src;
+  $('fk-heli').onclick = () => pick('heli');
+  $('fk-sky').onclick = () => pick('sky');
+  show('screen-fork');
+  $('fk-heli').focus();
 }
 
 function endGame(won) {
@@ -703,6 +727,7 @@ function frame(now) {
         const wasSurf = rail instanceof Surf;
         const wasParley = rail instanceof ParleyBoss;
         const kills = rail.kills, dead = rail.dead;
+        const route = rail.route;   // set by PTBoat's wreck sequence ('jungle' only on BRANCHES)
         // Kill quotas (v13.1) end a rail early when you shoot well -- but the
         // payout is kills*100, so clearing the quota FORGOES the kills you'd
         // have racked up running the timer out: measured ~4,765 points across
@@ -712,12 +737,26 @@ function frame(now) {
         rail = null;
         if (dead) { endGame(false); }
         else if (wasPTBoat) {
-          // v13.13: the boat section used to end on a player-steered choice
-          // (over the wreck's fin into the jungle, or around it to the surf).
-          // The jungle route's cutscene never held up, so the choice is gone
-          // and the boat always takes the surf-out now, same as before v13.11.
+          // v13.13: the linear build always takes the surf-out. v13.15: on the
+          // BRANCHES build the boat section ends on a choice the player
+          // steered -- over the wreck's fin into the jungle (the ramp film,
+          // then you walk east to the LZ), or around it onto the surfboard.
           g.score += kills * 100 + timeBonus;
-          handleEvents([{ e: 'rail', k: 'surf' }]);
+          if (BRANCHES && route === 'jungle') {
+            playCutscene('rampout', () => {
+              const p3 = g.players[0];
+              // Do NOT move him: the boat section starts near the LZ, and a
+              // fixed x sent him backward past cleared content (harness-caught).
+              p3.y = CFG.groundY;
+              p3.invulnT = 2600; if (p3.st !== 'out') p3.st = 'alive';
+              g.heliEvac = { t: 2600 };
+              FX.whiteT0 = 1200; FX.whiteT = 1200;
+              audio.music('music_invasion');
+              handleEvents([{ e: 'evac' }]);
+            });
+          } else {
+            handleEvents([{ e: 'rail', k: 'surf' }]);
+          }
         } else if (wasParley) { // Chancellor Grimtail down — the evac he interrupted actually lands now
           g.score += kills * 100 + timeBonus;
           g.over = true; g.won = true;

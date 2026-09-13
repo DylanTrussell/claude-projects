@@ -4,7 +4,7 @@
 //  Surf   — the boat's gone. You're on boards, riding the wave face, shooting
 //           alien raiders and rats that surface right under you, out to the LZ.
 // Same modal pattern as DoorGun/Skyraider: step(bits,dt,p) / render(ctx,now) / done.
-import { CFG, C, PAL, W, H } from './config.js';
+import { CFG, C, PAL, W, H, BRANCHES } from './config.js';
 import { IMG } from './assets.js';
 import { RailBase } from './rails.js';
 import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burst, replaces the flat circle
@@ -18,9 +18,11 @@ const GY = 640;
 // the surf) — the jungle route's cutscene never held up, so that choice is
 // gone and the section always ends in the surf-out, same as before v13.11.
 const DIVE_IN   = 1400;   // the ship comes down
-const COMMIT     = 5200;  // the reactor lets go
-const FORK_END   = 6600;  // cut to the surf-out film
-const RAMP_Y     = 250;   // the wreck sits up-river
+const LANES_AT   = 2600;  // BRANCHES: the two lanes past it are readable from here
+const COMMIT     = 5200;  // the reactor lets go (BRANCHES: your lane locks in)
+const FORK_END   = 6600;  // cut to the film you earned
+const RAMP_Y     = 250;   // the wreck sits up-river; BRANCHES: steer above this line to take it
+const RAMP_BAND  = 130;   // BRANCHES: how close to RAMP_Y counts as hitting it
 
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
@@ -282,15 +284,17 @@ export class PTBoat extends RailBase {
         this.ev({ e: 'sfx', n: 'sfx_explosion' });
         this.ev({ e: 'shake' });
       }
+      // lock the lane in once, at the commit point, so the outcome cannot
+      // flicker on the last frame. Only the BRANCHES build has a ramp lane.
       if (k > COMMIT && this.fork.ramp === undefined) {
-        this.fork.ramp = 0;
+        this.fork.ramp = BRANCHES && Math.abs(this.py - RAMP_Y) < RAMP_BAND ? 1 : 0;
         this.shake = 26;
         this.ev({ e: 'sfx', n: 'sfx_explosion' });
         this.ev({ e: 'shake' });
       }
       if (k > FORK_END) {
         this.done = true;
-        this.route = 'surf';   // main.js reads this
+        this.route = this.fork.ramp ? 'jungle' : 'surf';   // main.js reads this
       }
       this.prevBits = bits;
       return;
@@ -499,8 +503,36 @@ export class PTBoat extends RailBase {
       ctx.globalAlpha = 1;
     }
 
+    // --- BRANCHES: the two lanes, while the choice is still open ---
+    if (BRANCHES && k > LANES_AT && k < COMMIT) {
+      const pulse = 0.45 + 0.3 * Math.sin(now / 190);
+      const onRamp = Math.abs(this.py - RAMP_Y) < RAMP_BAND;
+      ctx.save();
+      ctx.globalAlpha = onRamp ? pulse + 0.25 : pulse * 0.5;
+      ctx.strokeStyle = '#FFC93C'; ctx.lineWidth = onRamp ? 5 : 3;
+      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
+      ctx.beginPath(); ctx.moveTo(260, RAMP_Y); ctx.lineTo(540, RAMP_Y); ctx.stroke();
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = onRamp ? pulse * 0.5 : pulse + 0.25;
+      ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = onRamp ? 3 : 5;
+      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
+      ctx.beginPath(); ctx.moveTo(260, 470); ctx.lineTo(760, 470); ctx.stroke();
+      ctx.restore();
+      ctx.setLineDash([]);
+    }
+    // --- BRANCHES, committed to the ramp: the boat pitches and climbs ---
+    if (this.fork.ramp === 1) {
+      const j = Math.min(1, (k - COMMIT) / (FORK_END - COMMIT));
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.35 * j;
+      ctx.fillStyle = 'rgba(255,230,180,0.9)';
+      ctx.beginPath(); ctx.ellipse(220 + j * 300, this.py - j * 210, 140, 46, -0.5, 0, 7); ctx.fill();
+      ctx.restore();
+    }
     // --- the reactor lets go as you draw level ---
-    if (k > COMMIT) {
+    if (k > COMMIT && this.fork.ramp !== 1) {
       const j = Math.min(1, (k - COMMIT) / 500);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -724,9 +756,15 @@ export class Surf extends RailBase {
 // ---------- headless autopilots (test harness only) ----------
 export function boatBot(rail, frame) {
   let b = C.FIRE;
-  // once the wreck sequence opens, the bot stops weaving — there is nothing
-  // left to steer for, the outcome is fixed
-  if (rail.fork) return b;
+  // once the wreck sequence opens, the bot stops weaving. On the BRANCHES
+  // build the harness tells it which lane to drive (rail.botRoute, 'ramp' or
+  // 'around') so the gate covers both outcomes.
+  if (rail.fork) {
+    const want = rail.botRoute === 'ramp' ? RAMP_Y : 470;
+    if (rail.py > want + 12) b |= C.UP;
+    else if (rail.py < want - 12) b |= C.DOWN;
+    return b;
+  }
   const ph = Math.sin(frame / 44);
   if (ph > 0.3) b |= C.UP; else if (ph < -0.3) b |= C.DOWN;
   if (frame % 240 === 0) b |= C.GREN;
