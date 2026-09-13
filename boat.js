@@ -11,22 +11,17 @@ import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burs
 
 const GY = 640;
 
-// v13.11 -- THE FORK. The scanner ship comes in low, takes your bow-gun fire
-// and goes into the river ahead of you. It always goes down; you are already
-// shooting, so there is no skill gate on it. What IS a choice is what you do
-// with the wreck: its sheared-off fin is angled up out of the water on one
-// side of the channel, and there is clear water on the other.
-//
-//   OVER THE FIN  -> you launch, and you come down in the jungle.
-//   AROUND IT     -> the reactor lets go as you draw level, and you swim.
-//
-// One event, both outcomes. No second ship and no extra failure state.
+// v13.13 -- THE SCANNER SHIP. It comes in low, takes your bow-gun fire and
+// goes into the river ahead of you. It always goes down; you are already
+// shooting, so there is no skill gate on it. This used to also be a
+// player-steered fork (over the wreck's fin into the jungle, or around it to
+// the surf) — the jungle route's cutscene never held up, so that choice is
+// gone and the section always ends in the surf-out, same as before v13.11.
 const DIVE_IN   = 1400;   // the ship comes down
-const WRECK_SET  = 2600;  // it settles and the fin is readable
-const COMMIT     = 5200;  // your lane is locked in
-const FORK_END   = 6600;  // cut to whichever film you earned
-const RAMP_Y     = 250;   // the fin sits up-river; steer above this line to hit it
-const RAMP_BAND  = 130;   // how close to RAMP_Y counts as hitting it
+const WRECK_SET  = 2600;  // it settles
+const COMMIT     = 5200;  // the reactor lets go
+const FORK_END   = 6600;  // cut to the surf-out film
+const RAMP_Y     = 250;   // the wreck sits up-river
 
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
@@ -137,8 +132,8 @@ export class PTBoat extends RailBase {
     this.mines = []; this.depth = []; this.started = false;
     this.wake = 0;
     this.flyby = null; this.flybySpawned = false; // boss_ship_1 background tension beat, see below
-    this.fork = null;           // v13.11: the wreck-and-choose sequence that ends the section
-    this.route = null;          // 'jungle' (took the ramp) or 'surf' (went around)
+    this.fork = null;           // the wreck sequence that ends the section
+    this.route = null;          // always 'surf' once the section ends
   }
   step(bits, dt, p) {
     if (this.done) return;
@@ -268,7 +263,7 @@ export class PTBoat extends RailBase {
       if (this.flyby.t > 11500) this.flyby = null;
     }
 
-    // v13.11 -- THE FORK. See the constants at the top of this file.
+    // v13.13 -- THE WRECK. See the constants at the top of this file.
     if (!this.fork && this.ended()) {
       this.fork = { t: 0 };
       this.ev({ e: 'banner', k: 'shipScan' });
@@ -277,7 +272,8 @@ export class PTBoat extends RailBase {
     if (this.fork) {
       this.fork.t += dt;
       const k = this.fork.t;
-      // you can still steer right up to the commit point -- that IS the choice
+      // free movement while the ship comes down, just for feel — it no
+      // longer decides anything
       if (k < COMMIT) {
         if (bits & C.UP) this.py -= 300 * dts;
         if (bits & C.DOWN) this.py += 300 * dts;
@@ -290,27 +286,16 @@ export class PTBoat extends RailBase {
         this.ev({ e: 'shake' });
         this.ev({ e: 'banner', k: 'shipDown' });
       }
-      if (k > WRECK_SET && !this.fork.shown) {
-        this.fork.shown = 1;
-        this.ev({ e: 'banner', k: 'forkRamp' });
-      }
-      // lock the lane in once, at the commit point, so the outcome cannot
-      // flicker on the last frame
       if (k > COMMIT && this.fork.ramp === undefined) {
-        this.fork.ramp = Math.abs(this.py - RAMP_Y) < RAMP_BAND ? 1 : 0;
-        if (this.fork.ramp) {
-          this.ev({ e: 'sfx', n: 'sfx_explosion' });
-          this.ev({ e: 'shake' });
-        } else {
-          this.shake = 26;
-          this.ev({ e: 'sfx', n: 'sfx_explosion' });
-          this.ev({ e: 'shake' });
-          this.ev({ e: 'banner', k: 'ptboatDone' });
-        }
+        this.fork.ramp = 0;
+        this.shake = 26;
+        this.ev({ e: 'sfx', n: 'sfx_explosion' });
+        this.ev({ e: 'shake' });
+        this.ev({ e: 'banner', k: 'ptboatDone' });
       }
       if (k > FORK_END) {
         this.done = true;
-        this.route = this.fork.ramp ? 'jungle' : 'surf';   // main.js reads this
+        this.route = 'surf';   // main.js reads this
       }
       this.prevBits = bits;
       return;
@@ -421,7 +406,7 @@ export class PTBoat extends RailBase {
     if (this.fireT > 0) drawMuzzleBurst(ctx, 300, this.py - 8 + bob, 0, this.fireT / 70); // v11.2: real fire burst
     this.drawBooms(ctx);
     // v13.9 -- scan, lock, burn. Drawn over the boat so the beam lands ON it.
-    if (this.fork) this.drawFork(ctx, now, this.py + bob);
+    if (this.fork) this.drawFork(ctx, now);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(W / 2 - 200, 14, 400, 10);
@@ -430,12 +415,10 @@ export class PTBoat extends RailBase {
     ctx.fillText('CHARGES ' + '▮'.repeat(this.charges), 24, 86);
   }
 
-  // v13.11 -- THE FORK, drawn. The ship comes down, the wreck settles across
-  // the channel with one sheared fin angled up out of the water, and the two
-  // ways past it are legible for three full seconds before the lane locks.
-  drawFork(ctx, now, boatY) {
+  // v13.13 -- THE WRECK, drawn. The ship comes down and settles across the
+  // channel, fin up out of the water, before the reactor takes your stern.
+  drawFork(ctx, now) {
     const k = this.fork.t;
-    const bx = 220;
 
     // --- the ship coming down ---
     // v13.12: it took your bow gun on the way in, so it arrives already hurt
@@ -512,39 +495,8 @@ export class PTBoat extends RailBase {
       ctx.globalAlpha = 1;
     }
 
-    // --- the two lanes, while the choice is still open ---
-    if (k > WRECK_SET && k < COMMIT) {
-      const pulse = 0.45 + 0.3 * Math.sin(now / 190);
-      const onRamp = Math.abs(this.py - RAMP_Y) < RAMP_BAND;
-      // the ramp lane
-      ctx.save();
-      ctx.globalAlpha = onRamp ? pulse + 0.25 : pulse * 0.5;
-      ctx.strokeStyle = '#FFC93C'; ctx.lineWidth = onRamp ? 5 : 3;
-      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
-      ctx.beginPath(); ctx.moveTo(bx + 40, RAMP_Y); ctx.lineTo(540, RAMP_Y); ctx.stroke();
-      ctx.restore();
-      // the open-water lane
-      ctx.save();
-      ctx.globalAlpha = onRamp ? pulse * 0.5 : pulse + 0.25;
-      ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = onRamp ? 3 : 5;
-      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
-      ctx.beginPath(); ctx.moveTo(bx + 40, 470); ctx.lineTo(760, 470); ctx.stroke();
-      ctx.restore();
-      ctx.setLineDash([]);
-    }
-
-    // --- committed ---
-    if (this.fork.ramp === 1) {
-      // riding up the fin: the boat pitches and climbs
-      const j = Math.min(1, (k - COMMIT) / (FORK_END - COMMIT));
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.35 * j;
-      ctx.fillStyle = 'rgba(255,230,180,0.9)';
-      ctx.beginPath(); ctx.ellipse(bx + j * 300, boatY - j * 210, 140, 46, -0.5, 0, 7); ctx.fill();
-      ctx.restore();
-    } else if (this.fork.ramp === 0) {
-      // the reactor lets go as you draw level
+    // --- the reactor lets go as you draw level ---
+    if (k > COMMIT) {
       const j = Math.min(1, (k - COMMIT) / 500);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -768,17 +720,9 @@ export class Surf extends RailBase {
 // ---------- headless autopilots (test harness only) ----------
 export function boatBot(rail, frame) {
   let b = C.FIRE;
-  // v13.11: once the fork opens, the bot stops weaving and drives the lane it
-  // was told to. rail.botRoute is set by the harness ('ramp' or 'around') so
-  // the gate can cover BOTH outcomes; without it the bot would always drift
-  // wherever its sine wave happened to be and the jungle route would never
-  // once be exercised.
-  if (rail.fork) {
-    const want = rail.botRoute === 'ramp' ? RAMP_Y : 470;
-    if (rail.py > want + 12) b |= C.UP;
-    else if (rail.py < want - 12) b |= C.DOWN;
-    return b;
-  }
+  // once the wreck sequence opens, the bot stops weaving — there is nothing
+  // left to steer for, the outcome is fixed
+  if (rail.fork) return b;
   const ph = Math.sin(frame / 44);
   if (ph > 0.3) b |= C.UP; else if (ph < -0.3) b |= C.DOWN;
   if (frame % 240 === 0) b |= C.GREN;
