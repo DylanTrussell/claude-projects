@@ -1,5 +1,13 @@
 // All balance & polish numbers live here (design/thresholds.md is the contract).
 export const W = 1280, H = 720;            // logical canvas
+// v13.15 -- the choose-your-path build. The linear game (default) and the
+// branching game (two forks: Huey/Skyraider after the truce, over-the-wreck/
+// around-it at the end of the river) ship from ONE codebase; this flag is
+// what the /branches/ deploy flips (window.AM_BRANCHES), or ?branches on any
+// build, or AM_BRANCHES=1 for the headless harness.
+export const BRANCHES = !!((typeof globalThis !== 'undefined' && globalThis.AM_BRANCHES)
+  || (typeof location !== 'undefined' && new URLSearchParams(location.search).has('branches'))
+  || (typeof process !== 'undefined' && process.env && process.env.AM_BRANCHES));
 export const STEP = 1000 / 60;
 
 export const CFG = {

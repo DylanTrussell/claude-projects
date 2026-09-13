@@ -1456,6 +1456,14 @@ export function startCrashSite(g) {
   for (let i = 0; i < 3; i++) evPush(g, { e: 'boom', x: wx - 60 + i * 60, y: CFG.groundY - 40 - (i % 2) * 50, big: i === 1 ? 1 : 0 });
   evPush(g, { e: 'shake', m: 14 });
 }
+// v13.15: the BRANCHES build's Skyraider route has no Huey to crash, so Charlie
+// walks out of the truce with you instead of out of a wreck.
+export function joinCharlie(g) {
+  if (g.enemies.some(e2 => e2.charlie && e2.st !== 'gone')) return;
+  const p = alivePlayers(g)[0] || g.players[0];
+  const c = en('buddy', p.x - 60, CFG.groundY, { hp: 9999, side: 'buddy', face: 1, charlie: 1, st: 'walk', sq: 0 });
+  g.charlie = c.id; g.enemies.push(c);
+}
 function stepCrashSite(g, dt) {
   const c = g.crash;
   c.t += dt; c.waveT -= dt;

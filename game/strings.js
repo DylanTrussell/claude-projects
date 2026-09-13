@@ -77,6 +77,13 @@ export const STR = {
   // gun did not run dry, it jammed, and the banner should not lie about it.
   duelJam: "*CLICK* — THE GUN'S JAMMED",
   theyreOutToo: "...HE'S OUT TOO",
+  // v13.15 BRANCHES build -- the aircraft choice after the truce
+  forkAirTitle: "TWO BIRDS ON THE PAD",
+  forkAirSub: "Pick one. The other flies without you.",
+  forkHeliName: "THE HUEY",
+  forkHeliDesc: "Somebody else flies. You hang out the door behind the gun, close to the ground, and you keep the aircraft you are standing in alive.",
+  forkSkyName: "THE SKYRAIDER",
+  forkSkyDesc: "You fly it. Guns, napalm, the whole treeline. Nobody to protect but yourself.",
   actDoorgun: "RAT PATROL — MAN THE DOOR GUN",
   doorgunControls: "W/S ALTITUDE · A/D AIM GUN · J FIRE",
   heliT2: "AIR DROP! ROCKET PODS BOLTED ON",

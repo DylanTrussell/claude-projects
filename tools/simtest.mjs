@@ -10,6 +10,8 @@ import { DoorGun, Skyraider, railBot } from '../public/rails.js';
 // game end to end instead of stopping short of content that's live now.
 import { PTBoat, Surf, boatBot } from '../public/boat.js';
 import { ParleyBoss, parleyBot } from '../public/boss2.js';
+import { BRANCHES } from '../public/config.js';
+import { joinCharlie } from '../public/sim.js';
 
 const RAIL_CTOR = { skyraider: Skyraider, doorgun: DoorGun, ptboat: PTBoat, surf: Surf, parley: ParleyBoss };
 const RAIL_BOT = { ptboat: boatBot, surf: boatBot, parley: parleyBot };
@@ -37,10 +39,13 @@ function runRail(kind, p, setup) {
 
 const seats = [{ pid: 'p1', hero: 'us' }];
 const g = makeGame(1337, seats);
-// v13.13: the air fork (Huey/Skyraider) and the boat fork (ramp/surf) are
-// gone — the game always takes the Huey and always ends the boat section in
-// the surf-out, so the harness just mirrors that instead of picking a route.
-g.airPick = 'heli';
+// v13.13: the linear build always takes the Huey and the surf-out.
+// v13.15: with AM_BRANCHES=1 the game forks twice, and the harness picks a
+// route the same way a player would: --branch=heli|sky, --boat=ramp|around.
+const BRANCH = (process.argv.find(a => a.startsWith('--branch=')) || '--branch=heli').split('=')[1];
+const BOAT = (process.argv.find(a => a.startsWith('--boat=')) || '--boat=around').split('=')[1];
+g.airPick = BRANCHES && BRANCH === 'sky' ? 'sky' : 'heli';
+console.log('branches:', BRANCHES, '/ air:', g.airPick, '/ boat:', BRANCHES ? BOAT : 'around');
 for (const p of g.players) p.lives = 99; // test-only endurance so we exercise ALL content
 
 const seen = new Set();
@@ -113,6 +118,7 @@ while (simMs < MAXMS && !victory && !gameover) {
       // the truce cleanup belongs to the truce, not the door gun
       for (const e of g.enemies) if (e.duel) e.st = 'gone';
       { const p0 = g.players[0]; p0.invulnT = 2600; if (p0.st !== 'out') p0.st = 'alive'; }
+      if (g.airPick === 'sky') { joinCharlie(g); continue; }   // BRANCHES: flies the plane later instead
       const p = g.players[0];
       const r = runRail('doorgun', p);
       g.crashPending = 1; // v13.14: the sim picks up at the wreck, Charlie inside
@@ -127,10 +133,13 @@ while (simMs < MAXMS && !victory && !gameover) {
     }
     if (ev.e === 'rail' && ev.k === 'ptboat') { // v11: mirrors main.js's rail-done chaining exactly
       const p = g.players[0];
-      const r1 = runRail('ptboat', p);
+      const r1 = runRail('ptboat', p, (rail) => { rail.botRoute = BOAT; });
       g.score += r1.kills * 100;
-      const r2 = runRail('surf', p);
-      g.score += r2.kills * 100;
+      console.log('  boat route taken:', r1.route);
+      if (r1.route !== 'jungle') {   // the ramp path (BRANCHES) skips the surf; it never moves him
+        const r2 = runRail('surf', p);
+        g.score += r2.kills * 100;
+      }
       p.invulnT = 2200; if (p.st !== 'out') p.st = 'alive';
       g.heliEvac = { t: 2600 }; // washed up at the LZ — evac timer resumes under normal step()
       simMs += 54000 + 46000;

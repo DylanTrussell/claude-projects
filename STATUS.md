@@ -1,8 +1,30 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-v13.13 is live at **https://dylantrussell.github.io/claude-projects/** — served
-from the `gh-pages` branch, root path. Verified by curling the deployed
-`main.js`/`boat.js`/`index.html` post-deploy.
+Two builds from one codebase, both live and verified by curl post-deploy:
+
+- **Linear** (one route): https://dylantrussell.github.io/claude-projects/
+- **Choose-your-path** (both forks): https://dylantrussell.github.io/claude-projects/branches/
+
+## v13.15 — the choose-your-path build (2026-09-13)
+
+`BRANCHES` in config.js (set by `window.AM_BRANCHES` in `/branches/index.html`,
+`?branches` on any build, or `AM_BRANCHES=1` for the harness) turns on both
+forks: Huey-or-Skyraider after the truce (the fork screen), and steer over the
+wreck's fin (ramp film, walk to the LZ) or around it (surf-out). On the
+Skyraider route there is no Huey to crash, so Charlie walks out of the truce
+with you. `AM_BRANCHES=1 bash tools/gate.sh` rotates all four routes (8/8).
+
+## v13.14 — the Huey goes down, Charlie is in all of it, real boss guns
+
+- Tunnel pistol sound fixed (the chunk was overwriting the real takes with a
+  near-silent file). Shotgun viewmodel holes filled.
+- The door gun ends in a shoot-down; the side-scroller resumes at the burning
+  wreck with Charlie inside; three waves from both sides; he climbs out and is
+  your squadmate for the rest of the game (own sprite, cannot die).
+- Boat flyby is one high pass; the dive no longer overlaps the wreck; the flat
+  "fin" wedge is gone. No narrating banners in the boat or at the door gun.
+- Grimtail fires cheese missiles, a telegraphed laser, and tumbling bombs.
+- Dev hooks `__AMrail/__AMgame/__AMadv` for frame-exact verification.
 
 ## v13.13 — drop both forks, one route (2026-09-13)
 

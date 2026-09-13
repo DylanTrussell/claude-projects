@@ -18,11 +18,22 @@ N="${1:-12}"
 cd "$(dirname "$0")/.."
 pass=0; fail=0; firstfail=""
 for i in $(seq 1 "$N"); do
-  out="$(node tools/simtest.mjs 2>&1)"
+  # v13.15: with AM_BRANCHES=1 the game forks twice, so rotate all four routes
+  # (no branch is ever certified by a run that never took it)
+  args=""
+  if [ -n "${AM_BRANCHES:-}" ]; then
+    case $((i % 4)) in
+      0) args="--branch=heli --boat=around" ;;
+      1) args="--branch=heli --boat=ramp" ;;
+      2) args="--branch=sky --boat=around" ;;
+      3) args="--branch=sky --boat=ramp" ;;
+    esac
+  fi
+  out="$(node tools/simtest.mjs $args 2>&1)"
   if echo "$out" | grep -q "^RESULT: VICTORY"; then
     pass=$((pass + 1)); printf "."
   else
-    fail=$((fail + 1)); printf "X"
+    fail=$((fail + 1)); printf "X(%s)" "$args"
     [ -z "$firstfail" ] && firstfail="$out"
   fi
 done
