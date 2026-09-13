@@ -454,6 +454,8 @@ export function step(g, dt, inputs) {
   if (g.over) { g.t += dt; return; }
   g.t += dt;
   const dts = dt / 1000;
+  if (g.crashPending) { g.crashPending = 0; startCrashSite(g); }
+  if (g.crash && g.crash.phase !== 'done') stepCrashSite(g, dt);
   if (g.phase === 'insertion') {
     stepInsertion(g, dt, dts);
     inputs = {}; // controls locked during the opening cinematic
@@ -849,6 +851,7 @@ export function step(g, dt, inputs) {
 
   for (const w of g.waves) {
     if (g.phase !== 'play') break; // no waves during the opening cinematic
+    if (g.crash && g.crash.phase !== 'done') break; // the crash site runs its own
     if (!w.done && g.cam - 300 > w.x) { w.done = true; continue; } // stale wave: passed long ago, skip
     if (!w.done && w.alive.length === 0 && g.cam + W > w.x + 200) {
       // spawn
@@ -1424,6 +1427,70 @@ function triggerInvasion(g) {
   g.invT = 9000;
 }
 
+// v13.14 -- THE CRASH SITE (Dylan: "make it so the helicopter gets shot down
+// at the end of the helicopter level, and then you have to defend the wreck
+// for a little bit. Get Charlie out of the wreckage... he needs to be in all
+// of it"). The door-gun run ends in the trees; the side-scroller picks up
+// beside the burning Huey with Charlie still inside. Three waves come at the
+// wreck from both sides. When the last one is down (or 34s, whichever first)
+// he climbs out and stays with you for the rest of the war as a squadmate --
+// same 'buddy' brain the US squad uses, his own sprite, and he does not die.
+const CRASH_WAVES = [
+  [['alien', 3, 'right']],
+  [['alien', 2, 'left'], ['ratjet', 2, 'sky']],
+  [['alien', 3, 'right'], ['ufo', 1, 'sky'], ['alien', 1, 'left']],
+];
+export function startCrashSite(g) {
+  const p = alivePlayers(g)[0] || g.players[0];
+  let wx = p.x + 320;
+  const bad = (x) => groundAt(x) !== CFG.groundY || LEVEL.pits.some(([a, b]) => x > a - 260 && x < b + 260);
+  while (bad(wx)) wx += 40;
+  g.crash = { x: wx, t: 0, phase: 'defend', wave: 0, waveT: 0, alive: [], trapped: 1 };
+  g.cam = Math.max(g.cam, Math.min(wx - W * 0.62, CFG.worldLen - W));
+  g.camLock = g.cam + W;
+  p.x = Math.max(p.x, g.cam + 120);
+  // the level's own waves inside this screen are spent by the defence
+  for (const w of g.waves) if (!w.done && w.x < g.cam + W) w.done = true;
+  const c = en('buddy', wx + 6, CFG.groundY, { hp: 9999, side: 'buddy', face: -1, charlie: 1, st: 'trapped', sq: 0 });
+  g.charlie = c.id; g.enemies.push(c);
+  for (let i = 0; i < 3; i++) evPush(g, { e: 'boom', x: wx - 60 + i * 60, y: CFG.groundY - 40 - (i % 2) * 50, big: i === 1 ? 1 : 0 });
+  evPush(g, { e: 'shake', m: 14 });
+}
+function stepCrashSite(g, dt) {
+  const c = g.crash;
+  c.t += dt; c.waveT -= dt;
+  c.alive = c.alive.filter(id => { const e2 = g.enemies.find(q => q.id === id); return e2 && e2.st !== 'gone'; });
+  if (c.wave < CRASH_WAVES.length && (c.waveT <= 0 || (c.wave > 0 && !c.alive.length))) {
+    const spec = CRASH_WAVES[c.wave++];
+    c.waveT = 11000;
+    for (const [kind, n, where] of spec) {
+      for (let i = 0; i < n; i++) {
+        let x, y = CFG.groundY;
+        if (where === 'left') x = g.cam - 40 - i * 70;
+        else if (where === 'sky') { x = g.cam + W + 120 + i * 200; y = 180 + g.rng() * 120; }
+        else x = g.cam + W + 60 + i * 90;
+        const e2 = en(kind, x, y);
+        if (kind === 'alien' && g.rng() < 0.3) e2.flyer = true;
+        g.enemies.push(e2); c.alive.push(e2.id);
+      }
+    }
+    // the teaching lines that used to hang off the level waves this replaced
+    if (c.wave === 2 && !g.banners.ufoHint) { g.banners.ufoHint = true; evPush(g, { e: 'hint', k: 'ctlAimUp' }); evPush(g, { e: 'hint', k: 'teachRatjet' }); }
+    if (c.wave === 3) evPush(g, { e: 'hint', k: 'ufoHint' });
+  }
+  const cleared = c.wave >= CRASH_WAVES.length && !c.alive.length;
+  if (c.phase === 'defend' && (cleared || c.t > 34000)) {
+    c.phase = 'out'; c.trapped = 0;
+    const ch = g.enemies.find(e2 => e2.id === g.charlie);
+    if (ch) { ch.st = 'emerge'; ch.emT = 1500; ch.ph = 0; }
+    evPush(g, { e: 'sfx', n: 'sfx_meow' });
+  }
+  if (c.phase === 'out') {
+    const ch = g.enemies.find(e2 => e2.id === g.charlie);
+    if (!ch || ch.st === 'walk') { c.phase = 'done'; g.camLock = -1; }
+  }
+}
+
 export function spawnTunnelSkirmish(g, x0) {
   // fresh out of the tunnel, blinking in the light — a few more VC to drop
   for (let i = 0; i < 3; i++) {
@@ -1744,8 +1811,16 @@ function stepEnemy(g, e2, dt, dts) {
       return;
     }
     case 'buddy': {
+      // v13.14 Charlie: inside the wreck, then climbing out, then a squadmate
+      if (e2.st === 'trapped') return;
+      if (e2.st === 'emerge') {
+        e2.emT -= dt; e2.ph = 1 - Math.max(0, e2.emT) / 1500;
+        if (e2.emT <= 0) { e2.st = 'walk'; e2.ph = 0; }
+        return;
+      }
       const p = near(e2.x);
       if (!p) return;
+      if (e2.charlie && g.rideOn) { e2.x = p.x - 60; return; } // he is in the sidecar; the ride draws him
       // catch-up teleport if left far behind (companion convention)
       if (Math.abs(p.x - e2.x) > 760) { e2.x = p.x - 90; }
       const tx = p.x - 64 - (e2.sq || 0) * 34;
@@ -1850,8 +1925,11 @@ export function serialize(g) {
       // v13.9 index 21/22: laser-pointer battery and whether the beam is live
       // this frame, so the renderer can draw the line from his paw to the dot.
       R(p.laser || 0), (p.laserOn > 0) ? 1 : 0]),
-    en: g.enemies.filter(e2 => e2.st !== 'gone' && e2.x > g.cam - 200 && e2.x < g.cam + W + 400)
-      .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0, R(Math.max(0, e2.hitT || 0))]),
+    en: g.enemies.filter(e2 => e2.st !== 'gone' && e2.x > g.cam - 200 && e2.x < g.cam + W + 400 && !(e2.charlie && g.rideOn))
+      // v13.14 index 14: Charlie flag -- same 'buddy' brain, his own sprite
+      .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0, R(Math.max(0, e2.hitT || 0)), e2.charlie ? 1 : 0]),
+    // v13.14: the downed Huey [x, done, charlie still inside]
+    crash: g.crash ? [R(g.crash.x), g.crash.phase === 'done' ? 1 : 0, g.crash.trapped ? 1 : 0] : null,
     // v13: index 4 is the bullet's travel angle. Every projectile used to be
     // drawn as an axis-aligned horizontal dash regardless of where it was
     // actually going, so firing up (hold W) sent horizontal tracers climbing
@@ -1908,6 +1986,7 @@ export function checkpointState(g) {
     heliEvac: g.heliEvac ? clone(g.heliEvac) : null,
     riverStarted: g.riverStarted, parleyStarted: g.parleyStarted,
     standoff: g.standoff, duelClick: g.duelClick,
+    crash: g.crash ? clone(g.crash) : null, charlie: g.charlie,
   };
 }
 export function restoreState(snap, seats) {
@@ -1923,9 +2002,12 @@ export function restoreState(snap, seats) {
     heliEvac: snap.heliEvac || null,
     riverStarted: snap.riverStarted, parleyStarted: snap.parleyStarted,
     standoff: snap.standoff, duelClick: snap.duelClick,
+    // a continue never replays the defence -- the wreck stays, Charlie is out
+    crash: snap.crash ? { ...snap.crash, phase: 'done', trapped: 0 } : null, charlie: snap.charlie,
   });
   if (g.lift) { g.lift.st = 'gone'; g.lift = null; }   // no insertion helicopter on a continue
   g.enemies = (snap.enemies || []).map(e2 => ({ ...e2 }));
+  for (const e2 of g.enemies) if (e2.charlie && e2.st !== 'walk') { e2.st = 'walk'; e2.ph = 0; }
   g.boss = g.enemies.find(e2 => e2.k === 'boss') || null;
   for (const w2 of g.waves) {
     const saved = (snap.waves || []).find(s => s.x === w2.x);

@@ -270,6 +270,7 @@ export class DoorGun extends RailBase {
     if (this.done) return;
     this.stepCommon(dt, p);
     const dts = dt / 1000;
+    if (this.crash) { this.stepCrash(dt, dts); this.prevBits = bits; return; }
     this.scroll += dts;
     this.gunCd -= dt;
     if (!this.started) { this.started = true; this.ev({ e: 'banner', k: 'actDoorgun' }); this.ev({ e: 'hint', k: 'doorgunControls' }); }
@@ -440,8 +441,59 @@ export class DoorGun extends RailBase {
         if (tgt) { tgt.hp--; tgt.flash = 120; if (tgt.hp <= 0) { this.kills++; this.boom(tgt.x, tgt.y - 16, 0); } }
       }
     }
-    if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'doorgunDone' }); }
+    // v13.14 (Dylan: "make it so the helicopter gets shot down at the end of
+    // the helicopter level, and then you have to defend the wreck"). The run
+    // no longer ends with WHEELS DOWN. It ends with the Huey taking a salvo it
+    // cannot fly through and going into the trees -- then the side-scroller
+    // picks up at the wreck (sim.js startCrashSite) with Charlie still inside.
+    if (this.ended()) {
+      this.crash = { t: 0, hy0: this.hy, rot: 0, salvo: 0, down: false };
+      this.foes = []; this.flak = []; this.supplies = []; this.shots = [];
+      this.ev({ e: 'sfx', n: 'sfx_ufo' });
+    }
     this.prevBits = bits;
+  }
+
+  // The shoot-down, ~4.6s: a three-hit salvo across the airframe, the engine
+  // dies, the nose drops and it augers into the treeline, holds on the burning
+  // wreck for a beat, then hands off. No text -- the aircraft tells it.
+  stepCrash(dt, dts) {
+    const c = this.crash;
+    c.t += dt;
+    const SALVO = [0, 260, 560], IMPACT = 3300, END = 4700;
+    while (c.salvo < SALVO.length && c.t >= SALVO[c.salvo]) {
+      const i = c.salvo++;
+      this.boom(170 + i * 55, this.hy + 45 + (i % 2) * 50, i === 2);
+      this.shake = 22;
+      this.flashT = 130;
+      this.hsmoke = this.hsmoke || [];
+      for (let j = 0; j < 4; j++) this.hsmoke.push({ x: 150 + Math.random() * 60, y: this.hy + 60 + Math.random() * 30, t: 0, T: 1200 + Math.random() * 600, r: 12 + Math.random() * 10, dark: true });
+    }
+    if (!c.down) {
+      // still flying, badly: forward speed bleeds off, altitude goes with it
+      const k = Math.max(0, (c.t - 500) / (IMPACT - 500));
+      this.scroll += dts * (1 - k * 0.85);
+      this.hy = c.hy0 + (500 - c.hy0) * k * k;
+      c.rot = k * 0.42 + Math.sin(c.t / 55) * 0.03 * k;
+      if (this.smokeT === undefined) this.smokeT = 0;
+      this.smokeT++;
+      if (this.smokeT % 2 === 0) {
+        this.hsmoke = this.hsmoke || [];
+        this.hsmoke.push({ x: 150 + Math.random() * 40, y: this.hy + 70 + Math.random() * 20, t: 0, T: 900 + Math.random() * 500, r: 10 + Math.random() * 8, dark: true });
+      }
+      if (c.t >= IMPACT) {
+        c.down = true;
+        this.hy = 500; c.rot = 0.34;
+        this.boom(200, this.hy + 110, 1);
+        this.boom(120, this.hy + 130, 0);
+        this.boom(270, this.hy + 120, 0);
+        this.shake = 34;
+        this.ev({ e: 'shake', m: 18 });
+      }
+    } else {
+      this.scroll += dts * 0.05;
+      if (c.t >= END) this.done = true;
+    }
   }
 
   render(ctx, now, drawRotor) {
@@ -493,7 +545,8 @@ export class DoorGun extends RailBase {
     const hi = IMG.huey_doorgun || IMG.heli_us;
     if (hi) {
       const hh = 150, hw = hh * (hi.width / hi.height);
-      const bobY = Math.sin(now / 300) * 7;
+      const crash = this.crash;
+      const bobY = crash ? 0 : Math.sin(now / 300) * 7;
       // v13 (Dylan: "your helicopter should also glow colors when it gets hit
       // and start smoking when you get low on health, and blow up when you die
       // and get replaced"). The Huey had no damage read at all -- the only
@@ -529,7 +582,8 @@ export class DoorGun extends RailBase {
       ctx.save();
       ctx.translate(140 + hw / 2, this.hy + hh / 2 + bobY);
       // below 30% hull the airframe judders
-      if (hpK < 0.3) ctx.rotate(0.05 + Math.sin(now / 40) * 0.02 * (1 - hpK));
+      if (crash) ctx.rotate(0.05 + crash.rot);
+      else if (hpK < 0.3) ctx.rotate(0.05 + Math.sin(now / 40) * 0.02 * (1 - hpK));
       else ctx.rotate(0.05);
       ctx.drawImage(hi, -hw / 2, -hh / 2, hw, hh);
       // v13.3 upgrade hardware, drawn INSIDE the airframe transform so it
@@ -557,7 +611,19 @@ export class DoorGun extends RailBase {
       if (hurtK > 0.02) {
         drawImgHit(ctx, hi, -hw / 2, -hh / 2, hw, hh, hurtK, hpK);
       }
-      if (drawRotor) { drawRotor(ctx, -hw * 0.02, -hh / 2 + 4, hw * 0.55, now); }
+      // once it is in the trees the rotor is gone and the airframe burns
+      if (drawRotor && !(crash && crash.down)) { drawRotor(ctx, -hw * 0.02, -hh / 2 + 4, hw * 0.55, now); }
+      if (crash && crash.down) {
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 7; i++) {
+          const ph = ((now / (300 + i * 40)) + i * 0.37) % 1;
+          ctx.globalAlpha = 0.6 * (1 - ph);
+          ctx.fillStyle = i % 3 === 0 ? '#fff0b0' : i % 3 === 1 ? '#ff9a3c' : '#ff5a1e';
+          ctx.beginPath(); ctx.arc(-hw * 0.32 + i * hw * 0.1, -hh * 0.1 - ph * 70, 9 + ph * 16 + (i % 2) * 4, 0, 7); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+      }
       ctx.restore();
       // v11.2 (Dylan: "its a random black line coming out of the gun... it
       // should be the vietnamese cats actual door gun that he's holding

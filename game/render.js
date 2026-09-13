@@ -374,6 +374,53 @@ const SCENERY = [
   { x: 6760, img: 'cheese_vat_tipped', h: 132, pour: 1 },
 ];
 
+// v13.14 -- the Huey, where it came down. Drawn on the ground plane like the
+// scenery, burning for the rest of the level. While Charlie is still inside,
+// his hat shows in the door.
+function drawWreck(ctx, cr, cam, t) {
+  const [wx, , trapped] = cr;
+  const sx = wx - cam;
+  if (sx < -500 || sx > W + 500) return;
+  const img = IMG.huey_doorgun || IMG.heli_us;
+  const hh = 190, hw = img ? hh * (img.width / img.height) : hh * 1.7;
+  const gy = CFG.groundY;
+  // the furrow it ploughed coming in
+  ctx.fillStyle = 'rgba(40,28,14,0.55)';
+  ctx.beginPath(); ctx.ellipse(sx - 40, gy + 6, hw * 0.75, 12, 0, 0, 7); ctx.fill();
+  ctx.save();
+  ctx.translate(sx, gy - hh * 0.36);
+  ctx.rotate(0.3);
+  if (img) ctx.drawImage(img, -hw / 2, -hh / 2, hw, hh);
+  else { ctx.fillStyle = '#2e3324'; ctx.fillRect(-hw / 2, -hh * 0.2, hw, hh * 0.4); }
+  ctx.globalCompositeOperation = 'source-atop';      // scorched
+  ctx.fillStyle = 'rgba(20,14,10,0.42)';
+  ctx.fillRect(-hw / 2, -hh / 2, hw, hh);
+  ctx.globalCompositeOperation = 'source-over';
+  if (trapped) { // his hat, in the door
+    ctx.fillStyle = '#c9a86a';
+    ctx.beginPath(); ctx.moveTo(hw * 0.02, -hh * 0.02); ctx.lineTo(hw * 0.14, hh * 0.09); ctx.lineTo(-hw * 0.10, hh * 0.09); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.stroke();
+  }
+  ctx.restore();
+  // fire and smoke
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 6; i++) {
+    const ph = ((t / (320 + i * 45)) + i * 0.37) % 1;
+    ctx.globalAlpha = 0.55 * (1 - ph);
+    ctx.fillStyle = i % 3 === 0 ? '#fff0b0' : i % 3 === 1 ? '#ff9a3c' : '#ff5a1e';
+    ctx.beginPath(); ctx.arc(sx - hw * 0.3 + i * hw * 0.11, gy - hh * 0.45 - ph * 60, 8 + ph * 14, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+  for (let i = 0; i < 4; i++) {
+    const ph = ((t / (1500 + i * 210)) + i * 0.25) % 1;
+    ctx.globalAlpha = 0.35 * (1 - ph);
+    ctx.fillStyle = '#3a342c';
+    ctx.beginPath(); ctx.arc(sx - hw * 0.1 + i * 18 + Math.sin(t / 900 + i) * 14, gy - hh * 0.6 - ph * 170, 14 + ph * 30, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawScenery(ctx, cam, t) {
   for (const s of SCENERY) {
     const sx = s.x - cam;
@@ -655,12 +702,13 @@ function hitFlash(ctx, sprId, dx, dy, dw, dh, hitT, flip) {
 }
 
 function drawEntity(ctx, e2, cam, t, inv) {
-  const [id, k, x, y, face, st, hp, beam, open, ph, flyer, kick, burning, hitT] = e2;
+  const [id, k, x, y, face, st, hp, beam, open, ph, flyer, kick, burning, hitT, charlie] = e2;
   // recoil shove: a firing squadmate/grunt rocks back along its facing so the
   // body reads as shooting instead of a static sprite with a flash pinned on
   const sx = x - cam - (kick || 0) * face;
   if (sx < -260 || sx > W + 260) return;
   const hgt = SIZES[k] || 90;
+  if (st === 'trapped') return; // v13.14: still inside the wreck -- drawWreck shows his hat
 
   if (k === 'ufo' && beam) { // tractor beam
     ctx.fillStyle = PAL.acidGlow;
@@ -736,7 +784,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
     ctx.fillText('meow!', sx, y - hgt - 10);
     return;
   }
-  const sprId = SPRITE_FOR[k];
+  const sprId = charlie ? 'grunt_vc' : SPRITE_FOR[k];   // v13.14: Charlie wears his own art
   const wRatio = k === 'heli' ? 1.7 : k === 'ufo' ? 1.5 : 0.9;
   const w2 = hgt * wRatio;
   const flip = k !== 'ufo' && face !== (BASE_FACE[k] || 1);
@@ -744,6 +792,14 @@ function drawEntity(ctx, e2, cam, t, inv) {
   // emerge from tunnel: rise animation
   let drawY = y - hgt;
   if (st === 'emerge') drawY = y - hgt * 0.5;
+  if (charlie && st === 'emerge') {
+    // climbing up out of the wreck: the sprite rises through the ground line
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx - 90, 0, 180, y); ctx.clip();
+    drawImg(ctx, sprId, sx - w2 / 2, y - hgt * (ph || 0), w2, hgt, flip);
+    ctx.restore();
+    return;
+  }
   if (k === 'alien' && flyer) {
     // v11 (Dylan: "some should be flying on their own crafts") — a little
     // hover-pod beneath the trooper, reusing the ufo_small art rather than
@@ -805,7 +861,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
     const tailX = sx - w2 / 2 + (flip ? 1 - 0.910 : 0.910) * w2;
     drawTailRotor(ctx, tailX, drawY + 0.160 * hgt, 0.078 * w2, t);
   }
-  if (k === 'buddy') { // squad marker chevron
+  if (k === 'buddy' && !charlie) { // squad marker chevron
     ctx.fillStyle = PAL.cheese;
     ctx.beginPath(); ctx.moveTo(sx - 6, y - hgt - 16); ctx.lineTo(sx + 6, y - hgt - 16); ctx.lineTo(sx, y - hgt - 8); ctx.fill();
   }
@@ -1544,6 +1600,7 @@ export function render(ctx, view, t, myPid, dbg) {
 
   drawGround(ctx, cam, inv);
   drawScenery(ctx, cam, view.t || t);   // v13.9: the cheese vats, before the payoff
+  if (view.crash) drawWreck(ctx, view.crash, cam, view.t || t);   // v13.14: the downed Huey
   drawIslands(ctx, cam, view.t || t);
   // blood splats stay on the ground where cats fell
   for (const s of FX.splats) {

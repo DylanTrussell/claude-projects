@@ -182,12 +182,13 @@ export const CHUNKS = {
       sfx_knife: HF + 'hf_20260719_215957_0e4effcc-77ca-4ffa-b9cf-128d5a4b87ad.mp3',
       sfx_screech: HF + 'hf_20260719_215959_3057351e-7b84-45b1-8d08-62e657befa3b.mp3',
       sfx_reload: CDN + '963b3f6b-6b4d-4be8-a7f9-8af9f5aae9bf.mp3',
-      // new: two tunnel-only pistol-fire variants (confined-space reverb,
-      // randomly alternated in fps.js) so mashing the trigger in the tunnel
-      // doesn't sound like the exact same outdoor sample on a loop — this
-      // does NOT touch the overworld sfx_shot used everywhere else.
-      sfx_pistol_tunnel_a: HF + 'hf_20260719_220001_78108d97-cc86-41ca-9216-b99f7502df49.mp3',
-      sfx_pistol_tunnel_b: HF + 'hf_20260719_220001_4b8bfa66-e922-47e5-85e9-23bc5b6670d0.mp3',
+      // v13.14 (Dylan: "the shots in the tunnels still aren't making a sound
+      // effect"). The two tunnel pistol variants were listed HERE pointing at a
+      // Higgsfield file that decodes to near-silence (peak -42 dB, and both ids
+      // resolved to the same file). The base manifest already ships the real
+      // takes from assets/audio (peak 0 dB), and this chunk loaded AFTER it and
+      // overwrote them with the silent one. Removed from the chunk; the base
+      // copies stay.
     },
   },
   // Act III part two: PT boat down the river, then the surf out to the LZ

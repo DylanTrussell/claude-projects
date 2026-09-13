@@ -79,7 +79,6 @@ export const STR = {
   theyreOutToo: "...HE'S OUT TOO",
   actDoorgun: "RAT PATROL — MAN THE DOOR GUN",
   doorgunControls: "W/S ALTITUDE · A/D AIM GUN · J FIRE",
-  doorgunDone: "LZ CLEAR — WHEELS DOWN",
   heliT2: "AIR DROP! ROCKET PODS BOLTED ON",
   heliT3: "AIR DROP! CHAIN GUN ONLINE",   // v13.7: Dylan -- "it should have probably said chain gun"
   heliStripped: "TURRET SHOT OFF! HULL BREACHED",
@@ -127,12 +126,6 @@ export const STR = {
   // of why this content was never actually reachable — see changelog).
   actRiver: "ACT III, PART TWO — RIVER PATROL",
   riverControls: "W/S STEER · J BOW GUN · K DEPTH CHARGE",
-  shipSighted: "SOMETHING HUGE, HIGH OVERHEAD...",
-  // v13.9: the boat is not torpedoed by nobody any more. The scanner ship
-  // finds you and burns it, and you watch it happen.
-  shipScan: "IT CAME BACK. IT'S COMING IN LOW.",
-  shipDown: "IT'S GOING IN!",
-  ptboatDone: "SHE'S BREAKING UP! GET ON SOMETHING THAT FLOATS!",
   chargesOut: "OUT OF DEPTH CHARGES",
   actSurf: "SWIM FOR IT — THE LZ IS CLOSE",
   surfControls: "W/S CARVE · J FIRE · K DUCK-DIVE",

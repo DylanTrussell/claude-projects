@@ -176,7 +176,7 @@ while (simMs < MAXMS && !victory && !gameover) {
       { const p0 = g.players[0]; p0.invulnT = 2600; if (p0.st !== 'out') p0.st = 'alive'; }
       const p = g.players[0];
       const r = runRail('doorgun', p);
-      for (const e of g.enemies) if (e.duel) e.st = 'gone';
+      g.crashPending = 1; // v13.14: the sim picks up at the wreck, Charlie inside
       p.invulnT = 2200; if (p.st !== 'out') p.st = 'alive';
       simMs += 52000;
     }

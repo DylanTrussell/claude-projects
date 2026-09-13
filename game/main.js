@@ -724,8 +724,8 @@ function frame(now) {
           handleEvents([{ e: 'victory' }]);
         } else {
           g.score += kills * 100 + timeBonus;
-          if (wasDoorgun) { // Charlie hops off the gun and back into the fight
-            for (const e of g.enemies) if (e.duel) e.st = 'gone';
+          if (wasDoorgun) { // v13.14: the Huey is in the trees; the fight resumes at the wreck
+            g.crashPending = 1;
             // Dylan: "after the main helicopter scene, there needs to be a
             // transition into the next scene. It just ends abruptly." The rail
             // used to cut straight to the side-scroller on the same frame.
@@ -927,6 +927,22 @@ if (dev) {
   // playing up to it. __AMtp above is the tunnel's teleport; this is topside.
   window.__AMgo = (x) => { const p = g && g.players[0]; if (!p) return null; p.x = x; g.cam = Math.max(0, x - 400); g.camLock = -1; return { x: p.x, cam: g.cam }; };
   window.__AMlaser = (n) => { const p = g && g.players[0]; if (p) p.laser = n === undefined ? 220 : n; return p && p.laser; };
+  // dev-only: the live rail object, so a section's timed beats (the boat's
+  // flyby, the wreck, the Huey crash) can be jumped to instead of waited for
+  window.__AMrail = () => rail;
+  window.__AMgame = () => g;
+  // dev-only: advance the live section by `ms` in fixed 60Hz steps with no
+  // input held. A headless tab does not run requestAnimationFrame between
+  // screenshots, so wall-clock waits do not move the game; this does.
+  window.__AMadv = (ms) => {
+    let n = Math.round(ms / (1000 / 60));
+    const p = g && g.players[0];
+    while (n-- > 0) {
+      if (rail) { rail.step(0, 1000 / 60, p); if (rail.events.length) handleEvents(rail.events.splice(0)); }
+      else if (g && !g.over) { step(g, 1000 / 60, { p1: 0 }); const evs = g.events.splice(0); if (evs.length) handleEvents(evs); }
+    }
+    return { rail: !!rail, done: !!(rail && rail.done), x: p ? Math.round(p.x) : null };
+  };
   // dev-only: force the TUNNEL weapon, so the shotgun/claw viewmodels and
   // their fire paths can be exercised without walking the whole level first
   window.__AMtweap = (w, n) => { if (tunnel) { tunnel.weap = w; if (w === 'shotgun') { tunnel.hasShotgun = true; tunnel.shells = n || 8; } } };
