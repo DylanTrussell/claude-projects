@@ -191,6 +191,36 @@ export const CHUNKS = {
       // copies stay.
     },
   },
+  // PART TWO (game/missions.js): six missions' backdrops, bosses and enemies.
+  // Relative URLs -- this art ships in the build under assets/m/, not on a CDN.
+  missions: {
+    images: {
+      m_bg_graveyard: './assets/m/m_bg_graveyard.png',
+      m_bg_sunset: './assets/m/m_bg_sunset.png',
+      m_bg_cave: './assets/m/m_bg_cave.png',
+      m_bg_coast: './assets/m/m_bg_coast.png',
+      m_bg_citadel: './assets/m/m_bg_citadel.png',
+      m_bg_hive: './assets/m/m_bg_hive.png',
+      m_bg_map: './assets/m/m_bg_map.png',
+      m_boss_eater: './assets/m/m_boss_eater.png',
+      m_boss_gunship: './assets/m/m_boss_gunship.png',
+      m_boss_barge: './assets/m/m_boss_barge.png',
+      m_boss_core: './assets/m/m_boss_core.png',
+      m_boss_jelly: './assets/m/m_boss_jelly.png',
+      m_zombie: './assets/m/m_zombie.png',
+      m_zombie_fat: './assets/m/m_zombie_fat.png',
+      m_crab: './assets/m/m_crab.png',
+      m_jelly: './assets/m/m_jelly.png',
+      m_flamer: './assets/m/m_flamer.png',
+      m_pow: './assets/m/m_pow.png',
+      m_chopper: './assets/m/m_chopper.png',
+      m_pk_H: './assets/m/m_pk_H.png',
+      m_pk_F: './assets/m/m_pk_F.png',
+      m_pk_R: './assets/m/m_pk_R.png',
+      m_pk_med: './assets/m/m_pk_med.png',
+      ptboat_vehicle: CDN + '34eae323-916b-4a74-bf92-ae02216062dc.png',
+    },
+  },
   // Act III part two: PT boat down the river, then the surf out to the LZ
   // (game/boat.js). No dedicated audio — reuses sfx_shot/sfx_explosion/sfx_meow/
   // sfx_laser and music_ratpatrol/music_gunner, all already in the base manifest.

@@ -27,8 +27,8 @@ export const STR = {
   gameOver: "MISSION FAILED",
   // v13.4 (Dylan: "I think the Chancellor Grimtail thing is the end of part
   // one, and then there's part two.")
-  victory: "END OF PART ONE",
-  victorySub: "TO BE CONTINUED — PART TWO",
+  victory: "THE WAR IS OVER",
+  victorySub: "EVERY ROAD GOES SOMEWHERE ELSE. TRY THE OTHER ONE.",
   playAgain: "START OVER",
   continueRun: "CONTINUE FROM CHECKPOINT",
   continued: "BACK IN THE FIGHT",

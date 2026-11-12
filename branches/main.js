@@ -25,6 +25,7 @@ import { DoorGun, Skyraider } from './rails.js';
 // boss2.js couldn't even be imported until rails.js exported RailBase).
 import { PTBoat, Surf } from './boat.js';
 import { ParleyBoss } from './boss2.js';
+import { Mission, Cine, ROUTE_START } from './missions.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('c'), ctx = canvas.getContext('2d');
@@ -222,6 +223,23 @@ function resolveTruce() {
   $('fk-heli').focus();
 }
 
+// ---------- PART TWO: the campaign after Grimtail (game/missions.js) ----------
+// camp remembers which missions are cleared so the war map can strike them out.
+let camp = { done: [] };
+function runCine(name, o) {
+  loadingChunk = true;
+  ensureChunk('missions').catch(e => console.error('missions chunk failed', e)).then(() => {
+    loadingChunk = false;
+    rail = new Cine(name, o);
+    FX.hints.length = 0; FX.banners.length = 0;
+  });
+}
+function startMission(id) { handleEvents([{ e: 'rail', k: 'm:' + id }]); }
+function startCampaign() {
+  camp = { done: [] };
+  runCine('aftermath', { then: () => startMission(ROUTE_START) });
+}
+
 function endGame(won) {
   if (mode === 'tally') return;
   setPauseMenu(false);
@@ -385,6 +403,20 @@ function handleEvents(evs) {
         playCutscene(ev.which, ev.which === 'truce' ? resolveTruce : undefined);
         break;
       case 'rail':
+        if (ev.k.startsWith('m:')) {      // a Part Two mission; each one is its own checkpoint
+          const mid = ev.k.slice(2);
+          try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'rail', k: ev.k }; ckptSnap._camp = camp.done.slice(); lastCkptX = g.checkpoint; } catch (_) {}
+          loadingChunk = true;
+          showChunkLoading(true, '');
+          ensureChunk('missions').catch(e => console.error('missions chunk failed', e)).then(() => {
+            showChunkLoading(false); loadingChunk = false;
+            rail = new Mission(mid);
+            rail.baseScore = g.score;
+            FX.hints.length = 0; FX.banners.length = 0;
+          });
+          break;
+        }
+        if (ev.k.startsWith('cine:')) { runCine(ev.k.slice(5), {}); break; }
         // v13.4: each rail opens on its story film (skippable), except when
         // relaunched from a continue -- nobody wants the movie again on retry.
         if (!ev.resumed && (ev.k === 'skyraider' || ev.k === 'ptboat' || ev.k === 'surf' || ev.k === 'parley')) {
@@ -429,7 +461,10 @@ function handleEvents(evs) {
       // and then ONE radio, and then, after a beat, the other. Audio only.
       // It is also too big a note for a game this short; it wants an epic
       // behind it. Held for later. See ENDINGS.md.
-      case 'victory': setTimeout(() => playCutscene('grimdeath', () => playCutscene('victory', () => endGame(true))), 1400); break;
+      // v14: Grimtail going down is no longer the end. His wreck calls the rest
+      // of the fleet's ground machines awake, and Part Two starts from the war map.
+      // The dawn film now plays where it belongs: after the last mission.
+      case 'victory': setTimeout(() => playCutscene('grimdeath', () => startCampaign()), 1400); break;
       case 'fps': { // drop into the tunnels — the whole game changes
         try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'fps', map: ev.map }; lastCkptX = g.checkpoint; } catch (_) {}
         // v10: the tunnel's forward-facing gun/fire/reload art, redone enemy
@@ -499,6 +534,7 @@ $('btn-continue').addEventListener('click', () => {
   // tunnel), not the stretch of jungle in front of it
   if (ckptSnap._section) {
     const sec = ckptSnap._section;
+    if (ckptSnap._camp) { camp = { done: ckptSnap._camp.slice() }; g.over = true; g.won = true; }
     handleEvents([sec.e === 'rail' ? { e: 'rail', k: sec.k, resumed: 1 } : { e: 'fps', map: sec.map }]);
   }
 });
@@ -726,6 +762,7 @@ function frame(now) {
         const wasPTBoat = rail instanceof PTBoat;
         const wasSurf = rail instanceof Surf;
         const wasParley = rail instanceof ParleyBoss;
+        const wasM = rail instanceof Mission ? rail : null, wasC = rail instanceof Cine ? rail : null;
         const kills = rail.kills, dead = rail.dead;
         const route = rail.route;   // set by PTBoat's wreck sequence ('jungle' only on BRANCHES)
         // Kill quotas (v13.1) end a rail early when you shoot well -- but the
@@ -736,6 +773,14 @@ function frame(now) {
         const timeBonus = Math.max(0, Math.round((rail.dur - rail.t) / 100) * 10);
         rail = null;
         if (dead) { endGame(false); }
+        else if (wasC) { if (wasC.o.then) wasC.o.then(); }
+        else if (wasM) {
+          g.score += wasM.score;
+          camp.done.push(wasM.id);
+          const nx = wasM.next;
+          if (nx) runCine('map', { done: camp.done.slice(), from: wasM.id, to: nx, then: () => startMission(nx) });
+          else runCine('finale', { then: () => playCutscene('victory', () => endGame(true)) });
+        }
         else if (wasPTBoat) {
           // v13.13: the linear build always takes the surf-out. v13.15: on the
           // BRANCHES build the boat section ends on a choice the player
@@ -743,7 +788,7 @@ function frame(now) {
           // then you walk east to the LZ), or around it onto the surfboard.
           g.score += kills * 100 + timeBonus;
           if (BRANCHES && route === 'jungle') {
-            playCutscene('rampout', () => {
+            playCutscene('rampout', () => runCine('ramp', { then: () => {
               const p3 = g.players[0];
               // Do NOT move him: the boat section starts near the LZ, and a
               // fixed x sent him backward past cleared content (harness-caught).
@@ -753,7 +798,7 @@ function frame(now) {
               FX.whiteT0 = 1200; FX.whiteT = 1200;
               audio.music('music_invasion');
               handleEvents([{ e: 'evac' }]);
-            });
+            } }));
           } else {
             handleEvents([{ e: 'rail', k: 'surf' }]);
           }
@@ -827,7 +872,7 @@ function frame(now) {
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
     rail.render(ctx, now, drawRotor);
-    drawFpsHud(ctx);
+    if (!(rail instanceof Cine)) drawFpsHud(ctx);
     ctx.restore();
     // A ?tunnel=N boot never runs the side-scroller, so lastView is null: on
     // dying out down there the canvas fell through every branch and stayed
