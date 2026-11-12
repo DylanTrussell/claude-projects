@@ -225,7 +225,9 @@ function resolveTruce() {
 
 // ---------- PART TWO: the campaign after Grimtail (game/missions.js) ----------
 // camp remembers which missions are cleared so the war map can strike them out.
-let camp = { done: [] };
+// kit: the gun and grenades you walk out with are the ones you walk in with.
+// via: which road you took ('up' | 'low'), so the next mission opens from it.
+let camp = { done: [], kit: null, via: null };
 function runCine(name, o) {
   loadingChunk = true;
   ensureChunk('missions').catch(e => console.error('missions chunk failed', e)).then(() => {
@@ -236,7 +238,7 @@ function runCine(name, o) {
 }
 function startMission(id) { handleEvents([{ e: 'rail', k: 'm:' + id }]); }
 function startCampaign() {
-  camp = { done: [] };
+  camp = { done: [], kit: null, via: null };
   runCine('aftermath', { then: () => startMission(ROUTE_START) });
 }
 
@@ -405,12 +407,12 @@ function handleEvents(evs) {
       case 'rail':
         if (ev.k.startsWith('m:')) {      // a Part Two mission; each one is its own checkpoint
           const mid = ev.k.slice(2);
-          try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'rail', k: ev.k }; ckptSnap._camp = camp.done.slice(); lastCkptX = g.checkpoint; } catch (_) {}
+          try { ckptSnap = checkpointState(g); ckptSnap._section = { e: 'rail', k: ev.k }; ckptSnap._camp = camp.done.slice(); ckptSnap._kit = camp.kit; ckptSnap._via = camp.via; lastCkptX = g.checkpoint; } catch (_) {}
           loadingChunk = true;
           showChunkLoading(true, '');
           ensureChunk('missions').catch(e => console.error('missions chunk failed', e)).then(() => {
             showChunkLoading(false); loadingChunk = false;
-            rail = new Mission(mid);
+            rail = new Mission(mid, { via: camp.via, kit: camp.kit });
             rail.baseScore = g.score;
             FX.hints.length = 0; FX.banners.length = 0;
           });
@@ -534,7 +536,7 @@ $('btn-continue').addEventListener('click', () => {
   // tunnel), not the stretch of jungle in front of it
   if (ckptSnap._section) {
     const sec = ckptSnap._section;
-    if (ckptSnap._camp) { camp = { done: ckptSnap._camp.slice() }; g.over = true; g.won = true; }
+    if (ckptSnap._camp) { camp = { done: ckptSnap._camp.slice(), kit: ckptSnap._kit || null, via: ckptSnap._via || null }; g.over = true; g.won = true; }
     handleEvents([sec.e === 'rail' ? { e: 'rail', k: sec.k, resumed: 1 } : { e: 'fps', map: sec.map }]);
   }
 });
@@ -777,9 +779,11 @@ function frame(now) {
         else if (wasM) {
           g.score += wasM.score;
           camp.done.push(wasM.id);
+          camp.kit = { weap: wasM.h.weap, ammo: wasM.h.ammo, gren: wasM.h.gren };
+          camp.via = wasM.route;
           const nx = wasM.next;
-          if (nx) runCine('map', { done: camp.done.slice(), from: wasM.id, to: nx, then: () => startMission(nx) });
-          else runCine('finale', { then: () => playCutscene('victory', () => endGame(true)) });
+          if (nx) runCine('map', { done: camp.done.slice(), from: wasM.id, to: nx, via: wasM.route, then: () => startMission(nx) });
+          else runCine('finale', { then: () => runCine('map', { done: camp.done.slice(), from: 'hive', to: null, epilogue: 1, then: () => playCutscene('victory', () => endGame(true)) }) });
         }
         else if (wasPTBoat) {
           // v13.13: the linear build always takes the surf-out. v13.15: on the
