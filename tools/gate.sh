@@ -20,15 +20,14 @@ pass=0; fail=0; firstfail=""
 for i in $(seq 1 "$N"); do
   # v13.15: with AM_BRANCHES=1 the game forks twice, so rotate all four routes
   # (no branch is ever certified by a run that never took it)
-  args=""
-  if [ -n "${AM_BRANCHES:-}" ]; then
-    case $((i % 4)) in
-      0) args="--branch=heli --boat=around" ;;
-      1) args="--branch=heli --boat=ramp" ;;
-      2) args="--branch=sky --boat=around" ;;
-      3) args="--branch=sky --boat=ramp" ;;
-    esac
-  fi
+  # v14: four forks now (aircraft, boat, and two roads in Part Two). Rotate
+  # them so no branch is ever certified by a run that never took it.
+  case $((i % 4)) in
+    0) args="--branch=heli --boat=around --route=low,up" ;;
+    1) args="--branch=heli --boat=ramp --route=up,low" ;;
+    2) args="--branch=sky --boat=around --route=up,up" ;;
+    3) args="--branch=sky --boat=ramp --route=low,low" ;;
+  esac
   out="$(node tools/simtest.mjs $args 2>&1)"
   if echo "$out" | grep -q "^RESULT: VICTORY"; then
     pass=$((pass + 1)); printf "."

@@ -1,9 +1,43 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-Two builds from one codebase, both live and verified by curl post-deploy:
+- **Full game, v14.0, forks on:** https://dylantrussell.github.io/claude-projects/
+- `/branches/` is the same v14.0 build. Add `?linear` to any URL for the one-road Part One.
 
-- **Linear** (one route): https://dylantrussell.github.io/claude-projects/
-- **Choose-your-path** (both forks): https://dylantrussell.github.io/claude-projects/branches/
+Project lives ONLY on the SSD: `/Volumes/POSTCARD CITY SSD/Apocalypse Meow/apocalypse-meow`, branch `missions`.
+
+## v14.0: Part Two, six missions (2026-11-11)
+
+Beating Grimtail no longer ends the game. The wreck calls six more ships and a
+Metal Slug style campaign starts: `game/missions.js`, art in `assets/missions/`.
+
+Route (you pick a road at the end of each mission, stairs up or the low road,
+each signposted with a picture of where it goes):
+
+    GRAVEYARD -> CAVES or BRIDGE -> CITADEL or COAST -> HIVE
+
+| Mission | Setting | Boss |
+|---|---|---|
+| graveyard | B-52 boneyard at night, zombie rats rise from the ground | giant fat zombie |
+| bridge | sunset rope bridge, the machine eats the planks behind you | the bridge eater |
+| caves | glowing karst caves, jellyfish | jelly queen |
+| coast | Ha Long wrecks, giant crabs | the scrap barge |
+| citadel | Hue by moonlight, flamethrower rats | rat gunship |
+| hive | cheese refinery inside the mountain | the core |
+
+Weapons and pickups: H heavy machine gun, F flame shot, R rocket, grenades,
+medkits, crates, tied-up POW cats that hand you an item.
+
+All four forks are on by default: Huey or Skyraider, boat ramp or go around,
+and the two road forks above.
+
+Cutscenes built in-engine (class `Cine`): `aftermath`, `map` (between
+missions), `ramp` (the boat jump, replaces the rejected stills), `finale`.
+The dawn film now plays at the true ending, after the hive.
+
+Gates: `node tools/missiontest.mjs` (every mission, both roads, four cines),
+`bash tools/gate.sh 8` (whole game, rotates all four route combinations).
+Preview: `bash tools/pv.sh`, then launch config `apocalypse-meow-ssd` (port 8953, muted build).
+Dev: `?dev&rail=m:bridge`, `?dev&rail=cine:finale`.
 
 ## v13.15 — the choose-your-path build (2026-09-13)
 

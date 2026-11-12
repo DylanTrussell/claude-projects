@@ -11,6 +11,7 @@ import { DoorGun, Skyraider, railBot } from '../public/rails.js';
 import { PTBoat, Surf, boatBot } from '../public/boat.js';
 import { ParleyBoss, parleyBot } from '../public/boss2.js';
 import { BRANCHES } from '../public/config.js';
+import { Mission, MISSIONS, missionBot, ROUTE_START } from '../public/missions.js';
 import { joinCharlie } from '../public/sim.js';
 
 const RAIL_CTOR = { skyraider: Skyraider, doorgun: DoorGun, ptboat: PTBoat, surf: Surf, parley: ParleyBoss };
@@ -149,7 +150,25 @@ while (simMs < MAXMS && !victory && !gameover) {
       const r = runRail('parley', p);
       g.score += r.kills * 100;
       if (r.dead) { g.over = true; gameover = true; }
-      else { g.over = true; g.won = true; victory = true; }
+      else {
+        // v14 PART TWO: the campaign. --route=up|low picks the road at each fork
+        // (default alternates by the same flags the gate rotates).
+        g.over = true; g.won = true;
+        const ROUTES = (process.argv.find(a => a.startsWith('--route=')) || '--route=low,up').split('=')[1].split(',');
+        let id = ROUTE_START, hop = 0, lost = false;
+        while (id) {
+          const m = new Mission(id); m.botRoute = ROUTES[hop % ROUTES.length];
+          let ms = 0, fr = 0;
+          while (!m.done && p.st !== 'out' && ms < 420000) { m.step(missionBot(m, fr++), 1000 / 60, p); m.events.length = 0; ms += 1000 / 60; }
+          console.log(`MISSION ${id}: done=${m.done} dead=${!!m.dead} route=${m.route} next=${m.next} kills=${m.kills} in ${(ms / 1000).toFixed(1)}s`);
+          if (!m.done) { console.log('RESULT: FAIL — mission timeout ' + id); process.exit(1); }
+          if (m.dead) { lost = true; break; }
+          g.score += m.score; simMs += ms;
+          if (MISSIONS[id].exits.length > 1) hop++;
+          id = m.next;
+        }
+        if (lost) gameover = true; else victory = true;
+      }
       simMs += 30000; // rough — no fixed duration, see runRail's cap
     }
     if (['banner', 'cutscene', 'invasion', 'victory', 'gameover', 'evac', 'greenflash'].includes(ev.e)) {

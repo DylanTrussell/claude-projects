@@ -14,3 +14,6 @@ tools/flow_tmp/
 
 # Stale deploy zip artifacts — the real deploy zip is built fresh each time via assemble.sh + zip
 *.zip
+public_deaf/
+assets/_gen/
+.DS_Store

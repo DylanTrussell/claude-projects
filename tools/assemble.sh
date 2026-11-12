@@ -8,9 +8,10 @@ rm -rf public && mkdir -p public/assets
 # on top of the RailBase-export bug and main.js never importing them: even a
 # correct main.js import would have 404'd in production because these two
 # files never made it into the deploy zip in the first place.
-cp game/index.html game/main.js game/config.js game/assets.js game/sim.js game/render.js game/strings.js game/fps.js game/rails.js game/boat.js game/boss2.js game/logic.js game/chunks.js public/
+cp game/index.html game/main.js game/config.js game/assets.js game/sim.js game/render.js game/strings.js game/fps.js game/rails.js game/boat.js game/boss2.js game/logic.js game/chunks.js game/missions.js public/
 cp -r assets/sprites/* public/assets/ 2>/dev/null || true
-mkdir -p public/assets/video
+mkdir -p public/assets/video public/assets/m
+cp assets/missions/*.png public/assets/m/
 cp assets/video/*.mp4 public/assets/video/ 2>/dev/null || true
 for f in assets/audio/*.mp3; do cp "$f" public/assets/; done
 for f in assets/sheets/*.png; do [ -e "$f" ] && cp "$f" public/assets/; done
