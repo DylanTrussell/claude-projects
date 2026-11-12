@@ -1,9 +1,24 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-- **Full game, v14.0, forks on:** https://dylantrussell.github.io/claude-projects/
-- `/branches/` is the same v14.0 build. Add `?linear` to any URL for the one-road Part One.
+- **Full game, v14.1, forks on:** https://dylantrussell.github.io/claude-projects/
+- `/branches/` is the same v14.1 build. Add `?linear` to any URL for the one-road Part One.
 
 Project lives ONLY on the SSD: `/Volumes/POSTCARD CITY SSD/Apocalypse Meow/apocalypse-meow`, branch `missions`.
+
+## v14.1: difficulty pass, rides, missions that connect (2026-11-11)
+
+- **Difficulty:** tuned from `tools/missionplay.mjs` (human-limited bot, real lives, 20 seeds).
+  Casual deaths ramp 1 / 1 / 2 / 3 by slot; missions run 2 to 3 minutes. Thirteen cheap hits
+  removed (off-screen fire, spawns under the hero, undodgeable boss patterns, missing tells).
+  The skill model is a guess with no human data behind it.
+- **Rides:** the road you take decides what you ride into the next mission. High road: cyclo
+  tank (5 armour, cannon on the bomb button). Low road: war buffalo (3 armour, saddle gun,
+  rams what it runs into). The ride soaks hits; when it goes you are thrown clear on foot.
+  Both are parked at each fork under the destination signs.
+- **Carry-over:** weapon, ammo and grenades carry between missions.
+- **Roads make sense:** from the graveyard the high road is the bridge, the low road is the caves.
+- **Map:** shows you travelling on the ride you took. After the finale it comes back with the
+  missions you never saw still flashing.
 
 ## v14.0: Part Two, six missions (2026-11-11)
 

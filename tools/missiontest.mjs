@@ -6,7 +6,7 @@ let fail = 0;
 for (const id of Object.keys(MISSIONS)) {
   if (only && only !== id) continue;
   for (const route of MISSIONS[id].exits.length > 1 ? ['up', 'low'] : ['low']) {
-    const m = new Mission(id); m.botRoute = route;
+    const m = new Mission(id, { via: id === 'graveyard' ? null : route }); m.botRoute = route;
     const p = { hp: CFG.hpMax, lives: 99, deaths: 0, st: 'alive' };
     let ms = 0, fr = 0; const seen = {};
     while (!m.done && ms < 420000) {

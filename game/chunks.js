@@ -218,6 +218,8 @@ export const CHUNKS = {
       m_pk_F: './assets/m/m_pk_F.png',
       m_pk_R: './assets/m/m_pk_R.png',
       m_pk_med: './assets/m/m_pk_med.png',
+      m_ride_buffalo: './assets/m/m_ride_buffalo.png',
+      m_ride_tank: './assets/m/m_ride_tank.png',
       ptboat_vehicle: CDN + '34eae323-916b-4a74-bf92-ae02216062dc.png',
     },
   },

@@ -157,7 +157,7 @@ while (simMs < MAXMS && !victory && !gameover) {
         const ROUTES = (process.argv.find(a => a.startsWith('--route=')) || '--route=low,up').split('=')[1].split(',');
         let id = ROUTE_START, hop = 0, lost = false;
         while (id) {
-          const m = new Mission(id); m.botRoute = ROUTES[hop % ROUTES.length];
+          const m = new Mission(id, { via: hop ? ROUTES[(hop - 1) % ROUTES.length] : null }); m.botRoute = ROUTES[hop % ROUTES.length];
           let ms = 0, fr = 0;
           while (!m.done && p.st !== 'out' && ms < 420000) { m.step(missionBot(m, fr++), 1000 / 60, p); m.events.length = 0; ms += 1000 / 60; }
           console.log(`MISSION ${id}: done=${m.done} dead=${!!m.dead} route=${m.route} next=${m.next} kills=${m.kills} in ${(ms / 1000).toFixed(1)}s`);
