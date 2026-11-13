@@ -1,9 +1,15 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-- **Full game, v14.1, forks on:** https://dylantrussell.github.io/claude-projects/
-- `/branches/` is the same v14.1 build. Add `?linear` to any URL for the one-road Part One.
+- **Full game, v14.2, forks on:** https://dylantrussell.github.io/claude-projects/
+- `/branches/` is the same v14.2 build. Add `?linear` to any URL for the one-road Part One.
 
 Project lives ONLY on the SSD: `/Volumes/POSTCARD CITY SSD/Apocalypse Meow/apocalypse-meow`, branch `missions`.
+
+## v14.2: warnings you can see (2026-11-12)
+
+- Enemies and bosses glow amber as they wind up an attack (replaces the tiny blinking "!" marks).
+- Napalm and cannon shells draw a red target ring where they will land, tightening as they fall.
+- Gates: MISSIONS ALL GREEN, simtest 8/8, GATE GREEN. Deployed gh-pages 60e1308, verified by curl.
 
 ## v14.1: difficulty pass, rides, missions that connect (2026-11-11)
 
