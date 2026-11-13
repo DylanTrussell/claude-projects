@@ -1,9 +1,24 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-- **Full game, v14.2, forks on:** https://dylantrussell.github.io/claude-projects/
-- `/branches/` is the same v14.2 build. Add `?linear` to any URL for the one-road Part One.
+- **Full game, v14.3, forks on:** https://dylantrussell.github.io/claude-projects/
+- `/branches/` is the same v14.3 build. Add `?linear` to any URL for the one-road Part One.
 
 Project lives ONLY on the SSD: `/Volumes/POSTCARD CITY SSD/Apocalypse Meow/apocalypse-meow`, branch `missions`.
+
+## v14.3: two-player couch co-op (2026-11-13)
+
+- P2 drops in any time: ENTER, or START on a second gamepad. P2 plays Charlie.
+- Keyboard splits once two play: P1 WASD + SPACE jump, F fire, G grenade, H special.
+  P2 arrows + J jump, K fire, L grenade, ; special. Each gamepad belongs to one player.
+- Every section has a P2 job: side-scroller (own hero; bike sidecar turret), Huey and
+  Skyraider and PT boat (second gun + crosshair), Surf and Grimtail (own body and lives),
+  tunnel (second gun, crosshair, cheese bombs), Part Two missions (full second hero).
+- Shared vehicles pool lives. A section fails only when both players are out. A player who
+  runs out rejoins with ENTER (or their pad's START) while the partner is still alive.
+- Tests: `node tools/cooptest_missions.mjs`, `cooptest_rails.mjs`, `cooptest_boat.mjs`,
+  `cooptest_fps.mjs`, `cooptest_full.mjs [--join]`. Solo gates unchanged and green.
+- Fixed along the way: Surf raiders shot themselves (free kills); mission bot ledge stall.
+- Not yet tried with real gamepads or two humans. Tested by bots and in the browser.
 
 ## v14.2: warnings you can see (2026-11-12)
 
