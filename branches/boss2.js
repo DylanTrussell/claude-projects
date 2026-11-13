@@ -12,7 +12,7 @@
 // NOT STYLE FORMULA v1 (this reads as an otherworldly mothership-tier foe,
 // not a ground-level pixel-art enemy). Falls back to procedural shapes if
 // the chunk hasn't loaded, same pattern as boat.js.
-import { C, PAL, W, H } from './config.js';
+import { C, CFG, PAL, W, H } from './config.js';
 import { IMG } from './assets.js';
 import { RailBase } from './rails.js';
 import { drawMuzzleBurst } from './render.js';
@@ -33,6 +33,21 @@ const PYLONS0 = [
 const EXPOSE_MS = 700; // window per cycle a pylon can actually be hurt
 
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
+
+// v14.3 co-op: Charlie's rounds burn orange, Whiskers' stay pale yellow.
+const P2_TRACER = '#ff8a2a';
+// a hit on one cat's own body: own hp, own lives, the fight is only lost when
+// both cats are out (same rule as Surf in boat.js)
+function bodyHurt(rail, q, amt, T, other, bx, by) {
+  if (!q || q.st === 'out' || T.hurtT > 0) return;
+  q.hp -= amt; T.hurtT = 900; rail.flashT = 130; rail.shake = Math.max(rail.shake, 12);
+  rail.ev({ e: 'fpsHurt' }); rail.ev({ e: 'sfx', n: 'sfx_explosion' });
+  if (q.hp > 0) return;
+  q.deaths = (q.deaths || 0) + 1; q.lives--; q.hp = CFG.hpMax; T.hurtT = 2200;
+  rail.boom(bx, by, 1); rail.shake = 22;
+  if (q.lives <= 0) { q.lives = 0; q.st = 'out'; }
+  if (q.st === 'out' && (!other || other.st === 'out')) { rail.dead = true; rail.done = true; }
+}
 
 export class ParleyBoss extends RailBase {
   constructor() {
@@ -71,9 +86,39 @@ export class ParleyBoss extends RailBase {
     }
   }
 
-  step(bits, dt, p) {
+  // ---- v14.3 co-op: Charlie, who already held the left flank as scenery, is
+  // P2 -- his own ground position (L/R), his own AK fire straight up (FIRE),
+  // his own hits and lives. Grimtail's laser and missiles pick either cat.
+  ensureC2() {
+    if (!this.c2) this.c2 = { x: Math.max(70, this.px - 190), gunCd: 0, fireT: 0, hurtT: 0 };
+    return this.c2;
+  }
+  coopJoin(q) { super.coopJoin(q); this.ensureC2(); }
+  coopRevive(q) {
+    super.coopRevive(q);
+    if (q === this._p2) this.ensureC2().hurtT = 2200; else this.hurtT = 2200;
+  }
+  hurt(p, amt) {
+    const q2 = this._p2;
+    if (!q2) return super.hurt(p, amt);               // solo: unchanged
+    if (p === q2) { const c = this.ensureC2(); return bodyHurt(this, q2, amt, c, this._p, c.x, GY - 50); }
+    return bodyHurt(this, p, amt, this, q2, this.px, GY - 50);
+  }
+  // where Grimtail aims: Whiskers solo; in co-op whichever cat he picks
+  aimX(on1, on2) {
+    if (on1 && on2) return Math.random() < 0.5 ? this.px : this.c2.x;
+    return on2 ? this.c2.x : this.px;
+  }
+  step(bits, dt, p, bits2, p2) {
     if (this.done) return;
     this.stepCommon(dt, p);
+    if (p2) this._p2 = p2;
+    const q2 = this._p2, co = !!q2;
+    const on1 = !co || p.st !== 'out';                // solo: always true
+    const c = co ? this.ensureC2() : null;
+    const on2 = co && q2.st !== 'out';
+    bits2 = bits2 || 0;
+    if (c) { c.gunCd -= dt; c.fireT -= dt; c.hurtT -= dt; }
     const dts = dt / 1000;
     if (!this.started) { this.started = true; this.ev({ e: 'music', n: 'music_ratpatrol' }); }
     this.runScript(this.t);
@@ -126,7 +171,7 @@ export class ParleyBoss extends RailBase {
     }
 
     // ---- player controls: locked until the fight actually starts ----
-    if (this.phase === 'fight') {
+    if (this.phase === 'fight' && on1) {
       if (bits & C.L) this.px -= 420 * dts;
       if (bits & C.R) this.px += 420 * dts;
       this.px = Math.max(90, Math.min(W - 90, this.px));
@@ -135,6 +180,17 @@ export class ParleyBoss extends RailBase {
         this.gunCd = 150; this.fireT = 70;
         this.ev({ e: 'sfx', n: 'sfx_shot' });
         this.shots.push({ x: this.px, y: GY - 30, vx: 0, vy: -1050, t: 1000 });
+      }
+    }
+    if (this.phase === 'fight' && on2) {
+      if (bits2 & C.L) c.x -= 420 * dts;
+      if (bits2 & C.R) c.x += 420 * dts;
+      c.x = Math.max(70, Math.min(W - 90, c.x));
+      if ((bits2 & C.FIRE) && c.gunCd <= 0) {
+        c.gunCd = 150; c.fireT = 70;
+        this.ev({ e: 'sfx', n: 'sfx_shot' });
+        // straight up off the AK's muzzle (u 0.96 / v 0.03 of charlie_ship.png)
+        this.shots.push({ x: c.x + 35, y: GY - 80, vx: 0, vy: -1050, t: 1000, p2: 1 });
       }
     }
 
@@ -152,6 +208,7 @@ export class ParleyBoss extends RailBase {
             hitSomething = true; s.t = 0;
             if (py.exposed) {
               py.hp--; py.flash = 220; this.ev({ e: 'sfx', n: 'sfx_meow' });
+              if (s.p2) this.p2Hits = (this.p2Hits || 0) + 1;
               // v13.7 (Dylan: "the spaceship should be glowing and changing
               // colours when it's taking damage") -- and the standing rule
               // that everything visibly reacts to every hit.
@@ -175,6 +232,7 @@ export class ParleyBoss extends RailBase {
             this.sparks.push({ x: s.x, y: this.by + 40, t: 0 });
           } else {
             this.bossHp -= 4;
+            if (s.p2) this.p2Hits = (this.p2Hits || 0) + 1;
             this.ev({ e: 'hit', x: s.x, y: s.y });
             this.sparks.push({ x: s.x, y: this.by, t: 0, good: 1 });
             if (this.bossHp <= 0 && !this.won) {
@@ -244,12 +302,13 @@ export class ParleyBoss extends RailBase {
       } else if (this.atkT <= 0 && this.phase === 'fight' && this.flyState === 'hover') {
         this.atkT = this.shieldUp ? (1900 + Math.random() * 900) : (1050 + Math.random() * 500);
         this.tellKind = Math.random() < 0.45 ? 'laser' : 'missile';
-        this.tellT = this.tellKind === 'laser' ? 620 : 380; this.tellTX = this.px;
+        this.tellT = this.tellKind === 'laser' ? 620 : 380; this.tellTX = co ? this.aimX(on1, on2) : this.px;
       }
     }
     if (this.beam) {
       this.beam.t += dt;
-      if (this.beam.t > 120 && this.beam.t < 360 && !this.beam.hit && Math.abs(this.beam.x - this.px) < 40) { this.beam.hit = 1; this.hurt(p, 1); }
+      if (on1 && this.beam.t > 120 && this.beam.t < 360 && !this.beam.hit && Math.abs(this.beam.x - this.px) < 40) { this.beam.hit = 1; this.hurt(p, 1); }
+      if (on2 && this.beam.t > 120 && this.beam.t < 360 && !this.beam.hit2 && Math.abs(this.beam.x - c.x) < 40) { this.beam.hit2 = 1; this.hurt(q2, 1); }
       if (this.beam.t >= this.beam.T) this.beam = null;
     }
     for (const b of this.bolts) {
@@ -268,13 +327,15 @@ export class ParleyBoss extends RailBase {
         b.trail = b.trail.filter(q => q.t < 500);
         if (b.y >= GY - 12 && !b.spent) {
           b.spent = true; this.boom(b.x, GY - 20, 0);
-          if (Math.abs(b.x - this.px) < 70) this.hurt(p, 1);
+          if (on1 && Math.abs(b.x - this.px) < 70) this.hurt(p, 1);
+          if (on2 && Math.abs(b.x - c.x) < 70) this.hurt(q2, 1);
         }
       } else { // bomb
         b.vy += 900 * dts; b.x += b.vx * dts; b.y += b.vy * dts; b.ang += b.spin * dts;
         if (b.y >= GY - 10 && !b.spent) {
           b.spent = true; this.boom(b.x, GY - 16, 0);
-          if (Math.abs(b.x - this.px) < 84) this.hurt(p, 1);
+          if (on1 && Math.abs(b.x - this.px) < 84) this.hurt(p, 1);
+          if (on2 && Math.abs(b.x - c.x) < 84) this.hurt(q2, 1);
         }
       }
     }
@@ -520,8 +581,8 @@ export class ParleyBoss extends RailBase {
     }
 
     // player shots
-    ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
-    if (this.shots) for (const s of this.shots) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x, s.y + 26); ctx.stroke(); }
+    ctx.lineWidth = 4;
+    if (this.shots) for (const s of this.shots) { ctx.strokeStyle = s.p2 ? P2_TRACER : PAL.tracer; ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x, s.y + 26); ctx.stroke(); }
 
     // Grimtail's guns (v13.14): the tells, the beam, the missiles, the bombs
     if (this.tellT > 0) {
@@ -603,7 +664,11 @@ export class ParleyBoss extends RailBase {
       // Chancellor alone. He holds the left flank, firing on his own cadence,
       // slightly behind so he never crowds the player's read of his own cat.
       const ci = IMG.charlie_ship;
-      if (ci) {
+      const co = !!(this._p2 && this.c2);
+      const on1 = !co || !(this._p && this._p.st === 'out');
+      if (co) {
+        if (this._p2.st !== 'out') this.drawCharlieP2(ctx, now, ci);
+      } else if (ci) {
         const chh = 92, chw = chh * (ci.width / ci.height);
         const cx2 = Math.max(70, this.px - 190);
         const cfire = (now % 900) < 90 && this.phase === 'fight';
@@ -614,7 +679,8 @@ export class ParleyBoss extends RailBase {
         if (cfire) drawMuzzleBurst(ctx, cx2 + 6, GY - chh - 4, -Math.PI / 2, 0.8);
       }
       const hi = IMG.hero_us_up || IMG.hero_us;
-      if (hi) {
+      if (!on1) { /* co-op: Whiskers is out of lives until Charlie brings him back */ }
+      else if (hi) {
         const hh = 104, hw = hh * (hi.width / hi.height);
         const rk = Math.max(0, this.fireT || 0) / 70;
         ctx.save();
@@ -694,6 +760,29 @@ export class ParleyBoss extends RailBase {
     }
   }
 }
+
+// v14.3 co-op: P2's Charlie, standing where the player put him. Recoil on
+// each round, blinks while his i-frames run, cheese chevron over his hat.
+ParleyBoss.prototype.drawCharlieP2 = function (ctx, now, ci) {
+  const c = this.c2;
+  const rk = Math.max(0, c.fireT) / 70;
+  const blink = c.hurtT > 0 && Math.floor(now / 70) % 2 === 0;
+  const chh = 92, chw = ci ? chh * (ci.width / ci.height) : 40;
+  if (!blink) {
+    ctx.save();
+    if (rk > 0) { ctx.translate(c.x, GY); ctx.rotate(-rk * 0.05); ctx.translate(-c.x, -GY); }
+    if (ci) ctx.drawImage(ci, c.x - chw / 2, GY - chh + rk * 3, chw, chh);
+    else { ctx.fillStyle = '#2b2b26'; ctx.fillRect(c.x - 16, GY - 60, 32, 60); }
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.fillStyle = PAL.cheese; ctx.strokeStyle = PAL.outline; ctx.lineWidth = 3;
+  const my = GY - chh - 22 + Math.sin(now / 200) * 3;
+  ctx.beginPath(); ctx.moveTo(c.x - 11, my - 9); ctx.lineTo(c.x + 11, my - 9); ctx.lineTo(c.x, my + 4); ctx.closePath();
+  ctx.stroke(); ctx.fill();
+  ctx.restore();
+  if (rk > 0.2) drawMuzzleBurst(ctx, c.x + 35, GY - chh + 2, -Math.PI / 2, rk);
+};
 
 // ---------- headless autopilot (test harness only) ----------
 export function parleyBot(rail) {

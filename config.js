@@ -132,5 +132,19 @@ export const BIND = {
   KeyK: C.GREN,
   KeyL: C.CHEESE,                  // context: the radio while an air strike is pending, cheese lure otherwise
 };
+// Two-player couch co-op (drop-in: P2 presses ENTER, or START on a second pad).
+// Once two are playing the keyboard splits down the middle so two people fit:
+// P1 keeps the left half, P2 takes the arrows and the home row next to them.
+export const GAME = { coop: false };
+export const BIND_P1 = {
+  KeyA: C.L, KeyD: C.R, KeyW: C.UP, KeyS: C.DOWN,
+  Space: C.JUMP, KeyF: C.FIRE, KeyG: C.GREN, KeyH: C.CHEESE,
+};
+export const BIND_P2 = {
+  ArrowLeft: C.L, ArrowRight: C.R, ArrowUp: C.UP, ArrowDown: C.DOWN,
+  KeyJ: C.JUMP, KeyK: C.FIRE, KeyL: C.GREN, Semicolon: C.CHEESE,
+  Numpad0: C.JUMP, Numpad1: C.FIRE, Numpad2: C.GREN, Numpad3: C.CHEESE,
+};
+export const PAD_START = 9;
 // standard gamepad mapping
 export const PADBIND = { 0: C.JUMP, 2: C.FIRE, 1: C.GREN, 3: C.CHEESE, 12: C.UP, 13: C.DOWN, 14: C.L, 15: C.R };

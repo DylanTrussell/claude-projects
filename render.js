@@ -890,6 +890,7 @@ function drawEntity(ctx, e2, cam, t, inv) {
 }
 
 function drawPlayerEnt(ctx, p, cam, t, myPid) {
+  if (p[23]) return; // co-op: Charlie is in the sidecar, and the bike sprite already draws him there
   const [pid, hero, x, y, face, st, lives, weap, ammo, gren, cheese, invulnT, aimUp, runT, , , crouch, bike, fireFlash, deathKind, respT] = p;
   if (st === 'out' || st === 'riding') return; // riding: he's aboard the heli
   const sx = x - cam;

@@ -201,7 +201,8 @@ export class Mission extends RailBase {
     const m = MISSIONS[id] || MISSIONS.graveyard;
     this.id = MISSIONS[id] ? id : 'graveyard'; this.m = m;
     this.cam = 0; this.camLock = -1;
-    this.h = { x: 220, y: -200, vx: 0, vy: 0, face: 1, onG: false, up: false, crouch: false, cd: 0, weap: 'rifle', ammo: 0, gren: 10, inv: 0, run: 0, safeX: 220, fire: 0 };
+    this.h1 = { x: 220, y: -200, vx: 0, vy: 0, face: 1, onG: false, up: false, crouch: false, cd: 0, weap: 'rifle', ammo: 0, gren: 10, inv: 0, run: 0, safeX: 220, fire: 0, who: 'us' };
+    this.h2 = null; this.kit2 = o.kit2 || null; this.prevBits2 = 0;   // v14.3 co-op: Charlie, played by P2
     this.c = { x: 150, y: -320, vy: 0, face: 1, cd: 600, run: 0, fire: 0 };       // Charlie
     this.en = []; this.shots = []; this.eshots = []; this.grens = []; this.parts = []; this.pops = [];
     this.picks = [];
@@ -217,14 +218,37 @@ export class Mission extends RailBase {
     this.exitPlats = m.exits.length > 1 ? [[m.len - 70, GY - 66, 100], [m.len + 30, GY - 132, 100], [m.len + 130, GY - 196, 420]] : [];
     this.kills = 0; this.dur = 0; this.heat = m.heat || 1;
     // what you carried out of the last mission, and what you rode in on
-    if (o.kit) { this.h.weap = WEAP[o.kit.weap] ? o.kit.weap : 'rifle'; this.h.ammo = o.kit.ammo || 0; this.h.gren = Math.max(o.kit.gren || 0, 5); }
+    if (o.kit) { this.h1.weap = WEAP[o.kit.weap] ? o.kit.weap : 'rifle'; this.h1.ammo = o.kit.ammo || 0; this.h1.gren = Math.max(o.kit.gren || 0, 5); }
     this.via = o.via || null; this.ride = null; this.wreck = null;
-    if (RIDE_FOR[this.via]) { this.mount(RIDE_FOR[this.via]); this.h.x = -200; this.h.y = GY; this.c.x = -330; this.c.y = GY; }
+    if (RIDE_FOR[this.via]) { this.mount(RIDE_FOR[this.via]); this.h1.x = -200; this.h1.y = GY; this.c.x = -330; this.c.y = GY; }
   }
   mount(k) { this.ride = { k, hp: RIDE[k].hp, flash: 0, ram: 0, shell: 0 }; }
+  // The lead cat: Whiskers while P1 is in, Charlie if P1 has run dry. Everything
+  // that used to mean "the hero" (camera, waves, the fork) follows the lead.
+  get h() { const a = this.h1, b = this.h2; return (a.gone && b && !b.gone) ? b : a; }
+  heroes() { const r = []; if (!this.h1.gone) r.push(this.h1); if (this.h2 && !this.h2.gone) r.push(this.h2); return r; }
+  near(x) { let best = this.h, bd = 1e9; for (const q of this.heroes()) { const d = Math.abs(q.x - x); if (d < bd) { bd = d; best = q; } } return best; }
+  leadX() { let x = -1e9; for (const q of this.heroes()) x = Math.max(x, q.x); return x > -1e9 ? x : this.h1.x; }
+  // bosses spread their attention: each wind-up picks one cat, turn about
+  bossTarget() { const hs = this.heroes(); if (hs.length < 2) return this.h; return hs[Math.floor(this.t / 3800) % 2]; }
+  coopJoin(q) {
+    if (this.h2) { this.h2.pl = q; return; }
+    const lead = this.h, k = this.kit2 || {};
+    const h2 = { x: this.c.x, y: this.c.y, vx: 0, vy: 0, face: 1, onG: false, up: false, crouch: false, cd: 0, weap: WEAP[k.weap] ? k.weap : 'rifle', ammo: k.ammo || 0, gren: Math.max(k.gren || 0, 10), inv: 2200, run: 0, safeX: lead.x, fire: 0, who: 'vc', pl: q };
+    this.h2 = h2;
+    if (this.phase !== 'drop') { h2.safeX = lead.x - 60; this.respawn(h2); h2.y = -120; h2.onG = false; h2.inv = 2600; }
+    if (q && q.st === 'out') h2.gone = true;
+  }
+  coopRevive(q) {
+    q.lives = CFG.lives; q.hp = CFG.hpMax; q.st = 'alive';
+    const hh = q === this.h1.pl ? this.h1 : this.h2;
+    if (!hh) return;
+    hh.gone = false; hh.weap = 'rifle'; hh.ammo = 0; hh.gren = Math.max(hh.gren, 10);
+    hh.safeX = this.leadX() - 60; this.respawn(hh); hh.y = -120; hh.onG = false; hh.inv = 2600;
+  }
   // the ride is done: it burns where it stood and you are thrown clear
   bail() {
-    const h = this.h, r = this.ride; if (!r) return;
+    const h = this.h1, r = this.ride; if (!r) return;
     this.wreck = { k: r.k, x: h.x, y: Math.min(h.y, GY), face: h.face, t: 0 };
     this.ride = null; this.shake = Math.max(this.shake, r.k === 'tank' ? 22 : 10);
     if (r.k === 'tank') { this.boomW(h.x, h.y - 70, 1); for (let i = 0; i < 12; i++) this.fx('debris', h.x, h.y - 60, { vx: rnd(-340, 340), vy: rnd(-560, -140), T: 900, r: rnd(4, 9) }); }
@@ -255,10 +279,10 @@ export class Mission extends RailBase {
   pop(x, y, n) { this.pops.push({ x, y, n, t: 0 }); }
 
   // ---- damage
-  hurtHero(p, amt) {
-    const h = this.h;
-    if (h.inv > 0 || this.phase === 'drop' || this.phase === 'out' || this.dead) return;
-    if (this.ride) {
+  hurtHero(p, amt, hh) {
+    const h = hh || this.h; p = h.pl || p;
+    if (h.gone || h.inv > 0 || this.phase === 'drop' || this.phase === 'out' || this.dead) return;
+    if (this.ride && h === this.h1) {
       const r = this.ride; r.hp -= 1; r.flash = 130; h.inv = 900; this.shake = Math.max(this.shake, 8);
       this.say({ e: 'sfx', n: 'sfx_shrapnel' });
       for (let i = 0; i < 6; i++) this.fx('debris', h.x, h.y - 70, { vx: rnd(-220, 220), vy: rnd(-380, -80), T: 600, r: rnd(3, 6) });
@@ -272,13 +296,17 @@ export class Mission extends RailBase {
       p.deaths = (p.deaths || 0) + 1; p.lives--; p.hp = CFG.hpMax;
       h.weap = 'rifle'; h.ammo = 0; h.gren = Math.max(h.gren, 10); h.inv = 2600;
       this.boomW(h.x, h.y - 40, 0);
-      if (p.lives <= 0) { p.st = 'out'; this.dead = true; this.done = true; return; }
-      this.respawn(); h.inv = 2600;
+      if (p.lives <= 0) {
+        p.lives = 0; p.st = 'out'; h.gone = true;
+        if (!this.heroes().length) { this.dead = true; this.done = true; }
+        return;
+      }
+      this.respawn(h); h.inv = 2600;
     } else if (h.onG) { h.vy = -360; h.vx = -220 * h.face; }   // a hit in mid-air does not take the jump away: no more shot-into-the-pit
   }
   // back on your feet on solid ground, a step short of whatever got you
-  respawn() {
-    const h = this.h;
+  respawn(hh) {
+    const h = hh || this.h;
     let x = Math.max(this.cam + 140, h.safeX - 110);
     for (let i = 0; i < 40 && !(this.solid(x) && this.solid(x - 40) && this.solid(x + 40)); i++) x -= 30;
     if (!this.solid(x)) { x = Math.max(this.cam + 140, h.safeX); for (let i = 0; i < 40 && !this.solid(x); i++) x += 40; }
@@ -346,10 +374,16 @@ export class Mission extends RailBase {
   }
 
   // ------------------------------------------------------------------ step
-  step(bits, dt, p) {
+  step(bits, dt, p, bits2, p2) {
     if (this.done) return;
     this.stepCommon(dt, p);
-    const dts = dt / 1000, h = this.h, m = this.m;
+    this.h1.pl = p;
+    if (p && p.st === 'out') this.h1.gone = true;
+    if (p2 && !this.h2) this.coopJoin(p2);
+    if (this.h2 && p2) { this.h2.pl = p2; if (p2.st === 'out') this.h2.gone = true; }
+    bits2 = bits2 | 0;
+    if (!this.heroes().length) { this.dead = true; this.done = true; return; }
+    const dts = dt / 1000, h = this.h, m = this.m, h2 = this.h2;
     this.dur = this.t; this.pt += dt;
     if (!this.started) { this.started = true; this.say({ e: 'music', n: m.music }); }
     const edge = (b) => (bits & b) && !(this.prevBits & b);
@@ -357,87 +391,33 @@ export class Mission extends RailBase {
     // ---- intro: both cats come down under canopies, Metal Slug style
     if (this.phase === 'drop' && this.ride) {   // rode in off the road you chose
       const k = Math.min(1, this.pt / 2300), e = 1 - (1 - k) * (1 - k);
-      h.x = -200 + e * 420; h.y = GY; h.run += dt; h.vx = k < 1 ? 200 : 0; this.c.x = -330 + e * 480; this.c.y = GY; this.c.run += dt; this.c.mov = k < 1;
-      if (this.pt > 2900) { this.phase = 'play'; h.onG = true; h.vy = 0; h.vx = 0; h.safeX = h.x; }
-      this.stepFx(dt, dts); this.prevBits = bits; return;
+      const H1 = this.h1; H1.x = -200 + e * 420; H1.y = GY; H1.run += dt; H1.vx = k < 1 ? 200 : 0; this.c.x = -330 + e * 480; this.c.y = GY; this.c.run += dt; this.c.mov = k < 1;
+      if (h2) { h2.x = this.c.x; h2.y = GY; h2.run += dt; h2.vx = k < 1 ? 200 : 0; h2.face = 1; }
+      if (this.pt > 2900) { this.phase = 'play'; for (const q of [H1, h2]) if (q) { q.onG = true; q.vy = 0; q.vx = 0; q.safeX = q.x; } }
+      this.stepFx(dt, dts); this.prevBits = bits; this.prevBits2 = bits2; return;
     }
     if (this.phase === 'drop') {
-      h.y = Math.min(GY, -200 + this.pt * 0.34); this.c.y = Math.min(GY, -320 + this.pt * 0.34);
-      if (this.pt > 2900) { this.phase = 'play'; h.onG = true; h.vy = 0; }
-      this.stepFx(dt, dts); this.prevBits = bits; return;
+      this.h1.y = Math.min(GY, -200 + this.pt * 0.34); this.c.y = Math.min(GY, -320 + this.pt * 0.34);
+      if (h2) { h2.x = this.c.x; h2.y = this.c.y; }
+      if (this.pt > 2900) { this.phase = 'play'; this.h1.onG = true; this.h1.vy = 0; if (h2) { h2.onG = true; h2.vy = 0; h2.safeX = h2.x; } }
+      this.stepFx(dt, dts); this.prevBits = bits; this.prevBits2 = bits2; return;
     }
     if (this.phase === 'out') {
-      h.x += RUN * 1.2 * dts; h.run += dt; h.face = 1; h.vx = 300; this.c.x += RUN * 1.2 * dts; this.c.run += dt; this.c.mov = true;
+      for (const q of this.heroes()) { q.x += RUN * 1.2 * dts; q.run += dt; q.face = 1; q.vx = 300; }
+      this.c.x += RUN * 1.2 * dts; this.c.run += dt; this.c.mov = true;
       if (this.pt > 900) this.done = true;
-      this.stepFx(dt, dts); this.prevBits = bits; return;
+      this.stepFx(dt, dts); this.prevBits = bits; this.prevBits2 = bits2; return;
     }
 
-    // ---- hero
-    h.inv -= dt; h.cd -= dt; h.fire -= dt; if (h.soot > 0) { h.soot -= dt; if (Math.random() < 0.25) this.fx('smoke', h.x + rnd(-10, 10), h.y - rnd(60, 100), { vy: rnd(-90, -40), T: 500, r: rnd(6, 12) }); }
-    const R = this.ride ? RIDE[this.ride.k] : null;
+    // ---- the cats (P1 Whiskers, and Charlie if a second player is in)
     if (this.ride) { this.ride.flash -= dt; this.ride.ram -= dt; this.ride.shell -= dt; }
     if (this.wreck) { this.wreck.t += dt; if (this.wreck.t > 6000) this.wreck = null; }
-    h.crouch = !!(bits & C.DOWN) && h.onG && !R;
-    h.up = !!(bits & C.UP);
-    let mv = 0;
-    if (bits & C.L) mv = -1; if (bits & C.R) mv = 1;
-    if (mv) h.face = mv;
-    const tgt = h.crouch ? 0 : mv * (R ? R.run : RUN);
-    h.vx += (tgt - h.vx) * Math.min(1, dts * 18);
-    if (mv && h.onG) h.run += dt;
-    if (edge(C.JUMP) && h.onG) { h.vy = R ? R.jump : JUMP; h.onG = false; }
-    const prevY = h.y;
-    h.vy += GRAV * dts; h.x += h.vx * dts; h.y += h.vy * dts;
-    const ly = this.land(h, prevY);
-    if (ly !== null) { h.y = ly; h.vy = 0; h.onG = true; if (ly === GY || true) h.safeX = h.x; } else h.onG = false;
-    const right = this.camLock > 0 ? this.camLock - 30 : this.phase === 'play' ? this.m.len - 30 : this.endX + 200;
-    h.x = clamp(h.x, this.cam + 30, right);
-    if (h.y > H + 120) { h.inv = 0; this.ride = null; this.hurtHero(p, 1); if (!this.dead) this.respawn(); }
-
-    // ---- fire
-    if (R && this.ride) {
-      // the saddle gun never runs dry; the tank's bomb button is its cannon
-      if ((bits & C.FIRE) && h.cd <= 0) {
-        h.cd = R.cd; h.fire = 70;
-        const up = h.up, ox = up ? h.x + h.face * R.seat[0] : h.x + h.face * R.gun[0], oy = up ? h.y - R.seat[1] - 110 : h.y - R.gun[1];
-        const sp = rnd(-0.03, 0.03);
-        this.shots.push({ k: 'H', x: ox, y: oy, vx: up ? sp * 1250 : h.face * 1250, vy: up ? -1250 : sp * 1250, t: 0, T: 900, dmg: 1 });
-        this.say({ e: 'sfx', n: 'sfx_shot' });
-      }
-      if (this.ride.k === 'tank' && edge(C.GREN) && this.ride.shell <= 0) {
-        this.ride.shell = 650;
-        this.shots.push({ k: 'R', x: h.x + h.face * R.gun[0], y: h.y - R.gun[1], vx: h.face * 520, vy: 0, t: 0, T: 2200, dmg: 9, ax: h.face * 1500, ay: 0 });
-        this.say({ e: 'sfx', n: 'sfx_shotgun' }); this.shake = Math.max(this.shake, 6); h.vx -= h.face * 120;
-      }
-      // the buffalo goes through whatever is standing in front of it
-      if (this.ride.k === 'buffalo' && Math.abs(h.vx) > 220 && this.ride.ram <= 0) {
-        for (const e of this.en) if (e.st === 'live' && !e.rise && !KIND[e.k].fly && Math.abs(e.x - (h.x + h.face * 70)) < 60 && Math.abs(e.y - h.y) < 90) { this.dmg(e, 5, 'ram'); e.x += h.face * 40; this.ride.ram = 260; this.shake = Math.max(this.shake, 6); h.inv = Math.max(h.inv, 220); }
-      }
-    }
-    if (!(R && this.ride) && (bits & C.FIRE) && h.cd <= 0) {
-      const wp = WEAP[h.weap]; h.cd = wp.cd; h.fire = 70;
-      const up = h.up, ox = h.x + (up ? h.face * 8 : h.face * 46), oy = h.y - (up ? 104 : h.crouch ? 34 : 56);
-      const dx = up ? 0 : h.face, dy = up ? -1 : 0;
-      if (h.weap === 'F') {
-        for (let i = 0; i < 2; i++) this.shots.push({ k: 'F', x: ox, y: oy, vx: dx * rnd(480, 600) + rnd(-50, 50) + h.vx * 0.5, vy: dy * rnd(480, 600) + rnd(-50, 50), t: 0, T: 420, dmg: wp.dmg });
-        if (this.t % 180 < dt) this.say({ e: 'sfx', n: 'sfx_flame' });
-      } else if (h.weap === 'R') {
-        this.shots.push({ k: 'R', x: ox, y: oy, vx: dx * 420, vy: dy * 420, t: 0, T: 2200, dmg: wp.dmg, ax: dx * 1500, ay: dy * 1500 });
-        this.say({ e: 'sfx', n: 'sfx_shotgun' });
-      } else {
-        const sp = h.weap === 'H' ? rnd(-0.035, 0.035) : 0;
-        this.shots.push({ k: h.weap === 'H' ? 'H' : 'B', x: ox, y: oy, vx: (dx + (up ? sp : 0)) * wp.spd, vy: (dy + (up ? 0 : sp)) * wp.spd, t: 0, T: 900, dmg: wp.dmg });
-        this.say({ e: 'sfx', n: 'sfx_shot' });
-        this.fx('shell', h.x, h.y - 56, { vx: -h.face * rnd(60, 160), vy: rnd(-340, -200), T: 700, r: 3 });
-      }
-      if (wp.ammo && --h.ammo <= 0) { h.weap = 'rifle'; }
-    }
-    if (edge(C.GREN) && h.gren > 0 && !(this.ride && this.ride.k === 'tank')) {
-      h.gren--; this.grens.push({ x: h.x + h.face * 20, y: h.y - 70, vx: h.face * 430 + h.vx * 0.6, vy: -560, t: 0 });
-    }
+    const R = this.ride && !this.h1.gone ? RIDE[this.ride.k] : null;
+    if (!this.h1.gone) this.stepHero(this.h1, bits, this.prevBits, dt, dts, p);
+    if (h2 && !h2.gone) this.stepHero(h2, bits2, this.prevBits2, dt, dts, p2);
 
     // ---- Charlie: at your shoulder, shooting what you are shooting
-    const c = this.c; c.cd -= dt; c.fire -= dt;
+    const c = this.c; if (!h2) { c.cd -= dt; c.fire -= dt;
     const cx = h.x - 74 * h.face;
     if (Math.abs(cx - c.x) > 500) { c.x = cx; c.y = h.y; }
     c.mov = Math.abs(cx - c.x) > 14;
@@ -455,9 +435,10 @@ export class Mission extends RailBase {
       const a = Math.atan2(ty - (c.y - 56), tx - c.x);
       this.shots.push({ k: 'B', x: c.x + Math.cos(a) * 40, y: c.y - 56 + Math.sin(a) * 40, vx: Math.cos(a) * 1100, vy: Math.sin(a) * 1100, t: 0, T: 900, dmg: 1 });
     }
+    } else { c.x = h2.x; c.y = h2.y; }   // the AI Charlie stands down while a person has him
 
     // ---- camera: follows, never goes back, and stops at a fight
-    let want = h.x - W * 0.38;
+    let want = this.leadX() - W * 0.38;
     if (this.camLock > 0) want = Math.min(want, this.camLock - W);
     if (this.phase === 'play' || this.phase === 'boss' || this.phase === 'clear') want = Math.min(want, this.arenaX);
     this.cam = clamp(Math.max(this.cam, want), 0, this.endX - W + 200);
@@ -471,13 +452,13 @@ export class Mission extends RailBase {
       const idx = Math.floor((E.x + ew - 30) / 64);
       while (E.eaten < idx) { E.eaten++; const px = E.eaten * 64; for (let i = 0; i < 4; i++) this.fx('debris', px + rnd(0, 60), GY + rnd(-10, 30), { vx: rnd(-260, 80), vy: rnd(-420, -80), T: 900, r: rnd(5, 11), col: i % 2 ? '#a57f52' : '#5e4228' }); if (E.eaten % 3 === 0) { this.shake = Math.max(this.shake, 7); this.say({ e: 'sfx', n: 'sfx_shrapnel' }); } }
       this.cam = Math.max(this.cam, Math.min(E.x + ew - 400, m.len - W));
-      if (h.x < E.x + ew + 26) { this.hurtHero(p, 1); h.x = E.x + ew + 90; h.vx = 520; h.vy = -420; }
+      for (const q of this.heroes()) if (q.x < E.x + ew + 26) { this.hurtHero(p, 1, q); q.x = E.x + ew + 90; q.vx = 520; q.vy = -420; }
       for (const e of this.en) if (e.st === 'live' && e.x < E.x + ew) { e.hp = 0; e.st = 'gone'; this.fx('gib', e.x, e.y - 40, { vy: -200, col: PAL.acid }); }
     }
 
     // ---- waves
     for (const w of this.waves) {
-      if (!w.done && h.x > w.x - 520) { w.done = true; this.spawnWave(w); }
+      if (!w.done && this.leadX() > w.x - 520) { w.done = true; this.spawnWave(w); }
       if (w.done && w.alive.length) {
         w.alive = w.alive.filter(e => e.st !== 'gone');
         // then: the second half of the fight comes in once the first is dead, on the same locked screen
@@ -506,19 +487,83 @@ export class Mission extends RailBase {
     if (this.phase === 'clear' && this.pt > 3600) { this.phase = 'fork'; this.pt = 0; this.camLock = -1; }
     if (this.phase === 'fork') {
       if (m.exits.length === 0) { if (this.pt > 600) { this.next = null; this.done = true; } }
-      else if (h.x > this.endX - 40) {
-        const up = m.exits.length > 1 && h.y < GY - 120;
+      else if (this.heroes().some(q => q.x > this.endX - 40)) {
+        const fh = this.heroes().find(q => q.x > this.endX - 40), up = m.exits.length > 1 && fh.y < GY - 120;
         this.route = m.exits.length > 1 ? (up ? 'up' : 'low') : (m.exits[0].via || 'low');
-        if (!this.ride) { this.mount(RIDE_FOR[this.route]); h.y = up ? GY - 196 : GY; h.vy = 0; h.onG = true; }
+        if (!this.ride) { this.mount(RIDE_FOR[this.route]); const H1 = this.h1; H1.y = up ? GY - 196 : GY; H1.vy = 0; H1.onG = true; }
         this.next = (m.exits.length > 1 ? (up ? m.exits[0] : m.exits[1]) : m.exits[0]).to;
         this.phase = 'out'; this.pt = 0;
       }
     }
-    this.prevBits = bits;
+    this.prevBits = bits; this.prevBits2 = bits2;
+  }
+
+  // one cat's controls, movement, gun and grenades (the ride is Whiskers' alone)
+  stepHero(h, bits, prev, dt, dts, p) {
+    const edge = (b) => (bits & b) && !(prev & b);
+    h.inv -= dt; h.cd -= dt; h.fire -= dt; if (h.soot > 0) { h.soot -= dt; if (Math.random() < 0.25) this.fx('smoke', h.x + rnd(-10, 10), h.y - rnd(60, 100), { vy: rnd(-90, -40), T: 500, r: rnd(6, 12) }); }
+    const ride = h === this.h1 ? this.ride : null, R = ride ? RIDE[ride.k] : null;
+    h.crouch = !!(bits & C.DOWN) && h.onG && !R;
+    h.up = !!(bits & C.UP);
+    let mv = 0;
+    if (bits & C.L) mv = -1; if (bits & C.R) mv = 1;
+    if (mv) h.face = mv;
+    const tgt = h.crouch ? 0 : mv * (R ? R.run : RUN);
+    h.vx += (tgt - h.vx) * Math.min(1, dts * 18);
+    if (mv && h.onG) h.run += dt;
+    if (edge(C.JUMP) && h.onG) { h.vy = R ? R.jump : JUMP; h.onG = false; }
+    const prevY = h.y;
+    h.vy += GRAV * dts; h.x += h.vx * dts; h.y += h.vy * dts;
+    const ly = this.land(h, prevY);
+    if (ly !== null) { h.y = ly; h.vy = 0; h.onG = true; if (ly === GY || true) h.safeX = h.x; } else h.onG = false;
+    const right = this.camLock > 0 ? this.camLock - 30 : this.phase === 'play' ? this.m.len - 30 : this.endX + 200;
+    h.x = clamp(h.x, this.cam + 30, right);
+    if (h.y > H + 120) { h.inv = 0; if (ride) this.ride = null; this.hurtHero(p, 1, h); if (!this.dead && !h.gone) this.respawn(h); }
+
+    // ---- fire
+    if (R && ride) {
+      // the saddle gun never runs dry; the tank's bomb button is its cannon
+      if ((bits & C.FIRE) && h.cd <= 0) {
+        h.cd = R.cd; h.fire = 70;
+        const up = h.up, ox = up ? h.x + h.face * R.seat[0] : h.x + h.face * R.gun[0], oy = up ? h.y - R.seat[1] - 110 : h.y - R.gun[1];
+        const sp = rnd(-0.03, 0.03);
+        this.shots.push({ k: 'H', x: ox, y: oy, vx: up ? sp * 1250 : h.face * 1250, vy: up ? -1250 : sp * 1250, t: 0, T: 900, dmg: 1 });
+        this.say({ e: 'sfx', n: 'sfx_shot' });
+      }
+      if (ride.k === 'tank' && edge(C.GREN) && ride.shell <= 0) {
+        ride.shell = 650;
+        this.shots.push({ k: 'R', x: h.x + h.face * R.gun[0], y: h.y - R.gun[1], vx: h.face * 520, vy: 0, t: 0, T: 2200, dmg: 9, ax: h.face * 1500, ay: 0 });
+        this.say({ e: 'sfx', n: 'sfx_shotgun' }); this.shake = Math.max(this.shake, 6); h.vx -= h.face * 120;
+      }
+      // the buffalo goes through whatever is standing in front of it
+      if (ride.k === 'buffalo' && Math.abs(h.vx) > 220 && ride.ram <= 0) {
+        for (const e of this.en) if (e.st === 'live' && !e.rise && !KIND[e.k].fly && Math.abs(e.x - (h.x + h.face * 70)) < 60 && Math.abs(e.y - h.y) < 90) { this.dmg(e, 5, 'ram'); e.x += h.face * 40; ride.ram = 260; this.shake = Math.max(this.shake, 6); h.inv = Math.max(h.inv, 220); }
+      }
+    }
+    if (!(R && ride) && (bits & C.FIRE) && h.cd <= 0) {
+      const wp = WEAP[h.weap]; h.cd = wp.cd; h.fire = 70;
+      const up = h.up, ox = h.x + (up ? h.face * 8 : h.face * 46), oy = h.y - (up ? 104 : h.crouch ? 34 : 56);
+      const dx = up ? 0 : h.face, dy = up ? -1 : 0;
+      if (h.weap === 'F') {
+        for (let i = 0; i < 2; i++) this.shots.push({ k: 'F', x: ox, y: oy, vx: dx * rnd(480, 600) + rnd(-50, 50) + h.vx * 0.5, vy: dy * rnd(480, 600) + rnd(-50, 50), t: 0, T: 420, dmg: wp.dmg });
+        if (this.t % 180 < dt) this.say({ e: 'sfx', n: 'sfx_flame' });
+      } else if (h.weap === 'R') {
+        this.shots.push({ k: 'R', x: ox, y: oy, vx: dx * 420, vy: dy * 420, t: 0, T: 2200, dmg: wp.dmg, ax: dx * 1500, ay: dy * 1500 });
+        this.say({ e: 'sfx', n: 'sfx_shotgun' });
+      } else {
+        const sp = h.weap === 'H' ? rnd(-0.035, 0.035) : 0;
+        this.shots.push({ k: h.weap === 'H' ? 'H' : 'B', x: ox, y: oy, vx: (dx + (up ? sp : 0)) * wp.spd, vy: (dy + (up ? 0 : sp)) * wp.spd, t: 0, T: 900, dmg: wp.dmg });
+        this.say({ e: 'sfx', n: 'sfx_shot' });
+        this.fx('shell', h.x, h.y - 56, { vx: -h.face * rnd(60, 160), vy: rnd(-340, -200), T: 700, r: 3 });
+      }
+      if (wp.ammo && --h.ammo <= 0) { h.weap = 'rifle'; }
+    }
+    if (edge(C.GREN) && h.gren > 0 && !(ride && ride.k === 'tank')) {
+      h.gren--; this.grens.push({ x: h.x + h.face * 20, y: h.y - 70, vx: h.face * 430 + h.vx * 0.6, vy: -560, t: 0 });
+    }
   }
 
   stepEnemies(dt, dts, p) {
-    const h = this.h;
     for (const e of this.en) {
       if (e.st === 'gone') continue;
       const K = KIND[e.k];
@@ -532,7 +577,7 @@ export class Mission extends RailBase {
       }
       if (e.rise > 0) { e.rise -= dt; if (Math.random() < 0.3) this.fx('debris', e.x + rnd(-24, 24), GY, { vx: rnd(-80, 80), vy: rnd(-260, -80), T: 500, r: 4, col: THEME[this.m.theme].b }); continue; }
       e.t += dt; e.cd -= dt * this.heat;
-      const dx = h.x - e.x, ad = Math.abs(dx);
+      const h = this.near(e.x), dx = h.x - e.x, ad = Math.abs(dx);
       if (!K.fly && !this.solid(e.x) && e.y >= GY) { e.vy += GRAV * dts; e.y += e.vy * dts; if (e.y > H + 100) e.st = 'gone'; continue; }
       if (e.x < this.cam - 500 || e.x > this.cam + W + 900) { if (e.t > 9000) e.st = 'gone'; }
       switch (e.k) {
@@ -547,7 +592,7 @@ export class Mission extends RailBase {
           e.face = dx > 0 ? 1 : -1;
           if (e.tell > 0) { e.tell -= dt; if (e.tell <= 0) { e.cd = rnd(2400, 3600); const T = 0.9; this.eshots.push({ k: 'vomit', x: e.x + e.face * 30, y: e.y - 70, vx: clamp(dx / T, -520, 520), vy: -620, g: 1500, r: 13 }); this.say({ e: 'sfx', n: 'sfx_gore' }); } }
           else { e.x += e.face * 62 * dts; if (vis && ad < 480 && ad > 120 && e.cd <= 0) e.tell = 520; }
-          if (ad < 42 && e.t > 350 && Math.abs(h.y - e.y) < 70) this.hurtHero(p, 1);   // e.t: a beat of grace after it surfaces
+          if (ad < 42 && e.t > 350 && Math.abs(h.y - e.y) < 70) this.hurtHero(p, 1, h);   // e.t: a beat of grace after it surfaces
           break;
         }
         case 'fatz': {
@@ -555,7 +600,7 @@ export class Mission extends RailBase {
           if (e.tell > 0) { e.tell -= dt; if (e.tell <= 0) { e.cd = rnd(2200, 3000); e.spew = 900; } }
           else if (e.spew > 0) { e.spew -= dt; if ((e.sp = (e.sp || 0) - dt) <= 0) { e.sp = 110; this.eshots.push({ k: 'vomit', x: e.x + e.face * 60, y: e.y - 96, vx: e.face * rnd(260, 520), vy: rnd(-380, -160), g: 1400, r: 12 }); } }
           else { if (ad > 260) e.x += e.face * 44 * dts; if (vis && ad < 620 && e.cd <= 0) { e.tell = 600; this.say({ e: 'sfx', n: 'sfx_screech' }); } }
-          if (ad < 70 && Math.abs(h.y - e.y) < 110) this.hurtHero(p, 1);
+          if (ad < 70 && Math.abs(h.y - e.y) < 110) this.hurtHero(p, 1, h);
           break;
         }
         case 'crab': {
@@ -567,7 +612,7 @@ export class Mission extends RailBase {
             else if (e.cd <= 0) e.tell = 380;
             else e.x += Math.sin(e.t / 260 + e.ph) * 120 * dts;
           }
-          if (ad < 66 && e.t > 350 && Math.abs(h.y - e.y) < 80) this.hurtHero(p, 1);
+          if (ad < 66 && e.t > 350 && Math.abs(h.y - e.y) < 80) this.hurtHero(p, 1, h);
           break;
         }
         case 'jelly': {
@@ -575,7 +620,7 @@ export class Mission extends RailBase {
           e.x += clamp(tx - e.x, -1, 1) * 130 * dts; e.y += clamp(ty - e.y, -1, 1) * 90 * dts;
           if (e.tell > 0) { e.tell -= dt; if (e.tell <= 0) { e.cd = rnd(2200, 3400); this.eshots.push({ k: 'zap', x: e.x, y: e.y + 20, vx: 0, vy: 430, r: 10 }); this.say({ e: 'sfx', n: 'sfx_laser' }); } }
           else if (Math.abs(dx) < 110 && e.cd <= 0 && vis) e.tell = 460;
-          if (ad < 44 && Math.abs((h.y - 50) - e.y) < 60) this.hurtHero(p, 1);
+          if (ad < 44 && Math.abs((h.y - 50) - e.y) < 60) this.hurtHero(p, 1, h);
           break;
         }
         case 'flamer': {
@@ -651,23 +696,23 @@ export class Mission extends RailBase {
       if (hit) { this.blast(g.x, Math.min(g.y, GY - 20), 120, 10, p); g.dead = 1; } else if (g.y > H + 60) g.dead = 1;
     }
     this.grens = this.grens.filter(g => !g.dead);
-    // enemy fire
-    const hh = h.crouch ? 44 : 84;
+    // enemy fire: every cat on the field can be hit
+    const cats = this.heroes();
     for (const s of this.eshots) {
       s.t = (s.t || 0) + dt;
       if (s.g) s.vy += s.g * dts;
       s.x += s.vx * dts; s.y += s.vy * dts;
       if (s.k === 'flame' && s.t > s.life) s.dead = 1;
       if (s.k === 'flame' && Math.random() < 0.5) this.fx('fire', s.x, s.y, { vy: rnd(-90, -20), T: 260, r: rnd(10, 18) });
-      if (Math.abs(s.x - h.x) < 20 + s.r && s.y > h.y - hh - s.r && s.y < h.y + s.r) { this.hurtHero(p, 1); if (s.k !== 'beam') s.dead = 1; }
-      if (s.k === 'patch') { if (s.t > s.life) s.dead = 1; else { if (Math.abs(s.x - h.x) < 44 && h.y > GY - 40) this.hurtHero(p, 1); if (Math.random() < 0.3) this.fx('fire', s.x + rnd(-36, 36), GY - rnd(4, 20), { vy: rnd(-120, -40), T: 300, r: rnd(10, 18) }); } continue; }
+      for (const h of cats) { const hh = h.crouch ? 44 : 84; if (Math.abs(s.x - h.x) < 20 + s.r && s.y > h.y - hh - s.r && s.y < h.y + s.r) { this.hurtHero(p, 1, h); if (s.k !== 'beam') { s.dead = 1; break; } } }
+      if (s.k === 'patch') { if (s.t > s.life) s.dead = 1; else { for (const h of cats) if (Math.abs(s.x - h.x) < 44 && h.y > GY - 40) this.hurtHero(p, 1, h); if (Math.random() < 0.3) this.fx('fire', s.x + rnd(-36, 36), GY - rnd(4, 20), { vy: rnd(-120, -40), T: 300, r: rnd(10, 18) }); } continue; }
       if (s.y >= GY && this.solid(s.x) && s.k !== 'wave') {
         s.dead = 1;
         if (s.k === 'napalm') this.eshots.push({ k: 'patch', x: s.x, y: GY, vx: 0, vy: 0, r: 0, life: 1300, t: 0 });
-        if (s.k === 'bomb' || s.k === 'shell') { this.boomW(s.x, GY - 20, s.k === 'shell' ? 1 : 0); if (Math.abs(s.x - h.x) < (s.k === 'shell' ? 80 : 60) && h.y > GY - 70) this.hurtHero(p, 1); }
+        if (s.k === 'bomb' || s.k === 'shell') { this.boomW(s.x, GY - 20, s.k === 'shell' ? 1 : 0); for (const h of cats) if (Math.abs(s.x - h.x) < (s.k === 'shell' ? 80 : 60) && h.y > GY - 70) this.hurtHero(p, 1, h); }
         else if (s.k === 'vomit' || s.k === 'glob') for (let i = 0; i < 5; i++) this.fx('gib', s.x, GY - 4, { vx: rnd(-140, 140), vy: rnd(-260, -60), T: 420, r: 4, col: s.k === 'glob' ? PAL.cheese : PAL.acid });
       }
-      if (s.k === 'wave') { if (Math.abs(s.x - h.x) < 34 && h.y > GY - 46) this.hurtHero(p, 1); if (Math.random() < 0.7) this.fx('debris', s.x, GY, { vx: rnd(-60, 60), vy: rnd(-300, -120), T: 380, r: 5, col: THEME[this.m.theme].a }); }
+      if (s.k === 'wave') { for (const h of cats) if (Math.abs(s.x - h.x) < 34 && h.y > GY - 46) this.hurtHero(p, 1, h); if (Math.random() < 0.7) this.fx('debris', s.x, GY, { vx: rnd(-60, 60), vy: rnd(-300, -120), T: 380, r: 5, col: THEME[this.m.theme].a }); }
       if (s.x < this.cam - 200 || s.x > this.cam + W + 200 || s.y > H + 80 || s.y < -300) s.dead = 1;
     }
     this.eshots = this.eshots.filter(s => !s.dead);
@@ -676,10 +721,10 @@ export class Mission extends RailBase {
   openCrate(cr) { cr.open = 1; this.picks.push({ x: cr.x, y: cr.y - 40, vy: -420, k: cr.k, t: 20000 }); for (let i = 0; i < 7; i++) this.fx('debris', cr.x, cr.y - 30, { vx: rnd(-240, 240), vy: rnd(-460, -120), T: 700, r: rnd(4, 8), col: '#8a6a3c' }); this.say({ e: 'sfx', n: 'sfx_shrapnel' }); }
 
   stepWorld(dt, dts, p) {
-    const h = this.h;
-    for (const cr of this.crates) if (!cr.open && Math.abs(h.x - cr.x) < 40 && Math.abs(h.y - cr.y) < 50) this.openCrate(cr);
+    const cats = this.heroes();
+    for (const h of cats) for (const cr of this.crates) if (!cr.open && Math.abs(h.x - cr.x) < 40 && Math.abs(h.y - cr.y) < 50) this.openCrate(cr);
     for (const pw of this.pows) {
-      if (pw.st === 'tied' && Math.abs(h.x - pw.x) < 44 && h.y > GY - 60) this.freePow(pw);
+      if (pw.st === 'tied' && cats.some(h => Math.abs(h.x - pw.x) < 44 && h.y > GY - 60)) this.freePow(pw);
       if (pw.st === 'free') { pw.t += dt; if (pw.t > 900) pw.x -= 330 * dts; if (pw.x < this.cam - 120) pw.st = 'gone'; }
     }
     for (const k of this.picks) {
@@ -687,7 +732,8 @@ export class Mission extends RailBase {
       k.vy += 1500 * dts; k.y += k.vy * dts;
       const gy = this.solid(k.x) ? Math.min(GY, this.surfaceAt(k.x)) : GY;
       if (k.y > gy - 22) { k.y = gy - 22; k.vy = 0; }
-      if (Math.abs(k.x - h.x) < 46 && Math.abs(k.y - (h.y - 40)) < 70 && !(k.k === 'med' && p.hp >= CFG.hpMax)) {
+      const h = cats.find(q => Math.abs(k.x - q.x) < 46 && Math.abs(k.y - (q.y - 40)) < 70 && !(k.k === 'med' && (q.pl || p).hp >= CFG.hpMax));
+      if (k.t > 0 && h) { const p = h.pl || this._p;
         k.t = 0; this.say({ e: 'sfx', n: 'sfx_reload' });
         if (WEAP[k.k]) { h.weap = k.k; h.ammo = (h.weap === k.k ? 0 : 0) + WEAP[k.k].ammo; }
         else if (k.k === 'gren') h.gren += 10;
@@ -744,7 +790,7 @@ export class Mission extends RailBase {
   }
   lob(x, y, tx, T, k, r) { this.eshots.push({ k, x, y, tx, vx: (tx - x) / T, vy: (GY - y) / T - 0.5 * 1500 * T, g: 1500, r: r || 14 }); }
   stepBoss(dt, dts, p) {
-    const b = this.boss, h = this.h, ax = this.arenaX;
+    const b = this.boss, h = this.bossTarget(), ax = this.arenaX, cats = this.heroes();
     if (b.flash > 0) b.flash -= dt;
     if (b.hp <= 0) {                      // coming apart, loudly
       b.dieT += dt;
@@ -777,12 +823,12 @@ export class Mission extends RailBase {
             b.st = 'idle'; b.cd = 1900 * rage;
           }
         }
-        if (Math.abs(h.x - b.x) < 110) this.hurtHero(p, 1);
+        for (const q of cats) if (Math.abs(q.x - b.x) < 110) this.hurtHero(p, 1, q);
         break;
       }
       case 'eater': {
         const home = this.eater.x + this.eaterW() - 190;
-        if (b.lunge > 0) { b.lunge -= dt; const k = 1 - Math.abs(b.lunge - 450) / 450; b.x = home + k * 330; if (h.x < b.x + 200 && h.y > GY - 200) this.hurtHero(p, 1); if (b.lunge <= 0) { b.x = home; b.cd = 1500 * rage; } }
+        if (b.lunge > 0) { b.lunge -= dt; const k = 1 - Math.abs(b.lunge - 450) / 450; b.x = home + k * 330; for (const q of cats) if (q.x < b.x + 200 && q.y > GY - 200) this.hurtHero(p, 1, q); if (b.lunge <= 0) { b.x = home; b.cd = 1500 * rage; } }
         else if (b.st === 'idle' && b.cd <= 0) { b.st = ['shell', 'lunge', 'rats'][mode()]; if (b.st === 'rats' && this.en.filter(e => e.st === 'live').length >= 3) b.st = 'shell'; b.tell = 700; if (b.st === 'lunge') this.say({ e: 'sfx', n: 'sfx_bike' }); }
         else if (b.st !== 'idle') {
           b.tell -= dt;
@@ -866,12 +912,12 @@ export class Mission extends RailBase {
             b.st = 'idle'; b.cd = 1500 * rage;
           }
         }
-        if (h.x > b.x - 190) this.hurtHero(p, 1);
+        for (const q of cats) if (q.x > b.x - 190) this.hurtHero(p, 1, q);
         break;
       }
     }
     // a standing beam hurts for as long as it stands
-    for (const s of this.eshots) if (s.k === 'beam') { if (s.t > s.life) s.dead = 1; else if (Math.abs(s.x - this.h.x) < 34) this.hurtHero(p, 1); }
+    for (const s of this.eshots) if (s.k === 'beam') { if (s.t > s.life) s.dead = 1; else for (const q of cats) if (Math.abs(s.x - q.x) < 34) this.hurtHero(p, 1, q); }
   }
 
   // ------------------------------------------------------------------ render
@@ -910,10 +956,16 @@ export class Mission extends RailBase {
     if (this.boss && this.boss.live) this.drawBoss(ctx, now);
     for (const e of this.en) this.drawEnemy(ctx, e, now);
     // the cats
-    if (this.phase === 'drop') { this.drawChute(ctx, this.c.x, this.c.y, now); this.drawChute(ctx, h.x, h.y, now + 300); }
-    this.drawCat(ctx, 'vc', this.c.x, this.c.y, this.c.face, this.c.run, false, false, this.c.fire, now, 1, this.c.y < GY - 4 && this.phase !== 'drop', this.c.mov);
+    const H1 = this.h1, h2 = this.h2;
+    if (this.phase === 'drop') { if (!h2 || !h2.gone) this.drawChute(ctx, this.c.x, this.c.y, now); if (!H1.gone) this.drawChute(ctx, H1.x, H1.y, now + 300); }
+    if (!h2) this.drawCat(ctx, 'vc', this.c.x, this.c.y, this.c.face, this.c.run, false, false, this.c.fire, now, 1, this.c.y < GY - 4 && this.phase !== 'drop', this.c.mov);
+    else if (!h2.gone && !(h2.inv > 0 && Math.floor(now / 70) % 2 && this.phase !== 'drop')) {
+      this.drawCat(ctx, 'vc', h2.x, h2.y, h2.face, h2.run, h2.up, h2.crouch, h2.fire, now, 1, !h2.onG && this.phase !== 'drop', Math.abs(h2.vx) > 40);
+    }
     if (this.wreck && this.wreck.k === 'buffalo') { const w = this.wreck; this.drawRide(ctx, 'buffalo', w.x + w.face * w.t * 0.62, w.y - Math.abs(Math.sin(w.t / 80)) * 14, w.face, 0, 1, now, false); }
     else if (this.wreck) { const w = this.wreck, k = w.t / 6000; ctx.save(); ctx.globalAlpha = k > 0.8 ? (1 - k) * 5 : 1; this.drawRide(ctx, w.k, w.x, w.y, w.face, 0, 1, now, true); ctx.restore(); if (k < 0.8) for (let i = 0; i < 3; i++) { const ph = ((now / 320) + i * 0.33) % 1; pxFlame(ctx, w.x + (i - 1) * 34, w.y - 60 - ph * 70, 22 * (1 - ph * 0.5), ph, now + i * 77); } }
+    if (!H1.gone) {
+    const h = H1;
     const blink = h.inv > 0 && Math.floor(now / 70) % 2 && this.phase !== 'drop';
     if (this.ride) {
       const R = RIDE[this.ride.k], bob = h.onG && Math.abs(h.vx) > 40 ? Math.abs(Math.sin(h.run / 90)) * 5 : 0;
@@ -925,6 +977,7 @@ export class Mission extends RailBase {
       if (soot) ctx.filter = 'brightness(0.4) saturate(0.5)';
       this.drawCat(ctx, 'us', h.x, h.y, h.face, h.run, h.up, h.crouch, h.fire, now, 1, !h.onG, Math.abs(h.vx) > 40);
       if (soot) ctx.filter = 'none';
+    }
     }
     // fire going out and coming in
     for (const s of this.shots) {
@@ -1165,7 +1218,7 @@ export class Mission extends RailBase {
     ctx.globalAlpha = 1;
   }
   drawHud(ctx, now) {
-    const p = this._p || {}, h = this.h;
+    const p = this._p || {}, h = this.h1;
     // hull and lives are the game's own HUD (top left); this adds the arcade strip
     msText(ctx, String((this.baseScore || 0) + this.score), W - 40, 56, 36, 'right');
     ctx.fillStyle = 'rgba(10,14,24,0.55)'; ctx.fillRect(280, 22, 250, 62); ctx.strokeStyle = '#8fa0c0'; ctx.lineWidth = 2; ctx.strokeRect(280, 22, 250, 62);
@@ -1175,6 +1228,14 @@ export class Mission extends RailBase {
     msText(ctx, String(h.gren), 465, 78, 30, 'center');
     if (h.weap !== 'rifle') this.drawPick(ctx, h.weap, 560, 52, 44);
     if (this.ride) { const R = RIDE[this.ride.k], im = IMG[R.img]; if (im) { const hh = 44, w = hh * (im.width / im.height); ctx.drawImage(im, 600, 26, w, hh); } for (let i = 0; i < R.hp; i++) { ctx.fillStyle = i < this.ride.hp ? '#7fd45a' : 'rgba(10,14,24,0.6)'; ctx.fillRect(604 + i * 15, 74, 11, 9); ctx.strokeStyle = '#dfe7f5'; ctx.lineWidth = 1; ctx.strokeRect(604 + i * 15, 74, 11, 9); } }
+    const q = this.h2;
+    if (q) {                               // P2: Charlie's own arms and bombs, in his warm colours
+      ctx.fillStyle = 'rgba(24,14,8,0.55)'; ctx.fillRect(280, 90, 250, 40); ctx.strokeStyle = '#d99a4a'; ctx.lineWidth = 2; ctx.strokeRect(280, 90, 250, 40);
+      ctx.font = 'bold 14px monospace'; ctx.fillStyle = '#ffd08a'; ctx.textAlign = 'left'; ctx.fillText('P2', 290, 115);
+      ctx.textAlign = 'center'; msText(ctx, q.gone ? '-' : q.weap === 'rifle' ? '∞' : String(q.ammo), 360, 122, 22, 'center');
+      msText(ctx, q.gone ? '-' : String(q.gren), 470, 122, 22, 'center');
+      if (!q.gone && q.weap !== 'rifle') this.drawPick(ctx, q.weap, 560, 110, 30);
+    }
     if (this.boss && this.boss.live && this.boss.hp > 0) {
       const k = this.boss.hp / this.boss.hpMax;
       ctx.fillStyle = 'rgba(10,14,24,0.6)'; ctx.fillRect(W / 2 - 260, H - 40, 520, 18);
@@ -1389,7 +1450,8 @@ export function missionBot(m, frame) {
   b |= C.R;
   const up = m.en.find(e => e.st === 'live' && KIND[e.k].fly && Math.abs(e.x - h.x) < 70);
   if (up) { b |= C.UP; b &= ~C.R; }
-  const blk = m.en.find(e => e.st === 'live' && !KIND[e.k].fly && e.x > h.x && e.x - h.x < 150);
+  // only hold ground for a foe the gun can reach: one parked under the ledge you stand on is not blocking anything
+  const blk = m.en.find(e => e.st === 'live' && !KIND[e.k].fly && e.x > h.x && e.x - h.x < 150 && Math.abs(e.y - h.y) < 80);
   if (blk && !m.eater) b &= ~C.R;
   if (!m.solid(h.x + 46) && h.onG && frame % 2 === 0) b |= C.JUMP;
   if (frame % 200 === 0) b |= C.GREN;

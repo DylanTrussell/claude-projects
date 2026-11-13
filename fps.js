@@ -4,7 +4,7 @@
 // ambushers that burst out of the walls, DOOM gore, a scripted throat-rip
 // setpiece, and a light-shaft exit with a crawl-out animation.
 import { CFG, C, PAL, W, H } from './config.js';
-import { STR as STRD } from './strings.js';
+import { STR as STRD, keyText } from './strings.js';
 import { IMG, SHEET, drawImg } from './assets.js';
 
 const FOV = 66 * Math.PI / 180;
@@ -15,6 +15,8 @@ const TURN = 2.6;               // rad/sec
 const PISTOL_MAG = 10;          // v10: pistol now has a real magazine + reload beat
 const PISTOL_RELOAD_MS = 820;
 const SHOTGUN_RACK_MS = [150, 450]; // window inside pumpT where the reload/rack sprite shows
+// v14.3 co-op: Charlie's second gun
+const C2_MAG = 8, C2_RELOAD_MS = 900, C2_BOMBS = 3, C2_SPEED = 980; // px/s across the 1280x720 logical screen
 
 // v13.1 map rebuild (Dylan: "rebuild the tunnel outright... think wolfenstein,
 // doom, really make it fun"). The old grids were dense 1-wide mazes with
@@ -206,6 +208,152 @@ export class Tunnel {
     this.sc = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
     if (this.sc) { this.sc.width = RW; this.sc.height = RH; this.sctx = this.sc.getContext('2d'); }
     this._flat = null; // floor/ceiling texture pixels, built lazily
+    // v14.3 couch co-op: one body, one camera, two guns. P1 walks and turns;
+    // Charlie (P2) rides along as a second gun with his own crosshair that he
+    // sweeps around the screen. null until P2 is on the couch.
+    this.p2 = null; this.c2 = null; this._bits2 = 0; this._prevBits2 = 0; this.p2Kills = 0;
+  }
+
+  // ---------- co-op (P2 = Charlie, the second gun) ----------
+  coopJoin(q) {
+    if (!q) return;
+    this.p2 = q;
+    if (!this.c2) {
+      this.c2 = { x: W * 0.62, y: H * 0.5, fireCd: 0, fireT: 0, mag: C2_MAG, reloadT: 0, bombs: C2_BOMBS, bombCd: 0, tracer: 0, tx: 0, ty: 0, hitT: 0, hold: 0 };
+    }
+    if (q.st !== 'out') q.hp = this._p ? Math.max(1, this._p.hp) : CFG.hpMax;
+  }
+  coopRevive(q) {
+    if (!q) return;
+    q.lives = CFG.lives; q.hp = CFG.hpMax; q.st = 'alive'; q.invulnT = 2200;
+    if (q === this.p2 && this.c2) { this.c2.x = W * 0.62; this.c2.y = H * 0.5; this.c2.mag = C2_MAG; this.c2.reloadT = 0; }
+    if (this._p && q === this._p && this.p2 && this.p2.st !== 'out') this.p2.hp = q.hp;
+  }
+  p2Live() { return !!(this.p2 && this.c2 && this.p2.st !== 'out'); }
+
+  // world point -> logical screen (W x H) using the renderer's own mapping
+  screenOf(wx, wy, zFrac = 0.12) {
+    const dx = wx - this.px, dy = wy - this.py;
+    let da = Math.atan2(dy, dx) - this.ang;
+    while (da > Math.PI) da -= 2 * Math.PI;
+    while (da < -Math.PI) da += 2 * Math.PI;
+    const d = Math.max(0.05, Math.hypot(dx, dy) * Math.cos(da));
+    return { x: (0.5 + da / FOV) * W, y: (HORIZON - (RH * zFrac) / d) * (H / RH), da, d };
+  }
+
+  // Charlie's hit test: the same target rules as shoot() (live, not hiding,
+  // line of sight, nearest wins) but picked from where HIS crosshair sits on
+  // screen instead of dead centre. Returns the enemy hit, or null.
+  shootAt(sx, sy, dmg, range = 20) {
+    const syR = sy * (RH / H), sxR = sx * (RW / W);
+    let best = null, bestD = range;
+    for (const e of this.enemies) {
+      if (e.dead || e.st === 'hide') continue;
+      const s = this.screenOf(e.x, e.y);
+      if (Math.abs(s.da) > FOV / 2 + 0.1 || s.d > bestD || s.d < 0.1) continue;
+      const exR = (0.5 + s.da / FOV) * RW;
+      const big = e.kind === 'barrel' ? 0.34 : 0.74;
+      const top = HORIZON + (RH * 0.25) / s.d - (RH * big) / s.d;
+      const bot = HORIZON + (RH * 0.25) / s.d;
+      const halfW = (RH * big * 0.42) / s.d + 4;        // sprite half-width plus a little aim assist
+      if (Math.abs(sxR - exR) > halfW || syR < top - 4 || syR > bot + 4) continue;
+      if (!this.los(e.x, e.y)) continue;
+      best = e; bestD = s.d;
+    }
+    if (best) {
+      const was = best.dead;
+      this.hit(best, dmg);
+      if (!was && best.dead && best.kind !== 'barrel') this.p2Kills++;
+    }
+    return best;
+  }
+
+  // first wall along the ray through screen column sx (for the cheese bomb)
+  rayPoint(sx, maxD = 12) {
+    const a = this.ang + (sx / W - 0.5) * FOV;
+    const cx = Math.cos(a), cy = Math.sin(a);
+    let r = 0.1;
+    while (r < maxD && !this.solid(this.px + cx * r, this.py + cy * r)) r += 0.05;
+    r = Math.max(0.3, r - 0.25);
+    return [this.px + cx * r, this.py + cy * r];
+  }
+
+  // P2 input: steer the crosshair, FIRE = Charlie's cheese revolver,
+  // GREN/CHEESE = lob a cheese bomb at whatever the crosshair is on.
+  stepP2(dt) {
+    const c = this.c2, b = this._bits2, pb = this._prevBits2;
+    const dts = dt / 1000;
+    const mx = (b & C.R ? 1 : 0) - (b & C.L ? 1 : 0);
+    const my = (b & C.DOWN ? 1 : 0) - (b & C.UP ? 1 : 0);
+    // accelerate while held so small taps are precise and long holds cross the screen
+    c.hold = (mx || my) ? Math.min(1, c.hold + dts * 2.2) : 0;
+    const spd = C2_SPEED * (0.45 + 0.55 * c.hold);
+    c.x = Math.max(40, Math.min(W - 40, c.x + mx * spd * dts));
+    c.y = Math.max(70, Math.min(H - 90, c.y + my * spd * dts));
+    if (c.reloadT > 0) { c.reloadT -= dt; if (c.reloadT <= 0) { c.reloadT = 0; c.mag = C2_MAG; } }
+    if ((b & C.FIRE) && c.fireCd <= 0 && c.reloadT <= 0) {
+      c.fireCd = 300; c.fireT = 110; c.tracer = 90; c.tx = c.x; c.ty = c.y;
+      this.ev({ e: 'sfx', n: (this._p2Variant = !this._p2Variant) ? 'sfx_pistol_tunnel_b' : 'sfx_pistol_tunnel_a' });
+      if (this.shootAt(c.x, c.y, 1)) c.hitT = 160;
+      this.alert(6);
+      if (--c.mag <= 0) { c.reloadT = C2_RELOAD_MS; this.ev({ e: 'sfx', n: 'sfx_reload' }); }
+    }
+    const bombEdge = ((b & C.GREN) && !(pb & C.GREN)) || ((b & C.CHEESE) && !(pb & C.CHEESE));
+    if (bombEdge && c.bombs > 0 && c.bombCd <= 0) {
+      c.bombs--; c.bombCd = 900;
+      // land on the enemy under the crosshair if there is one, else the wall behind it
+      let tgt = null;
+      for (const e of this.enemies) {
+        if (e.dead || e.st === 'hide') continue;
+        const s = this.screenOf(e.x, e.y);
+        if (Math.abs(s.da) < FOV / 2 && Math.abs(s.x - c.x) < 90 && this.los(e.x, e.y) && (!tgt || s.d < tgt.d)) tgt = { e, d: s.d };
+      }
+      const [bx, by] = tgt ? [tgt.e.x, tgt.e.y] : this.rayPoint(c.x);
+      this.cheeseBomb(bx, by);
+    }
+  }
+
+  // Charlie's cheese bomb: the barrel fireball, aimed. It burns enemies but
+  // never the shared body (friendly fire on your own couch partner is not fun).
+  cheeseBomb(x, y) {
+    this.ev({ e: 'sfx', n: 'sfx_explosion' });
+    this.ev({ e: 'shake' });
+    this.blasts.push({ x, y, t: 0, s: 2.0, z: 0.45 });
+    this.blasts.push({ x: x + 0.2, y: y - 0.15, t: -120, s: 1.4, z: 0.7 });
+    this.flash = 240; this.hitStop = 60;
+    for (let i = 0; i < 16; i++) {
+      this.gore.push({ x, y, z: 0.2 + Math.random() * 0.6, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, vz: 1.2 + Math.random() * 2.4, t: 800, chz: 1 });
+    }
+    this.pools.push([x, y, 0.45, 'scorch']);
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const dd = Math.hypot(e.x - x, e.y - y);
+      if (e.kind === 'barrel') { if (dd < 1.4 && !(e.fuse > 0)) e.fuse = 160; continue; }
+      if (dd < 1.6) {
+        if (e.st === 'hide') this.burst(e);
+        e.burn = 1600; e.burnTick = 0;
+        const was = e.dead;
+        this.hit(e, 3);
+        if (!was && e.dead) this.p2Kills++;
+      }
+    }
+    this.alert(7);
+  }
+
+  step(bits, dt, p, bits2 = 0, p2) {
+    if (p2 && this.p2 !== p2) this.coopJoin(p2);
+    this._p = p;
+    this._bits2 = this.p2Live() ? (bits2 | 0) : 0;
+    if (this.c2) {
+      const c = this.c2;
+      c.fireCd = Math.max(-1000, c.fireCd - dt); c.fireT = Math.max(0, c.fireT - dt);
+      c.tracer = Math.max(0, c.tracer - dt); c.hitT = Math.max(0, c.hitT - dt); c.bombCd = Math.max(0, c.bombCd - dt);
+    }
+    this._step(bits, dt, p);
+    this._prevBits2 = this._bits2;
+    // shared body: Charlie's meter mirrors the one body you both ride in
+    if (this.p2Live()) this.p2.hp = Math.max(0, p.hp);
+    else if (this.p2 && this.p2.st === 'out') this.p2.hp = 0;
   }
 
   ev(e) { this.events.push(e); }
@@ -291,7 +439,7 @@ export class Tunnel {
       ctx.fillText('FIRE · CLAWS · SWAP WEAPON', 16, H - 17);
     } else {
       ctx.fillText('W FORWARD · SPACE SPRINT · S BACK · A/D TURN', 16, H - 29);
-      ctx.fillText('J FIRE · K CLAWS · L WEAPON · M MAP', 16, H - 17);
+      ctx.fillText(keyText('J FIRE · K CLAWS · L WEAPON · M MAP'), 16, H - 17);
     }
     ctx.restore();
     ctx.textAlign = 'left';
@@ -428,8 +576,14 @@ export class Tunnel {
     const kd = Math.max(0.1, Math.hypot(this.px - sx, this.py - sy));
     this.tryMove(this.px + (this.px - sx) / kd * 0.55, this.py + (this.py - sy) / kd * 0.55);
     if (p.hp <= 0) {
-      p.deaths++; p.lives--;
-      if (p.lives <= 0) { p.st = 'out'; this.done = true; this.result.dead = true; return true; }
+      // v14.3 co-op: one body, two people. The life comes off whichever
+      // player has more left (mirrors RailBase.hurt), a player at 0 is out,
+      // and the run only fails when nobody on the couch has a life.
+      const q2 = this.p2Live() ? this.p2 : null;
+      const pay = q2 && (p.st === 'out' || q2.lives > p.lives) ? q2 : p;
+      pay.deaths = (pay.deaths || 0) + 1; pay.lives--;
+      if (pay.lives <= 0) { pay.lives = 0; pay.st = 'out'; if (pay === q2) pay.hp = 0; }
+      if (p.st === 'out' && !this.p2Live()) { this.done = true; this.result.dead = true; return true; }
       // v13.4 (Dylan: "when you get shot, the map draws a green line and puts
       // you back to the beginning. Just have it count down and you have to
       // press a button to respawn while you're in the tunnel. However Doom
@@ -498,7 +652,7 @@ export class Tunnel {
     return true;
   }
 
-  step(bits, dt, p) {
+  _step(bits, dt, p) {
     if (this.done) return;
     // hit-stop: freeze the sim for a few frames on a blast so the impact
     // reads, the way Metal Slug does. Effects keep animating.
@@ -514,7 +668,7 @@ export class Tunnel {
     // nobody can strand themselves by never pressing it).
     if (this.downT) {
       this.downT += dt;
-      const fireEdge = (bits & C.FIRE) && !(this.prevBits & C.FIRE);
+      const fireEdge = ((bits & C.FIRE) && !(this.prevBits & C.FIRE)) || ((this._bits2 & C.FIRE) && !(this._prevBits2 & C.FIRE));
       this.prevBits = bits;
       if ((this.downT > 900 && fireEdge) || this.downT > 5000) this.respawnInPlace(p);
       return;
@@ -584,8 +738,12 @@ export class Tunnel {
         s.meter = Math.max(0, s.meter - 16 * dts);
         const mashBit = (bits & C.FIRE) || (bits & C.GREN);
         const prevMash = (this.prevBits & C.FIRE) || (this.prevBits & C.GREN);
-        if (mashBit && !prevMash) { s.meter += 13; this.ev({ e: 'sfx', n: 'sfx_meow' }); }
-        else if (mashBit) s.meter += 9 * dts; // holding: slower, but never stuck
+        // co-op: Charlie mashes too, and each press-edge counts on its own
+        const mash2 = (this._bits2 & C.FIRE) || (this._bits2 & C.GREN);
+        const prevMash2 = (this._prevBits2 & C.FIRE) || (this._prevBits2 & C.GREN);
+        const edges = (mashBit && !prevMash ? 1 : 0) + (mash2 && !prevMash2 ? 1 : 0);
+        if (edges) { s.meter += 13 * edges; this.ev({ e: 'sfx', n: 'sfx_meow' }); }
+        else if (mashBit || mash2) s.meter += 9 * dts; // holding: slower, but never stuck
         s.hurtAcc = (s.hurtAcc || 0) + dt;
         if (s.hurtAcc > 1500) { s.hurtAcc = 0; p.hp -= 1; this.hurtT = 500; this.ev({ e: 'fpsHurt' }); if (p.hp <= 0) { p.hp = 1; } } // the grapple can bleed you but never kill
         if (s.t > 12000) s.meter = 100; // failsafe: the cat wins on his own
@@ -690,6 +848,9 @@ export class Tunnel {
       this.checkSecret();
       this.alert(5);
     }
+
+    // co-op: Charlie's gun
+    if (this.p2Live()) this.stepP2(dt);
 
     // items
     for (const it of this.items) {
@@ -1861,6 +2022,9 @@ export class Tunnel {
     ctx.fillStyle = 'rgba(243,233,200,0.8)';
     ctx.fillRect(W / 2 - 2, H / 2 - 2, 4, 4);
 
+    // co-op: Charlie's gun, tracer and crosshair, in his cheese orange
+    if (this.p2Live() && !this.downT) this.drawP2(ctx, now);
+
     // v10 wayfinding compass: a pulsing blood-red chevron pointing toward
     // the next objective, relative to where the camera is currently facing.
     if (this.navAng !== undefined) {
@@ -1942,6 +2106,83 @@ export class Tunnel {
     }
   }
 
+  // Charlie's half of the screen: a mirrored pistol hand on the right, tinted
+  // cheese orange, that swings toward his crosshair and kicks when he fires;
+  // a tracer to the crosshair on each shot; the crosshair itself; and his
+  // cheese bombs as wedges beside the gun. No text: the colour is the label.
+  drawP2(ctx, now) {
+    const c = this.c2;
+    const ORANGE = '#FF9A1F', DARK = '#3a1c05';
+    const img = IMG[c.reloadT > 0 ? 'fps_pistol_reload' : c.fireT > 40 ? 'fps_pistol_fire' : 'fps_pistol'] || IMG.fps_pistol;
+    const vh = 330;
+    const gx = W * 0.80 + Math.sin(this.walkT / 240 + 1.7) * 10;   // grip point
+    const kick = (c.fireT / 110) * 22;
+    const reloadDip = c.reloadT > 0 ? Math.sin((1 - c.reloadT / C2_RELOAD_MS) * Math.PI) * 60 : 0;
+    const gy = H + 30 + kick + reloadDip;
+    const aim = Math.max(-0.45, Math.min(0.35, Math.atan2(c.x - gx, gy - c.y) * 0.55));
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(aim - (c.fireT / 110) * 0.08);
+    if (img) {
+      const vw = vh * (img.width / img.height);
+      if (!this._c2Cv || this._c2Cv.width !== img.width || this._c2Cv.height !== img.height || this._c2Src !== img) {
+        this._c2Cv = document.createElement('canvas');
+        this._c2Cv.width = img.width; this._c2Cv.height = img.height; this._c2Src = img;
+        const tc = this._c2Cv.getContext('2d');
+        tc.drawImage(img, 0, 0);
+        tc.globalCompositeOperation = 'source-atop';
+        tc.fillStyle = 'rgba(255,140,26,0.42)';
+        tc.fillRect(0, 0, img.width, img.height);
+      }
+      ctx.scale(-1, 1);                               // the other hand
+      ctx.drawImage(this._c2Cv, -vw / 2, -vh * 0.92, vw, vh);
+    } else {
+      ctx.fillStyle = DARK; ctx.fillRect(-26, -240, 52, 250);
+      ctx.fillStyle = ORANGE; ctx.fillRect(-20, -234, 40, 240);
+    }
+    ctx.restore();
+    // cheese bombs left: little wedges stacked beside the grip
+    for (let i = 0; i < c.bombs; i++) {
+      const wx = W - 46 - i * 30, wy = H - 34;
+      ctx.fillStyle = DARK;
+      ctx.beginPath(); ctx.moveTo(wx - 12, wy + 9); ctx.lineTo(wx + 13, wy + 9); ctx.lineTo(wx + 13, wy - 11); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#FFC93C';
+      ctx.beginPath(); ctx.moveTo(wx - 10, wy + 7); ctx.lineTo(wx + 11, wy + 7); ctx.lineTo(wx + 11, wy - 8); ctx.closePath(); ctx.fill();
+    }
+    // tracer from the muzzle to where the shot went
+    if (c.tracer > 0) {
+      const k = c.tracer / 90;
+      const mx = gx + Math.sin(aim) * vh * 0.8, my = gy - Math.cos(aim) * vh * 0.8;
+      ctx.strokeStyle = `rgba(255,190,90,${(0.85 * k).toFixed(2)})`;
+      ctx.lineWidth = 2 + 3 * k;
+      ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(c.tx, c.ty); ctx.stroke();
+      ctx.fillStyle = `rgba(255,220,150,${(0.9 * k).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(mx, my, 10 + 12 * k, 0, 7); ctx.fill();
+    }
+    // crosshair: open ring + four ticks, blooms when firing, flashes red on a hit
+    const r = 15 + (c.fireT / 110) * 7;
+    const col = c.hitT > 0 ? '#ff4a2a' : ORANGE;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(20,10,2,0.65)';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(20,10,2,0.65)';
+      ctx.beginPath(); ctx.moveTo(dx * (r + 3), dy * (r + 3)); ctx.lineTo(dx * (r + 11), dy * (r + 11)); ctx.stroke();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = col;
+      ctx.beginPath(); ctx.moveTo(dx * (r + 3), dy * (r + 3)); ctx.lineTo(dx * (r + 11), dy * (r + 11)); ctx.stroke();
+    }
+    ctx.fillStyle = col; ctx.fillRect(-2, -2, 4, 4);
+    // reload: the ring drains and refills
+    if (c.reloadT > 0) {
+      ctx.lineWidth = 4; ctx.strokeStyle = '#FFC93C';
+      ctx.beginPath(); ctx.arc(0, 0, r + 16, -Math.PI / 2, -Math.PI / 2 + (1 - c.reloadT / C2_RELOAD_MS) * Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   drawViewmodel(ctx, now) {
     // grapple: the throat-rip viewmodel replaces the weapon
     // v10 (Dylan: "make the throat-ripping animation more gruesome and have
@@ -2020,7 +2261,9 @@ export class Tunnel {
     const isClaw = id === 'fps_claws';
     const vh = isClaw ? 500 : 408;
     const vw = vh * (img.width / img.height);
-    const x0 = W / 2 - vw / 2 + bx;
+    // co-op: Ralph's gun slides left of centre so Charlie's has the right side
+    const coopShift = this.p2Live() ? -W * 0.12 : 0;
+    const x0 = W / 2 - vw / 2 + bx + coopShift;
     const y0 = H - vh * (isClaw ? 0.82 : 0.90) + by + kick + pump;
     // v13 claw strike (Dylan: "they should animate coming out of your fur more
     // and have blood on them after you strike a cat with them"). The claw
