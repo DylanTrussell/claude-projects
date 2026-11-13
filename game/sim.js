@@ -190,6 +190,7 @@ function stepBike(g, p, bits, dt, dts) {
       const dd = Math.abs(e2.x - p.x);
       if (dd < best && dd < 760) { best = dd; dir = e2.x >= p.x ? 1 : -1; }
     }
+    if (g.players.some(q => q.mode === 'side' && q.st === 'alive')) dir = 1; // co-op: Charlie has the turret, Whiskers shoots ahead
     p.turret = dir;                                     // renderer flips the gun
     fireBullet(g, p.x + (up ? 20 : dir * 40), p.y - (up ? 96 : 62),
       up ? 140 : dir * 780, up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
@@ -199,6 +200,40 @@ function stepBike(g, p, bits, dt, dts) {
   if ((bits & C.GREN) && !(p.prevC & C.GREN) && p.grenCd <= 0 && p.gren > 0) {
     p.gren--; p.grenCd = CFG.grenadeCd;
     fireBullet(g, p.x + 30, p.y - 70, CFG.grenadeVx + v * 0.5, CFG.grenadeVy, 3, 1);
+  }
+  p.prevC = bits;
+}
+
+// --- co-op: P2 in the sidecar works the turret by hand ---
+function stepSide(g, p, bits, dt) {
+  const d = g.players.find(q => q !== p && q.mode === 'bike' && q.st !== 'out');
+  if (!d) { p.mode = 'bike'; p.y = groundAt(p.x); p.onG = true; p.bikeHold = 420; p.prevC = bits; return; } // driver is out: Charlie takes the bars
+  p.invulnT = Math.max(0, p.invulnT - dt);
+  p.fireCd -= dt; p.grenCd -= dt;
+  p.x = d.x; p.y = d.y; p.face = 1; p.vx = d.vx; p.vy = 0; p.onG = true;
+  p.aimUp = !!(bits & C.UP);
+  if (d.st !== 'alive') { p.prevC = bits; return; }      // the bike is down; hold fire till it is back
+  if ((bits & C.FIRE) && p.fireCd <= 0) {
+    p.fireCd = CFG.bikeGunCd;
+    let dir = bits & C.R ? 1 : bits & C.L ? -1 : 0;
+    if (!dir) {                                          // no stick: the turret tracks the nearest threat
+      dir = -1; let best = 1e9;
+      for (const e2 of g.enemies) {
+        if (e2.st === 'gone' || e2.side !== 'alien') continue;
+        const dd = Math.abs(e2.x - p.x);
+        if (dd < best && dd < 760) { best = dd; dir = e2.x >= p.x ? 1 : -1; }
+      }
+    }
+    const up = p.aimUp, down = !!(bits & C.DOWN);
+    d.turret = dir;
+    fireBullet(g, p.x + (up ? 20 : dir * 40), p.y - (up ? 96 : 62),
+      up ? 140 : dir * 780, up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
+    evPush(g, { e: 'sfx', n: 'sfx_shot' });
+    evPush(g, { e: 'muzzle', x: p.x + (up ? 30 : dir * 48), y: p.y - (up ? 104 : 62), up: up ? 1 : 0, f: dir });
+  }
+  if ((bits & C.GREN) && !(p.prevC & C.GREN) && p.grenCd <= 0 && p.gren > 0) {
+    p.gren--; p.grenCd = CFG.grenadeCd;
+    fireBullet(g, p.x + 30, p.y - 70, CFG.grenadeVx + (d.vx || 0) * 0.5, CFG.grenadeVy, 3, 1);
   }
   p.prevC = bits;
 }
@@ -375,9 +410,39 @@ function safeGroundX(g, want, fellInto, bike) {
 function evPush(g, e) { g.events.push(e); }
 function alivePlayers(g) { return g.players.filter(p => p.st === 'alive'); }
 
+// v14.3 couch co-op. P2 drops in at any time as Charlie (the 'vc' hero). He IS
+// Charlie, so the AI Charlie steps out of the world the moment a human takes him.
+function coopSpot(g, p) {
+  const lead = alivePlayers(g).find(q => q !== p);
+  p.x = lead ? Math.max(g.cam + 60, lead.x - 70) : Math.max(g.cam + 260, g.checkpoint + 100);
+  p.y = 100; p.vx = 0; p.vy = 0; p.onG = false; p.invulnT = 2600; p.hp = CFG.hpMax; p.st = 'alive';
+  p.mode = null;
+  if (g.phase === 'insertion' && g.lift && g.lift.st === 'insert') { p.st = 'riding'; p.x = g.lift.x - 10; p.y = g.lift.y + 40; }
+  else if (g.rideOn) { const d = g.players.find(q => q !== p && q.mode === 'bike' && q.st !== 'out'); if (d) { p.mode = 'side'; p.x = d.x; p.y = d.y; } else p.mode = 'bike'; }
+}
+export function addPlayer(g, pid, hero) {
+  let p = g.players.find(q => q.pid === pid);
+  if (p) return p;
+  p = spawnPlayer(pid, hero, 200);
+  g.players.push(p);
+  coopSpot(g, p);
+  for (const e2 of g.enemies) if (e2.charlie) e2.st = 'gone';
+  if (g.crash) g.crash.trapped = 0;
+  evPush(g, { e: 'sfx', n: 'sfx_meow' });
+  return p;
+}
+export function revivePlayer(g, pid) {
+  const p = g.players.find(q => q.pid === pid);
+  if (!p || p.st !== 'out' || g.over) return null;
+  p.lives = CFG.lives;
+  coopSpot(g, p);
+  return p;
+}
+const coopOn = (g) => g.players.length > 1;
+
 // Health-meter damage: most hits chip HP and grant i-frames; death only at 0 HP.
 function hurtPlayer(g, p, why, dmg) {
-  if (p.st !== 'alive' || p.invulnT > 0 || g.over) return;
+  if (p.st !== 'alive' || p.invulnT > 0 || g.over || p.mode === 'side') return;
   dmg = dmg || 1;
   p.hp -= dmg;
   if (p.hp > 0) { // tagged but alive: blood nick, i-frames, tiny knockback
@@ -505,6 +570,7 @@ export function step(g, dt, inputs) {
     }
     if (p.st !== 'alive') continue;
 
+    if (p.mode === 'side') { stepSide(g, p, bits, dt); continue; }
     if (p.mode === 'bike') { stepBike(g, p, bits, dt, dts); continue; }
 
     p.invulnT = Math.max(0, p.invulnT - dt);
@@ -1005,7 +1071,8 @@ export function step(g, dt, inputs) {
       // waves): mothership high-five -> the mecha crashes through the palms ->
       // the village -> the bike. Then the chase.
       evPush(g, { e: 'cutscene', which: 'mecha' });
-      for (const p2 of g.players) { if (p2.st !== 'out') { p2.mode = 'bike'; p2.st = 'alive'; p2.hp = CFG.hpMax; p2.invulnT = 2200; p2.y = CFG.groundY; } }
+      let drv = null;
+      for (const p2 of g.players) { if (p2.st !== 'out') { p2.mode = drv ? 'side' : 'bike'; if (!drv) drv = p2; p2.st = 'alive'; p2.hp = CFG.hpMax; p2.invulnT = 2200; p2.y = CFG.groundY; if (p2.mode === 'side') p2.x = drv.x; } }
       evPush(g, { e: 'banner', k: 'actRide' });
       evPush(g, { e: 'hint', k: 'rideHint' });
       evPush(g, { e: 'music', n: 'music_rock' });
@@ -1263,7 +1330,7 @@ export function step(g, dt, inputs) {
       // v13.7: p.mode was set to 'bike' when the ride began and NOTHING ever
       // cleared it, so after the surf section the hero was still drawn on --
       // and silently auto-driven by -- a motorcycle on the beach.
-      for (const q of g.players) if (q.mode === 'bike') { q.mode = null; q.bikeHold = 0; }
+      for (const q of g.players) if (q.mode === 'bike' || q.mode === 'side') { q.mode = null; q.bikeHold = 0; }
       evPush(g, { e: 'engine', on: 0 });
       evPush(g, { e: 'rail', k: 'ptboat' });
     }
@@ -1451,15 +1518,16 @@ export function startCrashSite(g) {
   p.x = Math.max(p.x, g.cam + 120);
   // the level's own waves inside this screen are spent by the defence
   for (const w of g.waves) if (!w.done && w.x < g.cam + W) w.done = true;
-  const c = en('buddy', wx + 6, CFG.groundY, { hp: 9999, side: 'buddy', face: -1, charlie: 1, st: 'trapped', sq: 0 });
-  g.charlie = c.id; g.enemies.push(c);
+  if (coopOn(g)) g.crash.trapped = 0;   // co-op: Charlie is a player, nobody is in the wreck
+  else { const c = en('buddy', wx + 6, CFG.groundY, { hp: 9999, side: 'buddy', face: -1, charlie: 1, st: 'trapped', sq: 0 });
+  g.charlie = c.id; g.enemies.push(c); }
   for (let i = 0; i < 3; i++) evPush(g, { e: 'boom', x: wx - 60 + i * 60, y: CFG.groundY - 40 - (i % 2) * 50, big: i === 1 ? 1 : 0 });
   evPush(g, { e: 'shake', m: 14 });
 }
 // v13.15: the BRANCHES build's Skyraider route has no Huey to crash, so Charlie
 // walks out of the truce with you instead of out of a wreck.
 export function joinCharlie(g) {
-  if (g.enemies.some(e2 => e2.charlie && e2.st !== 'gone')) return;
+  if (coopOn(g) || g.enemies.some(e2 => e2.charlie && e2.st !== 'gone')) return;
   const p = alivePlayers(g)[0] || g.players[0];
   const c = en('buddy', p.x - 60, CFG.groundY, { hp: 9999, side: 'buddy', face: 1, charlie: 1, st: 'walk', sq: 0 });
   g.charlie = c.id; g.enemies.push(c);
@@ -1932,7 +2000,7 @@ export function serialize(g) {
       R(p.respT),
       // v13.9 index 21/22: laser-pointer battery and whether the beam is live
       // this frame, so the renderer can draw the line from his paw to the dot.
-      R(p.laser || 0), (p.laserOn > 0) ? 1 : 0]),
+      R(p.laser || 0), (p.laserOn > 0) ? 1 : 0, p.mode === 'side' ? 1 : 0]),
     en: g.enemies.filter(e2 => e2.st !== 'gone' && e2.x > g.cam - 200 && e2.x < g.cam + W + 400 && !(e2.charlie && g.rideOn))
       // v13.14 index 14: Charlie flag -- same 'buddy' brain, his own sprite
       .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0, R(Math.max(0, e2.hitT || 0)), e2.charlie ? 1 : 0]),
@@ -2026,6 +2094,7 @@ export function restoreState(snap, seats) {
     const p = g.players.find(q => q.pid === sp.pid);
     if (p) Object.assign(p, sp);
   }
+  if (g.players.length > 1) g.enemies = g.enemies.filter(e2 => !e2.charlie);   // co-op: Charlie is P2
   nextId = Math.max(nextId, ...g.enemies.map(e2 => e2.id + 1), 1000);
   return g;
 }

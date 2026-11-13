@@ -1,5 +1,6 @@
 // All player-visible text. Switching language = swapping this file's data.
-export const STR = {
+import { GAME } from './config.js';
+const RAW = {
   title: "APOCALYPSE MEOW",
   subtitle: "Vietnam. 1968. It's raining rats.",
   start: "START MISSION",
@@ -12,7 +13,7 @@ export const STR = {
   briefText: "LZ CATNIP, 0600. Get in, push east, find out why Charlie's gone quiet. You're Sgt. Whiskers. Your squad rides with you.",
   heroUsName: "SGT. WHISKERS",
   heroUsDesc: "US Army. Heavy firepower. Hates Mondays and mice.",
-  heroVcName: "TRUNG SĨ MÈO",
+  heroVcName: "CHARLIE",
   heroVcDesc: "Guerrilla legend. The tunnels remember.",
   ready: "READY",
   notReady: "NOT READY",
@@ -219,7 +220,7 @@ export const CUT_MEOWS = {
   truce: [],
 };
 
-Object.assign(STR, {
+Object.assign(RAW, {
   controlsTitle: "CONTROLS",
   controlsMove: "LEFT HAND — Move: A/D · Aim up: hold W · Crouch / aim down: S · Jump: SPACE",
   controlsFire: "RIGHT HAND — Fire: J · Grenade: K · Special: L (air support / cheese lure)",
@@ -242,6 +243,12 @@ Object.assign(STR, {
   // Includes W and L on purpose: the game later demands both ("HOLD W — AIM
   // UP", "PRESS L — CALL IN AIR SUPPORT") and the first version of this line
   // taught neither.
+  coopPress: "P2: PRESS ENTER OR START",
+  coopRejoin1: "P1: PRESS ENTER TO REJOIN",
+  coopRejoin2: "P2: PRESS ENTER TO REJOIN",
+  coopIn: "CHARLIE JOINS",
+  coopKeys1: "P1  WASD MOVE · SPACE JUMP · F FIRE · G GRENADE · H SPECIAL",
+  coopKeys2: "P2  ARROWS MOVE · J JUMP · K FIRE · L GRENADE · ; SPECIAL",
   ctlBasics: "A/D MOVE · W AIM UP · S CROUCH · SPACE JUMP · J FIRE · K GRENADE · L SPECIAL",
   goalBoss: "GET UNDER IT — SHOOT UP (W) WHEN THE HATCH OPENS",
   cheeseHint: "Aliens can't resist cheese. Throw it. (L / Y button)",
@@ -271,4 +278,13 @@ Object.assign(STR, {
   sfxVol: "Sound effects volume",
   musicOn: "Music: on",
   musicOff: "Music: muted",
+});
+
+// v14.3 co-op: two players split the keyboard, and P1's action keys move from
+// J/K/L to F/G/H. Every hint that names a key is read through here, so the
+// game never tells P1 to press a key that now belongs to P2.
+const P1_COOP = { J: 'F', K: 'G', L: 'H' };
+export function keyText(s) { return GAME.coop ? s.replace(/\b([JKL])\b/g, (m) => P1_COOP[m]) : s; }
+export const STR = new Proxy(RAW, {
+  get(t, k) { const v = t[k]; return GAME.coop && typeof v === 'string' && !/^(coop|controls)/.test(String(k)) ? keyText(v) : v; },
 });

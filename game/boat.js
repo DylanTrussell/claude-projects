@@ -26,6 +26,47 @@ const RAMP_BAND  = 130;   // BRANCHES: how close to RAMP_Y counts as hitting it
 
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
+// v14.3 co-op: Charlie's rounds are hot orange, Whiskers' stay pale yellow,
+// so each player can follow their own stream in a busy river.
+const P2_TRACER = '#ff8a2a';
+// his aim, shown not told: a short cheese-coloured sight line off the barrel
+// and a ring reticle where the stream is heading.
+function drawP2Aim(ctx, m, aim, fireT, now) {
+  const ca = Math.cos(aim), sa = Math.sin(aim);
+  ctx.save();
+  ctx.globalAlpha = 0.55 + 0.2 * Math.sin(now / 160);
+  ctx.strokeStyle = PAL.cheese; ctx.lineWidth = 2;
+  ctx.setLineDash([10, 9]); ctx.lineDashOffset = -(now / 30) % 19;
+  ctx.beginPath(); ctx.moveTo(m.x + ca * 24, m.y + sa * 24); ctx.lineTo(m.x + ca * 250, m.y + sa * 250); ctx.stroke();
+  ctx.setLineDash([]);
+  const rx = m.x + ca * 300, ry = m.y + sa * 300;
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = PAL.outline; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(rx, ry, 15, 0, 7); ctx.stroke();
+  ctx.strokeStyle = PAL.cheese; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(rx, ry, 15, 0, 7); ctx.stroke();
+  for (let i = 0; i < 4; i++) {
+    const t2 = i * Math.PI / 2 + now / 900;
+    ctx.beginPath(); ctx.moveTo(rx + Math.cos(t2) * 9, ry + Math.sin(t2) * 9); ctx.lineTo(rx + Math.cos(t2) * 22, ry + Math.sin(t2) * 22); ctx.stroke();
+  }
+  ctx.restore();
+  if (fireT > 0) drawMuzzleBurst(ctx, m.x, m.y, aim, fireT / 70);
+}
+
+// v14.3 co-op: a hit on one cat's OWN body (Surf, and Grimtail in boss2.js).
+// Each player pays from their own hp/lives; the section only fails once both
+// are out. T carries that body's i-frame timer (the rail itself for P1).
+function bodyHurt(rail, q, amt, T, other, bx, by) {
+  if (!q || q.st === 'out' || T.hurtT > 0) return;
+  q.hp -= amt; T.hurtT = 900; rail.flashT = 130; rail.shake = Math.max(rail.shake, 12);
+  rail.ev({ e: 'fpsHurt' }); rail.ev({ e: 'sfx', n: 'sfx_explosion' });
+  if (q.hp > 0) return;
+  q.deaths = (q.deaths || 0) + 1; q.lives--; q.hp = CFG.hpMax; T.hurtT = 2200;
+  rail.boom(bx, by, 1); rail.shake = 22;
+  if (q.lives <= 0) { q.lives = 0; q.st = 'out'; }
+  if (q.st === 'out' && (!other || other.st === 'out')) { rail.dead = true; rail.done = true; }
+}
+
 // v13.4, rebuilt from scratch (Dylan: "it doesn't look like water. It just
 // looks like a boat with some cut-off water bullshit... Make it look realistic
 // and awesome. Don't have any cut-off, lazy feathering with lines in it. It
@@ -136,9 +177,23 @@ export class PTBoat extends RailBase {
     this.fork = null;           // the wreck sequence that ends the section
     this.route = null;          // always 'surf' once the section ends
   }
-  step(bits, dt, p) {
+  // v14.3 co-op: Charlie rides the fuel drum on the tow line and mans his own
+  // AK with his own aim (UP/DOWN swings the barrel, FIRE shoots). The boat is
+  // one shared hull, so damage stays pooled through RailBase.hurt.
+  p2Muzzle(bob) {
+    const c = this.c2, tilt = c.aim * 0.35, pvx = 92, pvy = this.py + 112 + (bob || 0);
+    const ox = 62, oy = -35;                       // the painted AK muzzle, from the drum's base
+    return { x: pvx + ox * Math.cos(tilt) - oy * Math.sin(tilt), y: pvy + ox * Math.sin(tilt) + oy * Math.cos(tilt), tilt };
+  }
+  step(bits, dt, p, bits2, p2) {
     if (this.done) return;
     this.stepCommon(dt, p);
+    if (p2) this._p2 = p2;
+    const q2 = this._p2;
+    // P1 ran dry but Charlie still has lives: he leaves the drum and takes the wheel
+    const helmP2 = !!(q2 && q2.st !== 'out' && p.st === 'out');
+    if (helmP2) bits = bits2 || 0;
+    const gun2 = !!(q2 && q2.st !== 'out' && !helmP2);
     const dts = dt / 1000;
     this.scroll += dts;
     this.gunCd -= dt; this.chargeCd -= dt;
@@ -166,6 +221,19 @@ export class PTBoat extends RailBase {
       this.gunCd = 105; this.fireT = 70;
       this.ev({ e: 'sfx', n: 'sfx_shot' });
       this.shots.push({ x: 300, y: this.py - 8, vx: 900, vy: 0, t: 1000 });
+    }
+    if (gun2) {
+      const c = this.c2 || (this.c2 = { aim: -0.25, gunCd: 0, fireT: 0 });
+      c.gunCd -= dt; c.fireT -= dt;
+      if (bits2 & C.UP) c.aim -= 1.7 * dts;
+      if (bits2 & C.DOWN) c.aim += 1.7 * dts;
+      c.aim = Math.max(-0.75, Math.min(0.5, c.aim));
+      if ((bits2 & C.FIRE) && c.gunCd <= 0) {
+        c.gunCd = 115; c.fireT = 70;
+        this.ev({ e: 'sfx', n: 'sfx_shot' });
+        const m = this.p2Muzzle(), a = c.aim;
+        this.shots.push({ x: m.x, y: m.y, vx: Math.cos(a) * 900, vy: Math.sin(a) * 900, t: 1150, p2: 1 });
+      }
     }
     // v13.5: diver torpedoes carry vy but this line never integrated it, so
     // every aimed enemy shot flew dead flat regardless of aim
@@ -233,7 +301,8 @@ export class PTBoat extends RailBase {
         if (aabb(s.x, s.y, f.x, hy, 44)) {
           if (f.k === 'diver' && !f.up) continue; // submerged — can't be hit topside
           f.hp--; s.t = 0;
-          if (f.hp <= 0) { this.kills++; this.boom(f.x, f.y - 10, f.k !== 'diver'); this.ev({ e: 'fpsKill' }); }
+          if (s.p2) this.p2Hits = (this.p2Hits || 0) + 1;
+          if (f.hp <= 0) { this.kills++; if (s.p2) this.p2Kills = (this.p2Kills || 0) + 1; this.boom(f.x, f.y - 10, f.k !== 'diver'); this.ev({ e: 'fpsKill' }); }
         }
       }
     }
@@ -373,20 +442,26 @@ export class PTBoat extends RailBase {
         }
         continue;
       }
-      ctx.strokeStyle = s.foe ? PAL.ray : PAL.tracer; ctx.lineWidth = 4;
+      ctx.strokeStyle = s.foe ? PAL.ray : s.p2 ? P2_TRACER : PAL.tracer; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.03, s.y - s.vy * 0.03); ctx.stroke();
     }
     // v13.9 -- Charlie came down the river too, riding a fuel drum off the
     // boat's quarter. Same standing rule as the surf and the parley: after the
     // truce he is in the scene, not waiting offscreen for the next cutscene.
     const cdi = IMG.charlie_tank;
+    const q2 = this._p2, gun2 = !!(q2 && q2.st !== 'out' && this.c2 && !(this._p && this._p.st === 'out'));
     if (cdi && !this.kill) {
       const cb = Math.sin(now / 300 + 2.2) * 7;
       const dh = 96, dw = dh * (cdi.width / cdi.height);
       ctx.save();
       ctx.globalAlpha = 0.95;
+      if (gun2) { // co-op: he leans into his aim, pivoting on the drum
+        const m = this.p2Muzzle(cb);
+        ctx.translate(92, this.py + 112 + cb); ctx.rotate(m.tilt); ctx.translate(-92, -(this.py + 112 + cb));
+      }
       ctx.drawImage(cdi, 92 - dw / 2, this.py + 96 - dh / 2 + cb, dw, dh);
       ctx.restore();
+      if (gun2) drawP2Aim(ctx, this.p2Muzzle(cb), this.c2.aim, this.c2.fireT, now);
       // his own wake, so he reads as moving with the current and not pasted on
       ctx.strokeStyle = 'rgba(220,240,235,0.35)'; ctx.lineWidth = 2;
       for (let i = 0; i < 3; i++) {
@@ -561,20 +636,77 @@ export class Surf extends RailBase {
     this.py = 340; this.dive = 0; this.diveCd = 0;
     this.gunCd = 0; this.started = false;
   }
-  step(bits, dt, p) {
+  // ---- v14.3 co-op: Charlie is P2 on his own board ----
+  // The surfing Charlie who used to ride along as scenery IS player two: own
+  // lane on the wave (UP/DOWN, a little L/R), own AK (FIRE), own duck-dive
+  // (GREN), own hits and lives. Out of lives, his board leaves the wave until
+  // the partner brings him back.
+  ensureC2() {
+    if (!this.c2) this.c2 = { x: 96, y: this.py - 54, dive: 0, diveCd: 0, gunCd: 0, fireT: 0, hurtT: 0, prev: 0 };
+    return this.c2;
+  }
+  coopJoin(q) { super.coopJoin(q); this.ensureC2(); }
+  coopRevive(q) {
+    super.coopRevive(q);
+    if (q === this._p2) { const c = this.ensureC2(); c.hurtT = 2200; c.dive = 0; }
+    else this.hurtT = 2200;
+  }
+  hurt(p, amt) {
+    const q2 = this._p2;
+    if (!q2) return super.hurt(p, amt);               // solo: unchanged
+    if (p === q2) { const c = this.ensureC2(); return bodyHurt(this, q2, amt, c, this._p, c.x, c.y); }
+    return bodyHurt(this, p, amt, this, q2, 220, this.py);
+  }
+  // which cat a raider/diver is after: Whiskers solo, either one in co-op
+  pickTarget(on1, on2) { return on1 && on2 ? (Math.random() < 0.5 ? 1 : 2) : on2 ? 2 : 1; }
+  targetY(f, on1, on2) {
+    if (!f.tgt || (f.tgt === 2 && !on2) || (f.tgt === 1 && !on1)) f.tgt = this.pickTarget(on1, on2);
+    return f.tgt === 2 ? this.c2.y : this.py;
+  }
+  step(bits, dt, p, bits2, p2) {
     if (this.done) return;
     this.stepCommon(dt, p);
+    if (p2) this._p2 = p2;
+    const q2 = this._p2, co = !!q2;
+    const on1 = !co || p.st !== 'out';                // solo: always true
+    const c = co ? this.ensureC2() : null;
+    const on2 = co && q2.st !== 'out';
+    bits2 = bits2 || 0;
     const dts = dt / 1000;
     this.scroll += dts;
     this.gunCd -= dt; this.diveCd -= dt; this.dive -= dt;
     if (!this.started) { this.started = true; this.ev({ e: 'banner', k: 'actSurf' }); this.ev({ e: 'hint', k: 'surfControls' }); }
 
-    if (bits & C.UP) this.py -= 320 * dts;
-    if (bits & C.DOWN) this.py += 320 * dts;
+    if (on1) {
+      if (bits & C.UP) this.py -= 320 * dts;
+      if (bits & C.DOWN) this.py += 320 * dts;
+    }
     this.py = Math.max(160, Math.min(540, this.py));
 
+    if (c) {
+      c.gunCd -= dt; c.diveCd -= dt; c.dive -= dt; c.fireT -= dt; c.hurtT -= dt;
+      if (on2) {
+        if (bits2 & C.UP) c.y -= 320 * dts;
+        if (bits2 & C.DOWN) c.y += 320 * dts;
+        if (bits2 & C.L) c.x -= 200 * dts;
+        if (bits2 & C.R) c.x += 200 * dts;
+        c.y = Math.max(120, Math.min(500, c.y)); c.x = Math.max(64, Math.min(150, c.x));
+        if ((bits2 & C.GREN) && !(c.prev & C.GREN) && c.diveCd <= 0) {
+          c.dive = 550; c.diveCd = 1400;
+          this.ev({ e: 'sfx', n: 'sfx_meow' });
+        }
+        if ((bits2 & C.FIRE) && c.gunCd <= 0) {
+          c.gunCd = 85; c.fireT = 70;
+          this.ev({ e: 'sfx', n: 'sfx_shot' });
+          // the AK painted into charlie_surf.png, muzzle at u 0.99 / v 0.53
+          this.shots.push({ x: c.x + 72, y: c.y + 3, vx: 1020, vy: 0, t: 900, p2: 1 });
+        }
+      }
+      c.prev = bits2;
+    }
+
     // duck-dive: K — brief invuln + slips under surface threats, short cooldown
-    if ((bits & C.GREN) && !(this.prevBits & C.GREN) && this.diveCd <= 0) {
+    if (on1 && (bits & C.GREN) && !(this.prevBits & C.GREN) && this.diveCd <= 0) {
       this.dive = 550; this.diveCd = 1400;
       this.ev({ e: 'sfx', n: 'sfx_meow' });
     }
@@ -584,11 +716,15 @@ export class Surf extends RailBase {
       this.spawnT = 680 + Math.random() * 650;
       const r = Math.random();
       if (r < 0.45) this.foes.push({ k: 'raider', x: W + 100, y: 220 + Math.random() * 300, hp: 2, ph: Math.random() * 6 });
-      else if (r < 0.8) this.foes.push({ k: 'diver', x: W + 60, y: this.py + (Math.random() - 0.5) * 180, hp: 1, t: 0, up: false });
-      else this.foes.push({ k: 'shark', x: W + 90, y: this.py, hp: 2, t: 0 }); // alien-rat "shark rig" — a rat riding a robo-fin
+      else {
+        // co-op: divers and sharks surface under either cat
+        const tg = co ? this.pickTarget(on1, on2) : 1, ty = tg === 2 ? c.y : this.py;
+        if (r < 0.8) this.foes.push({ k: 'diver', x: W + 60, y: ty + (Math.random() - 0.5) * 180, hp: 1, t: 0, up: false, tgt: co ? tg : undefined });
+        else this.foes.push({ k: 'shark', x: W + 90, y: ty, hp: 2, t: 0 }); // alien-rat "shark rig" — a rat riding a robo-fin
+      }
     }
 
-    if ((bits & C.FIRE) && this.gunCd <= 0) {
+    if (on1 && (bits & C.FIRE) && this.gunCd <= 0) {
       // v13.7 (Dylan: "the surfboard cat is still holding a limp pistol and
       // just shooting out of nowhere. Give him back his main machine gun from
       // the game."). surf_hero.png has the pistol painted into the raised arm
@@ -622,11 +758,12 @@ export class Surf extends RailBase {
         f.cd = (f.cd || 900) - dt;
         if (f.cd <= 0 && f.x > 280 && f.x < W) {
           f.cd = 1000 + Math.random() * 500;
-          const dy = this.py - f.y;
+          const dy = (co ? this.targetY(f, on1, on2) : this.py) - f.y;
           this.shots.push({ x: f.x, y: f.y, vx: -600, vy: Math.max(-260, Math.min(260, dy * 0.9)), t: 1300, foe: true });
           this.ev({ e: 'sfx', n: 'sfx_laser' });
         }
-        if (this.dive <= 0 && aabb(f.x, f.y, 260, this.py, 58)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
+        if (on1 && this.dive <= 0 && aabb(f.x, f.y, 260, this.py, 58)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
+        else if (on2 && c.dive <= 0 && aabb(f.x, f.y, c.x + 30, c.y, 56)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(q2, 1); }
       } else if (f.k === 'diver' || f.k === 'shark') {
         f.t += dt; f.x -= (f.k === 'shark' ? 240 : 140) * dts;
         f.up = f.k === 'shark' ? true : (f.t % 1300) < 650;
@@ -635,20 +772,22 @@ export class Surf extends RailBase {
           f.cd = (f.cd || 800) - dt;
           if (f.up && f.cd <= 0 && f.x > 280 && f.x < W) {
             f.cd = 1500 + Math.random() * 500;
-            const dy = this.py - f.y;
+            const dy = (co ? this.targetY(f, on1, on2) : this.py) - f.y;
             this.shots.push({ x: f.x, y: f.y, vx: -560, vy: Math.max(-200, Math.min(200, dy * 0.8)), t: 1500, foe: true });
             this.ev({ e: 'sfx', n: 'sfx_laser' });
           }
         }
         const canHit = f.up && this.dive <= 0;
-        if (canHit && aabb(f.x, f.y, 260, this.py, 50)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
+        if (on1 && canHit && aabb(f.x, f.y, 260, this.py, 50)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(p, 1); }
+        else if (on2 && f.up && c.dive <= 0 && aabb(f.x, f.y, c.x + 30, c.y, 50)) { f.hp = 0; this.boom(f.x, f.y, 0); this.hurt(q2, 1); }
       }
       for (const s of this.shots) {
-        if (s.t <= 0) continue;
+        if (s.t <= 0 || s.foe) continue;   // their own bolts spawn inside them: never let a raider shoot himself
         if ((f.k === 'diver') && !f.up) continue;
         if (aabb(s.x, s.y, f.x, f.y, 44)) {
           f.hp--; s.t = 0;
-          if (f.hp <= 0) { this.kills++; this.boom(f.x, f.y - 8, f.k === 'shark'); this.ev({ e: 'fpsKill' }); }
+          if (s.p2) this.p2Hits = (this.p2Hits || 0) + 1;
+          if (f.hp <= 0) { this.kills++; if (s.p2) this.p2Kills = (this.p2Kills || 0) + 1; this.boom(f.x, f.y - 8, f.k === 'shark'); this.ev({ e: 'fpsKill' }); }
         }
       }
     }
@@ -656,7 +795,8 @@ export class Surf extends RailBase {
     // incoming raider fire connects -- and the duck-dive (K) is the dodge,
     // which finally gives that move a job against ranged fire
     for (const s of this.shots) {
-      if (s.foe && this.dive <= 0 && aabb(s.x, s.y, 220, this.py, 48)) { s.t = 0; this.hurt(p, 1); }
+      if (s.foe && on1 && this.dive <= 0 && aabb(s.x, s.y, 220, this.py, 48)) { s.t = 0; this.hurt(p, 1); }
+      else if (s.foe && on2 && s.t > 0 && c.dive <= 0 && aabb(s.x, s.y, c.x, c.y, 46)) { s.t = 0; this.hurt(q2, 1); }
     }
 
     if (this.ended()) { this.done = true; this.ev({ e: 'banner', k: 'surfDone' }); }
@@ -687,7 +827,7 @@ export class Surf extends RailBase {
         ctx.fillStyle = PAL.acid; ctx.fillRect(s.x - 10, s.y - 2, 20, 5);
         ctx.fillStyle = '#ffffff'; ctx.fillRect(s.x - 3, s.y - 1, 7, 3);
       } else {
-        ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
+        ctx.strokeStyle = s.p2 ? P2_TRACER : PAL.tracer; ctx.lineWidth = 4;
         ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke();
       }
     }
@@ -696,7 +836,11 @@ export class Surf extends RailBase {
     // Drawn first, so he sits behind and slightly up the face on his own board,
     // bobbing on his own phase rather than moving as one unit with the player.
     const ci = IMG.charlie_surf;
-    if (ci) {
+    const co = !!(this._p2 && this.c2);
+    const on1 = !co || !(this._p && this._p.st === 'out');
+    if (co) {
+      if (this._p2.st !== 'out') this.drawCharlieP2(ctx, now, ci);
+    } else if (ci) {
       const cbob = Math.sin(now / 260 + 1.7) * 6;
       const ch = 104, cw = ch * (ci.width / ci.height);
       ctx.save();
@@ -707,7 +851,8 @@ export class Surf extends RailBase {
     // surfer
     const bob = Math.sin(now / 220) * 5;
     const si = IMG.surf_hero;
-    if (si) {
+    if (!on1) { /* co-op: Whiskers is out of lives and off the wave */ }
+    else if (si) {
       const sh = 120, sw = sh * (si.width / si.height);
       ctx.save();
       if (this.dive > 0) ctx.globalAlpha = 0.55;
@@ -750,6 +895,36 @@ export class Surf extends RailBase {
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(W / 2 - 200, 14, 400, 10);
     ctx.fillStyle = PAL.cheese; ctx.fillRect(W / 2 - 200, 14, 400 * Math.min(1, this.t / this.dur), 10);
     if (this.diveCd > 0 && this.dive <= 0) { ctx.font = 'bold 16px monospace'; ctx.fillStyle = PAL.hudDim; ctx.textAlign = 'left'; ctx.fillText('DIVE RECHARGING', 24, 86); }
+  }
+
+  // v14.3 co-op: P2's Charlie on his own board, where the player put him.
+  // Hit = he blinks; ducking = he goes translucent under the face; a cheese
+  // chevron over his hat marks whose cat this is.
+  drawCharlieP2(ctx, now, ci) {
+    const c = this.c2;
+    const cbob = Math.sin(now / 260 + 1.7) * 6;
+    const blink = c.hurtT > 0 && Math.floor(now / 70) % 2 === 0;
+    const kick = Math.max(0, c.fireT) / 70;
+    if (!blink) {
+      ctx.save();
+      ctx.globalAlpha = c.dive > 0 ? 0.4 : 1;
+      if (ci) {
+        const ch = 104, cw = ch * (ci.width / ci.height);
+        ctx.drawImage(ci, c.x - cw / 2 - kick * 4, c.y - ch / 2 + cbob, cw, ch);
+      } else {
+        ctx.fillStyle = '#2b2b26'; ctx.fillRect(c.x - 22, c.y - 40 + cbob, 44, 50);
+        ctx.fillStyle = '#c9a25a'; ctx.fillRect(c.x - 60, c.y + 14 + cbob, 120, 10);
+      }
+      ctx.restore();
+    }
+    // P2 chevron
+    ctx.save();
+    ctx.fillStyle = PAL.cheese; ctx.strokeStyle = PAL.outline; ctx.lineWidth = 3;
+    const my = c.y - 74 + cbob + Math.sin(now / 200) * 3;
+    ctx.beginPath(); ctx.moveTo(c.x - 11, my - 9); ctx.lineTo(c.x + 11, my - 9); ctx.lineTo(c.x, my + 4); ctx.closePath();
+    ctx.stroke(); ctx.fill();
+    ctx.restore();
+    if (kick > 0.15 && c.dive <= 0) drawMuzzleBurst(ctx, c.x + 72 - kick * 4, c.y + 3 + cbob, 0, kick);
   }
 }
 

@@ -88,6 +88,83 @@ function drawSupplyCrate(ctx, x, y, now, su) {
 
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
+// ---------- v14.3 co-op: P2 (Charlie) on a second, free-aimed gun ----------
+// The Huey and the A-1 are one machine, so P2 does not get a body: P2 gets a
+// GUN. A crosshair in Charlie's cheese orange that P2 steers with their own
+// L/R/UP/DOWN, and a flexible mount on the airframe that slews to it and
+// fires orange tracers on P2's FIRE. P1 keeps flying exactly as before. The
+// shots ride the section's own `shots` pool tagged p2:1, so they hit foes and
+// crates through the same collision code and count kills the same way.
+const P2_HOT = '#FFC93C', P2_WARM = '#ff9a3c', P2_DARK = '#7a3a10';
+function p2Live(q2) { return !!(q2 && q2.st !== 'out'); }
+// crosshair: lazily placed mid-box the first frame P2 exists
+function p2Steer(r, bits2, dts, x0, x1, y0, y1) {
+  if (r.p2x === undefined) { r.p2x = x0 + (x1 - x0) * 0.45; r.p2y = (y0 + y1) / 2; r.p2Cd = 0; r.p2FireT = 0; r.p2A = 0; r.kills2 = r.kills2 || 0; }
+  const v = 600 * dts;
+  if (bits2 & C.L) r.p2x -= v;
+  if (bits2 & C.R) r.p2x += v;
+  if (bits2 & C.UP) r.p2y -= v;
+  if (bits2 & C.DOWN) r.p2y += v;
+  r.p2x = Math.max(x0, Math.min(x1, r.p2x));
+  r.p2y = Math.max(y0, Math.min(y1, r.p2y));
+}
+// mount at (gx,gy) slews to the crosshair inside its arc and fires on FIRE
+function p2Fire(r, bits2, dt, gx, gy, cd, spd, life, aMin, aMax, barrel) {
+  r.p2Cd -= dt;
+  r.p2A = Math.max(aMin, Math.min(aMax, Math.atan2(r.p2y - gy, r.p2x - gx)));
+  if ((bits2 & C.FIRE) && r.p2Cd <= 0) {
+    r.p2Cd = cd; r.p2FireT = 70;
+    r.ev({ e: 'sfx', n: 'sfx_shot' });
+    const ca = Math.cos(r.p2A), sa = Math.sin(r.p2A);
+    r.shots.push({ x: gx + ca * barrel, y: gy + sa * barrel, vx: ca * spd, vy: sa * spd, t: life, p2: 1 });
+  }
+}
+// a kill credited to whoever's round it was
+function railKill(r, s) {
+  r.kills++;
+  if (s && s.p2) { r.kills2 = (r.kills2 || 0) + 1; r.ev({ e: 'fpsKill', by: 'p2' }); }
+  else r.ev({ e: 'fpsKill' });
+}
+// Charlie's tracers: hot orange streak with a cheese core, drawn along travel
+function drawP2Tracers(ctx, shots) {
+  ctx.lineCap = 'round';
+  for (const s of shots) {
+    if (!s.p2) continue;
+    ctx.strokeStyle = P2_WARM; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.035, s.y - s.vy * 0.035); ctx.stroke();
+    ctx.strokeStyle = P2_HOT; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.02, s.y - s.vy * 0.02); ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+// Charlie's crosshair: a cheese ring with four ticks that kicks out on each
+// shot and slowly turns, plus a faint sight line back to the mount so it is
+// obvious which gun it steers.
+function drawP2Reticle(ctx, r, gx, gy, now) {
+  const x = r.p2x, y = r.p2y, k = Math.max(0, r.p2FireT || 0) / 70;
+  ctx.save();
+  ctx.globalAlpha = 0.22; ctx.strokeStyle = P2_WARM; ctx.lineWidth = 2;
+  ctx.setLineDash([6, 10]);
+  ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(x, y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  ctx.translate(x, y);
+  const rad = 19 + k * 5;
+  ctx.strokeStyle = P2_DARK; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.arc(0, 0, rad, 0, 7); ctx.stroke();
+  ctx.strokeStyle = P2_HOT; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, rad, 0, 7); ctx.stroke();
+  ctx.rotate(now / 900);
+  ctx.lineWidth = 3.5; ctx.strokeStyle = P2_WARM;
+  for (let i = 0; i < 4; i++) {
+    ctx.rotate(Math.PI / 2);
+    ctx.beginPath(); ctx.moveTo(rad - 7, 0); ctx.lineTo(rad + 9, 0); ctx.stroke();
+  }
+  ctx.fillStyle = P2_HOT;
+  ctx.beginPath(); ctx.arc(0, 0, 3 + k * 2, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
 // v11: this was NOT exported — boat.js and boss2.js both `import { RailBase }
 // from './rails.js'`, which silently resolves to undefined and throws
 // "Class extends value undefined is not a constructor" the instant either
@@ -114,7 +191,9 @@ export class RailBase {
   }
   ev(e) { this.events.push(e); }
   // true once the section should end: quota met, or the timer ran out.
-  ended() { return (this.quota > 0 && this.kills >= this.quota) || this.t >= this.dur; }
+  // Two guns clear a quota twice as fast, so with a partner aboard the target
+  // rises and the ride keeps its length; the timer still caps it either way.
+  ended() { const q = this._p2 ? Math.round(this.quota * 1.4) : this.quota; return (q > 0 && this.kills >= q) || this.t >= this.dur; }
   hurt(p, amt) {
     this._p = p; // v13: draw() needs hull state for the damage smoke/flash
     if (this.hurtT > 0) return;
@@ -139,7 +218,13 @@ export class RailBase {
     p.hp -= amt; this.hurtT = 900; this.flashT = 130; this.shake = 14;
     this.ev({ e: 'fpsHurt' }); this.ev({ e: 'sfx', n: 'sfx_explosion' });
     if (p.hp <= 0) {
-      p.deaths++; p.lives--; p.hp = CFG.hpMax;
+      // v14.3 co-op: one machine, one crew, one pool of lives. The wreck costs
+      // whichever player has more lives left, and the section only fails when
+      // nobody on the couch has one.
+      const q2 = this._p2 && this._p2.st !== 'out' ? this._p2 : null;
+      const pay = q2 && (p.st === 'out' || q2.lives > p.lives) ? q2 : p;
+      pay.deaths = (pay.deaths || 0) + 1; pay.lives--; p.hp = CFG.hpMax;
+      if (pay !== p && pay.lives <= 0) { pay.lives = 0; pay.st = 'out'; }
       // v13: the aircraft is destroyed, not just the pilot hurt -- three
       // staggered blasts across the airframe, a hard shake, and the smoke
       // trail cleared so the replacement Huey comes in clean.
@@ -153,10 +238,16 @@ export class RailBase {
       // seconds and the remaining forty are raw, which is the opposite of the
       // "you lose the machine, you get another machine" beat.
       if (this.pips !== undefined) this.pips = this.pipsMax || 4;
-      if (p.lives <= 0) { p.st = 'out'; this.dead = true; this.done = true; }
+      if (pay === p && p.lives <= 0) { p.lives = 0; p.st = 'out'; }
+      if (p.st === 'out' && !(q2 && q2.st !== 'out')) { this.dead = true; this.done = true; }
       this.hurtT = 2200;
     }
   }
+  // co-op hooks (main.js): P2 drops in mid-section, or a player who ran dry is
+  // brought back by the partner pressing ENTER. Sections with a body for P2
+  // override these; the shared-vehicle rails only need the lives back.
+  coopJoin(q) { this._p2 = q; }
+  coopRevive(q) { q.lives = CFG.lives; q.hp = CFG.hpMax; q.st = 'alive'; q.invulnT = 2200; }
   boom(x, y, big) {
     this.booms.push({ x, y, t: 0, big });
     this.ev({ e: 'sfx', n: 'sfx_explosion' });
@@ -266,10 +357,13 @@ export class DoorGun extends RailBase {
     this.turretCd = 0;
     this.aimA = 0;               // v11 (Dylan: "you need to be able to aim it") — A/D sweeps the M60 barrel independent of altitude
   }
-  step(bits, dt, p) {
+  // v14.3 co-op: P2 dropping in mid-flight gets a fresh crosshair
+  coopJoin(q) { super.coopJoin(q); this.p2x = undefined; }
+  step(bits, dt, p, bits2, p2) {
     if (this.done) return;
     this.stepCommon(dt, p);
     const dts = dt / 1000;
+    if (this.p2FireT > 0) this.p2FireT -= dt;
     if (this.crash) { this.stepCrash(dt, dts); this.prevBits = bits; return; }
     this.scroll += dts;
     this.gunCd -= dt;
@@ -338,6 +432,13 @@ export class DoorGun extends RailBase {
         }
       }
     }
+    // v14.3 co-op: Charlie on a second M60 at the back of the cabin, aimed
+    // with P2's own crosshair (the pilot keeps the door gun and the stick)
+    const q2 = p2 || this._p2;
+    if (p2Live(q2)) {
+      p2Steer(this, bits2 || 0, dts, 330, W - 30, 70, GY + 10);
+      p2Fire(this, bits2 || 0, dt, 222, this.hy + 112, 105, 990, 1400, -0.75, 1.45, 46);
+    }
     for (const s of this.shots) { s.x += s.vx * dts; s.y += s.vy * dts; s.t -= dt; }
     this.shots = this.shots.filter(s => s.t > 0 && s.y < H + 40);
 
@@ -375,7 +476,7 @@ export class DoorGun extends RailBase {
       for (const s of this.shots) {
         if (s.t > 0 && aabb(s.x, s.y, f.x, f.y - (f.k === 'rat' ? 30 : 10), 46)) {
           f.hp--; s.t = 0; f.flash = 150; // v12: Metal Slug hit flash
-          if (f.hp <= 0) { this.kills++; this.boom(f.x, f.y - 20, f.k !== 'rat'); this.ev({ e: 'fpsKill' }); }
+          if (f.hp <= 0) { this.boom(f.x, f.y - 20, f.k !== 'rat'); railKill(this, s); }
         }
       }
     }
@@ -539,8 +640,10 @@ export class DoorGun extends RailBase {
     // tracers
     ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
     for (const s of this.shots) {
+      if (s.p2) continue;
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.03, s.y - s.vy * 0.03); ctx.stroke();
     }
+    if (this.p2x !== undefined) drawP2Tracers(ctx, this.shots);
     // the Huey with Charlie on the door
     const hi = IMG.huey_doorgun || IMG.heli_us;
     if (hi) {
@@ -707,6 +810,10 @@ export class DoorGun extends RailBase {
         drawMuzzleBurst(ctx, gx + cA * 62, gy2 + sA * 62, ang, this.fireT / 70);
       }
     }
+    // v14.3 co-op: P2's M60 at the back of the cabin, banded in Charlie's
+    // orange, slewing to P2's crosshair. Gone while P2 is out, or once the
+    // Huey is going down.
+    if (this.p2x !== undefined && !this.crash && p2Live(this._p2)) this.drawP2Gun(ctx, now);
     // parachute supply crates — fly the Huey into one, or shoot it down to you
     for (const su of (this.supplies || [])) drawSupplyCrate(ctx, su.x, su.y, now, su);
     this.drawBooms(ctx);
@@ -723,6 +830,33 @@ export class DoorGun extends RailBase {
     const tn = ['', 'HUEY', 'HUEY + PODS', 'HUEY GUNSHIP'][this.tier || 1];
     ctx.fillStyle = (this.tier || 1) > 1 ? PAL.cheese : PAL.hudDim;
     ctx.fillText(tn, 24, 112);
+  }
+  drawP2Gun(ctx, now) {
+    const bobY = Math.sin(now / 300) * 7;
+    const gx = 222, gy = this.hy + 112 + bobY, a = this.p2A || 0;
+    const rk = Math.max(0, this.p2FireT || 0) / 70;
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(a);
+    const m60 = IMG.m60_doorgun;
+    if (m60) {
+      const gw = 78, gh = gw * (m60.height / m60.width);
+      ctx.save(); ctx.rotate(-rk * 0.09);
+      ctx.drawImage(m60, -gw * 0.34 - rk * 7, -gh * 0.5 + rk * 2, gw, gh);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#3a3a32'; ctx.fillRect(-12 - rk * 7, -4, 46, 8);
+      ctx.fillStyle = '#26231c'; ctx.fillRect(30 - rk * 7, -5.5, 8, 11);
+    }
+    // Charlie's colours on the receiver so the second gun reads as P2's
+    ctx.fillStyle = P2_WARM; ctx.fillRect(-6 - rk * 7, -6, 9, 12);
+    ctx.strokeStyle = P2_DARK; ctx.lineWidth = 2; ctx.strokeRect(-6 - rk * 7, -6, 9, 12);
+    ctx.restore();
+    // pintle hub
+    ctx.fillStyle = P2_HOT; ctx.beginPath(); ctx.arc(gx, gy, 5, 0, 7); ctx.fill();
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.stroke();
+    if (this.p2FireT > 0) drawMuzzleBurst(ctx, gx + Math.cos(a) * 52, gy + Math.sin(a) * 52, a, this.p2FireT / 70);
+    drawP2Reticle(ctx, this, gx, gy, now);
   }
 }
 
@@ -784,11 +918,14 @@ export class Skyraider extends RailBase {
     // thick. Refilled on each new aircraft (see RailBase.hurt).
     this.started = false;
   }
-  step(bits, dt, p) {
+  // v14.3 co-op: P2 dropping in mid-run gets a fresh crosshair
+  coopJoin(q) { super.coopJoin(q); this.p2x = undefined; }
+  step(bits, dt, p, bits2, p2) {
     if (this.done) return;
     this.stepCommon(dt, p);
     const dts = dt / 1000;
     this.gunCd -= dt;
+    if (this.p2FireT > 0) this.p2FireT -= dt;
     if (!this.started) { this.started = true; this.ev({ e: 'banner', k: 'actSkyraider' }); this.ev({ e: 'hint', k: 'skyControls' }); this.ev({ e: 'engine', on: true, name: 'sfx_plane' }); }
 
     // a ~0.4s-stale altitude for the treeline gunners to aim at, so climbing or
@@ -908,6 +1045,14 @@ export class Skyraider extends RailBase {
       for (const gp of this.gunPorts()) {
         this.shots.push({ x: 260 + gp.dx + 26, y: this.py + gp.dy, vx: 1050, vy: dvy, t: 1000 });
       }
+    }
+    // v14.3 co-op: the pilot aims the AIRCRAFT; Charlie rides the spine
+    // turret behind the canopy and aims a flexible gun anywhere ahead with
+    // P2's own crosshair -- the one gun on the A-1 that can pick a target.
+    const q2 = p2 || this._p2;
+    if (p2Live(q2)) {
+      p2Steer(this, bits2 || 0, dts, 330, W - 30, 60, GY + 10);
+      p2Fire(this, bits2 || 0, dt, 236, this.py - 26, 115, 1050, 1000, -1.25, 1.35, 30);
     }
     for (const s of this.shots) {
       s.x += s.vx * dts; s.y += (s.vy || 0) * dts; s.t -= dt;
@@ -1051,7 +1196,7 @@ export class Skyraider extends RailBase {
       for (const s of this.shots) {
         if (s.t > 0 && f.k !== 'burst' && aabb(s.x, s.y, f.x, f.y - (f.k === 'rat' ? 30 : 0), 48)) {
           f.hp--; s.t = 0; f.flash = 150; // v12: Metal Slug hit flash
-          if (f.hp <= 0) { this.kills++; this.boom(f.x, f.y - 16, f.k === 'ufo'); this.ev({ e: 'fpsKill' }); }
+          if (f.hp <= 0) { this.boom(f.x, f.y - 16, f.k === 'ufo'); railKill(this, s); }
         }
       }
     }
@@ -1222,7 +1367,8 @@ export class Skyraider extends RailBase {
     for (const su of this.supplies) drawSupplyCrate(ctx, su.x, su.y, now, su);
     // tracers
     ctx.strokeStyle = PAL.tracer; ctx.lineWidth = 4;
-    for (const s of this.shots) { ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke(); }
+    for (const s of this.shots) { if (s.p2) continue; ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - 34, s.y); ctx.stroke(); }
+    if (this.p2x !== undefined) drawP2Tracers(ctx, this.shots);
     // the Skyraider
     const pl = IMG.skyraider;
     const tilt = ((this.prevBits & C.UP) ? -0.09 : 0) + ((this.prevBits & C.DOWN) ? 0.09 : 0);
@@ -1339,6 +1485,8 @@ export class Skyraider extends RailBase {
         if (this.fireT > 0) drawMuzzleBurst(ctx, gx + (gp.wing ? 42 : 14), gy, 0, this.fireT / 70);
       }
     } else { ctx.fillStyle = PAL.khaki; ctx.fillRect(200, this.py - 20, 120, 40); }
+    // v14.3 co-op: P2's spine turret + crosshair, hidden while P2 is out
+    if (this.p2x !== undefined && p2Live(this._p2)) this.drawP2Gun(ctx, now);
     this.drawBooms(ctx);
     if (this.hurtT > 0) { ctx.fillStyle = `rgba(160,20,10,${Math.min(0.4, this.hurtT / 1200)})`; ctx.fillRect(0, 0, W, H); }
     ctx.restore();
@@ -1362,6 +1510,30 @@ export class Skyraider extends RailBase {
     // spending.
     ctx.fillStyle = this.pips <= 1 ? PAL.redAccent : PAL.hud;
     ctx.fillText('HULL ' + '▮'.repeat(Math.max(0, this.pips)) + '▯'.repeat(Math.max(0, (this.pipsMax || 3) - this.pips)), 24, 112);
+  }
+  // Charlie's spine turret: a cheese-ringed dome behind the canopy with a
+  // twin barrel that slews to P2's crosshair and kicks back on each round.
+  drawP2Gun(ctx, now) {
+    const gx = 236, gy = this.py - 26 + Math.sin(now / 260) * 5, a = this.p2A || 0;
+    const rk = Math.max(0, this.p2FireT || 0) / 70;
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.save();
+    ctx.rotate(a);
+    ctx.fillStyle = '#2b2d24';
+    ctx.fillRect(2 - rk * 5, -5, 30, 4); ctx.fillRect(2 - rk * 5, 1, 30, 4);   // twin barrels
+    ctx.fillStyle = '#8c8f80'; ctx.fillRect(29 - rk * 5, -6, 5, 12);          // flash hider
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 1.5;
+    ctx.strokeRect(2 - rk * 5, -5, 30, 10);
+    ctx.restore();
+    ctx.fillStyle = P2_WARM;                                                 // dome
+    ctx.beginPath(); ctx.arc(0, 2, 11, Math.PI, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.fillStyle = P2_HOT;
+    ctx.beginPath(); ctx.arc(-3, -2, 3.5, 0, 7); ctx.fill();                  // glint
+    ctx.restore();
+    if (this.p2FireT > 0) drawMuzzleBurst(ctx, gx + Math.cos(a) * 36, gy + Math.sin(a) * 36, a, this.p2FireT / 70);
+    drawP2Reticle(ctx, this, gx, gy, now);
   }
 }
 

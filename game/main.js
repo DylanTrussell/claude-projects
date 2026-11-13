@@ -1,7 +1,7 @@
 // Boot, screens, input, and the fixed-timestep loop — single-player build.
 // (The co-op relay server and net client live in the repo for a future version.)
-import { CFG, C, BIND, PADBIND, W, H, BRANCHES } from './config.js';
-import { STR, SUBS, CUT_MEOWS } from './strings.js';
+import { CFG, C, BIND, PADBIND, W, H, BRANCHES, GAME, BIND_P1, BIND_P2, PAD_START } from './config.js';
+import { STR, SUBS, CUT_MEOWS, keyText } from './strings.js';
 
 // runtime subtitle driver: cues live in strings.js, never baked into the video
 function attachSubs(vid, subEl, cues) {
@@ -15,7 +15,7 @@ function attachSubs(vid, subEl, cues) {
   update();
 }
 import { loadAll, audio, IMG, ensureChunk, prefetchChunk } from './assets.js';
-import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState, joinCharlie } from './sim.js';
+import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState, joinCharlie, addPlayer, revivePlayer } from './sim.js';
 import { render, fxEvent, fxUpdate, FX, drawRotor, TUNNEL_TRANS_MS, __devReplayValkyries } from './render.js';
 import { Tunnel } from './fps.js';
 import { VIDEO_URLS } from './chunks.js';
@@ -48,25 +48,51 @@ function resize() {
 addEventListener('resize', resize); addEventListener('orientationchange', resize); resize();
 
 // ---------- input: two clusters, physical key codes ----------
-let heldBits = 0, touchBits = 0;
+// v14.3 co-op: inputs are read from the set of held key codes so one keyboard
+// can be read two ways. Solo, every binding drives P1 (BIND). Once P2 drops in,
+// the board splits (BIND_P1 left half, BIND_P2 arrows + home row) and each
+// gamepad belongs to one player.
+let touchBits = 0;
+const keysDown = new Set();
+let joinReq = null;              // 'key' | pad index, consumed by the frame loop
 addEventListener('keydown', (e) => {
-  if (BIND[e.code] !== undefined) { heldBits |= BIND[e.code]; e.preventDefault(); }
+  const used = BIND[e.code] !== undefined || BIND_P1[e.code] !== undefined || BIND_P2[e.code] !== undefined;
+  if (used) { keysDown.add(e.code); e.preventDefault(); }
+  if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) { joinReq = 'key'; e.preventDefault(); }
   audio.ensure();
 });
-addEventListener('keyup', (e) => { if (BIND[e.code] !== undefined) heldBits &= ~BIND[e.code]; });
-function padBits() {
+addEventListener('keyup', (e) => { keysDown.delete(e.code); });
+addEventListener('blur', () => keysDown.clear());
+function keyBits(map) { let b = 0; for (const k of keysDown) if (map[k] !== undefined) b |= map[k]; return b; }
+// which player owns each pad. P1's pad is the first one that ever does anything;
+// START on any other pad brings P2 in on that pad.
+const padOwner = {};   // gamepad index -> 'p1' | 'p2'
+let padStartWas = {};
+function onePad(gp) {
+  let b = 0;
+  gp.buttons.forEach((bt, i) => { if (bt.pressed && PADBIND[i] !== undefined) b |= PADBIND[i]; });
+  if (gp.axes[0] < -0.4) b |= C.L;
+  if (gp.axes[0] > 0.4) b |= C.R;
+  if (gp.axes[1] < -0.5) b |= C.UP;
+  if (gp.axes[1] > 0.5) b |= C.DOWN;
+  return b;
+}
+function padBits(who) {
   let b = 0;
   for (const gp of navigator.getGamepads?.() ?? []) {
     if (!gp) continue;
-    gp.buttons.forEach((bt, i) => { if (bt.pressed && PADBIND[i] !== undefined) b |= PADBIND[i]; });
-    if (gp.axes[0] < -0.4) b |= C.L;
-    if (gp.axes[0] > 0.4) b |= C.R;
-    if (gp.axes[1] < -0.5) b |= C.UP;
-    if (gp.axes[1] > 0.5) b |= C.DOWN;
+    const st = !!(gp.buttons[PAD_START] && gp.buttons[PAD_START].pressed);
+    if (st && !padStartWas[gp.index]) joinReq = gp.index;
+    padStartWas[gp.index] = st;
+    const pb = onePad(gp);
+    if (pb && padOwner[gp.index] === undefined) padOwner[gp.index] = GAME.coop ? 'p2' : 'p1';
+    const owner = padOwner[gp.index] || 'p1';
+    if (owner === who) b |= pb;
   }
   return b;
 }
-const myBits = () => heldBits | touchBits | padBits();
+const myBits = () => GAME.coop ? (keyBits(BIND_P1) | touchBits | padBits('p1')) : (keyBits(BIND) | touchBits | padBits('p1'));
+const p2Bits = () => GAME.coop ? (keyBits(BIND_P2) | padBits('p2')) : 0;
 
 function bindTouch(id, bit) {
   const el = $(id);
@@ -137,7 +163,7 @@ function optBtn(id, key) {
 
 // ---------- game flow ----------
 function startGame() {
-  g = makeGame((Math.random() * 0xffffffff) >>> 0, [{ pid: 'p1', hero: 'us' }]);
+  g = makeGame((Math.random() * 0xffffffff) >>> 0, seats());
   FX.hintSeen.clear();   // v13.5: hints teach once per run, so a fresh run re-arms them
   const warp = +(new URLSearchParams(location.search).get('warp') || 0);
   if (dev && warp > 0) { // dev-only section warp for verification
@@ -524,7 +550,7 @@ $('btn-again').addEventListener('click', () => { ckptSnap = null; lastCkptX = -1
 $('btn-continue').addEventListener('click', () => {
   if (!ckptSnap || continuesLeft <= 0) { startGame(); return; }
   continuesLeft--;
-  g = restoreState(ckptSnap, [{ pid: 'p1', hero: 'us' }]);
+  g = restoreState(ckptSnap, seats());
   for (const p of g.players) { p.lives = CFG.lives; p.hp = CFG.hpMax; p.st = 'alive'; p.invulnT = 2200; }
   g.over = false; g.won = false;
   g.continued = (g.continued || 0) + 1;
@@ -705,10 +731,11 @@ function frame(now) {
     lastCkptX = g.checkpoint;
     try { ckptSnap = checkpointState(g); } catch (_) { ckptSnap = null; }
   }
+  if (joinReq !== null) { coopJoin(joinReq); joinReq = null; }
   if (mode === 'game' && g && !cutsceneActive && !paused && !manualPause && !loadingChunk && !rotateBlocked) {
     if (tunnel) { // first-person underworld
       const p = g.players[0];
-      tunnel.step(myBits(), dt, p);
+      tunnel.step(myBits(), dt, p, p2Bits(), g.players[1]);
       if (tunnel.events.length) handleEvents(tunnel.events.splice(0));
       if (tunnel.done) {
         const r = tunnel.result, mapIdx = tunnel.mapIdx;
@@ -754,7 +781,8 @@ function frame(now) {
       }
     } else if (rail) { // vehicle rail sections
       const p = g.players[0];
-      rail.step(myBits(), dt, p);
+      rail._p2 = g.players[1];
+      rail.step(myBits(), dt, p, p2Bits(), g.players[1]);
       if (rail.events.length) handleEvents(rail.events.splice(0));
       if (rail.done) {
         const wasDoorgun = rail instanceof DoorGun;
@@ -838,7 +866,7 @@ function frame(now) {
       if (FX.hitPause > 0) { FX.hitPause -= dt; }
       else {
         acc += dt;
-        const inputs = { p1: myBits() };
+        const inputs = { p1: myBits(), p2: p2Bits() };
         while (acc >= 1000 / 60) {
           step(g, 1000 / 60, inputs);
           acc -= 1000 / 60;
@@ -893,6 +921,7 @@ function frame(now) {
     }
     render(ctx, lastView, now, 'p1', dbg);
   }
+  drawCoop(ctx, now);
   // v13.3 QA: the PAUSED overlay lived ONLY inside the side-scroller branch, so
   // the tunnel and the rail sections showed nothing at all when the window lost
   // focus -- and their shake and rotor keep animating, so the screen reads as
@@ -915,6 +944,55 @@ function frame(now) {
 }
 
 // ---------- FPS-mode HUD (health, shells, weapon, banners/hints) ----------
+// ---------- v14.3 couch co-op ----------
+// Drop-in, arcade style: ENTER (or START on a second pad) brings Charlie in as
+// P2 at any point in a run. The same press revives a player who has run out of
+// lives while the other is still fighting, so nobody sits on the couch idle.
+function seats() { return GAME.coop ? [{ pid: 'p1', hero: 'us' }, { pid: 'p2', hero: 'vc' }] : [{ pid: 'p1', hero: 'us' }]; }
+let coopMsgT = 0;
+function coopJoin(src) {
+  if (mode !== 'game' || !g || g.over) return;
+  const padPid = typeof src === 'number' ? padOwner[src] : undefined;
+  if (!GAME.coop) {
+    if (padPid === 'p1') return;          // START on P1's own pad is not a second player
+    GAME.coop = true;
+    if (typeof src === 'number') padOwner[src] = 'p2';
+    addPlayer(g, 'p2', 'vc');
+    if (rail && rail.coopJoin) rail.coopJoin(g.players[1]);
+    if (tunnel && tunnel.coopJoin) tunnel.coopJoin(g.players[1]);
+    coopMsgT = 6000;
+    return;
+  }
+  for (const q of g.players) {
+    if (q.st !== 'out' || !g.players.some(o => o !== q && o.st !== 'out')) continue;
+    if (typeof src === 'number' && (padPid || 'p2') !== q.pid) continue;   // a pad revives its own player
+    if (rail && rail.coopRevive) rail.coopRevive(q);
+    else if (tunnel && tunnel.coopRevive) tunnel.coopRevive(q);
+    else revivePlayer(g, q.pid);
+    break;
+  }
+}
+function drawCoop(ctx, now) {
+  if (mode !== 'game' || !g || cutsceneActive || rail instanceof Cine || $('touch').style.display === 'flex') return;
+  ctx.save(); ctx.textAlign = 'left'; ctx.font = 'bold 14px monospace';
+  const blink = Math.floor(now / 600) % 2;
+  if (!GAME.coop) {
+    if (blink) { ctx.fillStyle = 'rgba(243,233,200,0.55)'; ctx.fillText(STR.coopPress, 16, H - 14); }
+  } else {
+    const out = g.players.find(q => q.st === 'out');
+    if (out && blink && g.players.some(q => q.st !== 'out')) { ctx.fillStyle = '#FFC93C'; ctx.fillText(out.pid === 'p2' ? STR.coopRejoin2 : STR.coopRejoin1, 16, H - 14); }
+  }
+  if (coopMsgT > 0) {
+    coopMsgT -= 16;
+    ctx.globalAlpha = Math.min(1, coopMsgT / 500); ctx.textAlign = 'center'; ctx.font = 'bold 18px monospace';
+    for (const [i, line] of [STR.coopIn, STR.coopKeys1, STR.coopKeys2].entries()) {
+      ctx.fillStyle = '#26231c'; ctx.fillText(line, W / 2 + 2, H * 0.5 + i * 28 + 2);
+      ctx.fillStyle = i ? '#f3e9c8' : '#FFC93C'; ctx.fillText(line, W / 2, H * 0.5 + i * 28);
+    }
+  }
+  ctx.restore();
+}
+
 function drawFpsHud(ctx) {
   const p = g && g.players[0];
   if (!p) return;
@@ -932,7 +1010,7 @@ function drawFpsHud(ctx) {
     // v10: pistol now has a real magazine (Dylan: "there's no animation for
     // it reloading") — show the count / a RELOADING flag so the mechanic
     // reads on the HUD, not just in the viewmodel.
-    const wname = tunnel.weap === 'pistol' ? (tunnel.reloadT > 0 ? 'PISTOL — RELOADING' : `PISTOL ${tunnel.ammoInMag}/10`) : tunnel.weap === 'shotgun' ? `SHOTGUN ${tunnel.shells}` : 'CLAWS';
+    const wname = tunnel.weap === 'pistol' ? (tunnel.reloadT > 0 ? 'PISTOL RELOADING' : `PISTOL ${tunnel.ammoInMag}/10`) : tunnel.weap === 'shotgun' ? `SHOTGUN ${tunnel.shells}` : 'CLAWS';
     ctx.fillStyle = tunnel.weap === 'pistol' && tunnel.reloadT > 0 ? '#c8372d' : '#f3e9c8';
     // Progression on the HUD (loop-1: no stats anywhere): kills always;
     // shells shown while carrying them WITHOUT the shotgun, so "SHELLS +5"
@@ -941,13 +1019,26 @@ function drawFpsHud(ctx) {
     // "CLAWS: K" read as a lie while a gun was out (loop 3 thought the claw
     // was broken). Say SWIPE — K is a melee swipe on top of whatever you hold,
     // and only becomes your weapon once the grab takes the pistol.
-    let line = `x${p.lives}  ${wname}  ·  ${tunnel.weap === 'claws' ? 'CLAWS: J' : 'SWIPE: K'}`;
+    let line = `x${p.lives}  ${wname}  ·  ${keyText(tunnel.weap === 'claws' ? 'CLAWS: J' : 'SWIPE: K')}`;
     if (tunnel.weap !== 'shotgun' && tunnel.shells > 0) line += tunnel.hasShotgun ? `  ·  SHELLS ${tunnel.shells}` : `  ·  SHELLS ${tunnel.shells} (find the SHOTGUN)`;
     if (tunnel.result.kills > 0) line += `  ·  KILLS ${tunnel.result.kills}`;
     ctx.fillText(line, 16, 50);
     ctx.fillStyle = '#f3e9c8';
   } else {
     ctx.fillText(`x${p.lives}`, 16, 50);
+  }
+  const q = g.players[1];
+  if (q && !(rail && rail.coopHud === false)) {            // P2 row, top right: the sections own the space under P1's meter
+    const y0 = rail instanceof Mission ? 76 : 20, x1 = W - 16 - CFG.hpMax * (segW + 4);
+    for (let i = 0; i < CFG.hpMax; i++) {
+      const x0 = x1 + i * (segW + 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x0 - 1, y0 - 1, segW + 2, segH + 2);
+      ctx.fillStyle = q.st === 'out' ? 'rgba(243,233,200,0.08)' : i < q.hp ? (q.hp >= 4 ? '#8CFF3B' : q.hp >= 2 ? '#FFC93C' : '#c8372d') : 'rgba(243,233,200,0.15)';
+      ctx.fillRect(x0, y0, segW, segH);
+    }
+    ctx.font = 'bold 14px monospace'; ctx.textAlign = 'right'; ctx.fillStyle = '#ffd08a';
+    ctx.fillText(`CHARLIE x${q.st === 'out' ? 0 : q.lives}`, W - 16, y0 + 30);
+    ctx.textAlign = 'left';
   }
   // throat-grab: giant mash meter
   if (tunnel && tunnel.script && !tunnel.script.done && tunnel.script.phase === 'grapple') {
