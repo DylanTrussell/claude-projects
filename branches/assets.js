@@ -331,6 +331,16 @@ export function drawImgHit(ctx, im, x, y, w, h, amt, hpFrac) {
   ctx.restore();
 }
 
+// A wind-up glow: the whole sprite heats toward amber before it attacks, so
+// the warning is the attacker itself, not a mark floating over it.
+export function drawImgGlow(ctx, im, x, y, w, h, amt, color) {
+  if (!im || amt <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(0.85, amt);
+  ctx.drawImage(tinted(im, color || '#ffb21f'), x, y, w, h);
+  ctx.restore();
+}
+
 export function drawImg(ctx, id, x, y, w, h, flip) {
   const im = IMG[id];
   if (!im) return false;

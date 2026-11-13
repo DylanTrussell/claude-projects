@@ -12,7 +12,24 @@
 //
 //   GRAVEYARD -> (BRIDGE | CAVES) -> (COAST | CITADEL) -> HIVE
 import { CFG, C, PAL, W, H } from './config.js';
-import { IMG, SHEET, drawImgHit, drawSheet } from './assets.js';
+import { IMG, SHEET, drawImgHit, drawImgGlow, drawSheet } from './assets.js';
+
+// where a lobbed shot will land: a shadow that tightens and a ground glow that
+// heats up as it falls, so you read the spot without reading anything
+function landMark(ctx, tx, wide, s, now) {
+  const k = Math.max(0.2, Math.min(1, 1 - (GY - s.y) / 520)), p = 0.5 + 0.5 * Math.sin(now / 55);
+  const rx = wide / 2;
+  ctx.save();
+  ctx.fillStyle = `rgba(20,8,4,${0.25 + 0.3 * k})`;
+  ctx.beginPath(); ctx.ellipse(tx, GY - 2, rx * (0.45 + 0.55 * k), 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(255,70,20,${(0.2 + 0.3 * p) * (0.5 + 0.5 * k)})`;
+  ctx.beginPath(); ctx.ellipse(tx, GY - 3, rx, 14, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = `rgba(214,30,16,${0.55 + 0.45 * p})`; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.ellipse(tx, GY - 3, rx * (0.75 + 0.25 * k), 14, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = `rgba(255,220,110,${0.35 + 0.5 * p})`; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(tx, GY - 3, rx * (0.75 + 0.25 * k) - 4, 10, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
 import { RailBase } from './rails.js';
 import { drawMuzzleBurst } from './render.js';
 
@@ -1070,17 +1087,17 @@ export class Mission extends RailBase {
     ctx.rotate(walk * 0.045 + (e.tell > 0 ? -0.1 : 0) + (e.st === 'burn' ? Math.sin(now / 40) * 0.2 : 0));
     const sq = e.tell > 0 ? 1 + Math.sin(now / 30) * 0.03 : 1;
     drawImgHit(ctx, im, -w / 2, -hgt * sq + Math.abs(walk) * 3, w, hgt * sq, e.st === 'burn' ? 0.75 : Math.max(0, e.flash) / 130, e.st === 'burn' ? 0 : e.hp / e.hpMax);
+    if (e.tell > 0 && e.st === 'live') drawImgGlow(ctx, im, -w / 2, -hgt * sq + Math.abs(walk) * 3, w, hgt * sq, 0.3 + 0.35 * (0.5 + 0.5 * Math.sin(now / 45)));
     ctx.restore();
-    if (e.tell > 0 && e.st === 'live') { ctx.fillStyle = PAL.cheese; ctx.fillRect(e.x - 3, (K.fly ? e.y - hgt / 2 : e.y - hgt) - 30, 6, 16); ctx.fillRect(e.x - 3, (K.fly ? e.y - hgt / 2 : e.y - hgt) - 10, 6, 6); }
     if (e.k === 'chopper') { ctx.fillStyle = 'rgba(30,30,24,0.5)'; ctx.fillRect(e.x - w * 0.42 - 20 + Math.sin(now / 20) * 14, e.y - hgt * 0.48, w * 0.8, 5); }
   }
   drawEShot(ctx, s, now) {
     if (s.k === 'ray') { ctx.fillStyle = PAL.acid; ctx.fillRect(s.x - 12, s.y - 4, 24, 8); ctx.fillStyle = '#eaffd0'; ctx.fillRect(s.x - 6, s.y - 2, 12, 4); }
     else if (s.k === 'vomit' || s.k === 'glob') { ctx.fillStyle = s.k === 'glob' ? PAL.cheeseDark : '#3f8a2a'; pxBlob(ctx, s.x, s.y, s.r + 3); ctx.fillStyle = s.k === 'glob' ? PAL.cheese : PAL.acid; pxBlob(ctx, s.x - 2, s.y - 2, s.r - 2); }
-    else if (s.k === 'bomb' || s.k === 'shell') { const a = Math.atan2(s.vy, s.vx); ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(a); ctx.fillStyle = '#2b2a30'; ctx.fillRect(-12, -7, 24, 14); ctx.fillStyle = '#c8372d'; ctx.fillRect(4, -7, 6, 14); ctx.fillStyle = '#55524a'; ctx.fillRect(-18, -9, 7, 18); ctx.restore(); if (s.k === 'bomb') pxFlame(ctx, s.x - s.vx * 0.03, s.y - s.vy * 0.03, 10, 0.3, now); if (s.k === 'shell' && s.tx !== undefined && Math.floor(now / 90) % 2) { ctx.fillStyle = PAL.redAccent; ctx.fillRect(s.tx - 80, GY - 5, 160, 5); ctx.fillRect(s.tx - 5, GY - 30, 10, 16); } }
+    else if (s.k === 'bomb' || s.k === 'shell') { const a = Math.atan2(s.vy, s.vx); ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(a); ctx.fillStyle = '#2b2a30'; ctx.fillRect(-12, -7, 24, 14); ctx.fillStyle = '#c8372d'; ctx.fillRect(4, -7, 6, 14); ctx.fillStyle = '#55524a'; ctx.fillRect(-18, -9, 7, 18); ctx.restore(); if (s.k === 'bomb') pxFlame(ctx, s.x - s.vx * 0.03, s.y - s.vy * 0.03, 10, 0.3, now); if (s.k === 'shell' && s.tx !== undefined) landMark(ctx, s.tx, 160, s, now); }
     else if (s.k === 'zap') { ctx.strokeStyle = '#b6ffe9'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.x, s.y - 26); for (let i = 1; i <= 4; i++) ctx.lineTo(s.x + (i % 2 ? 9 : -9), s.y - 26 + i * 13); ctx.stroke(); }
     else if (s.k === 'flame') pxFlame(ctx, s.x, s.y, 16 + s.t * 0.05, s.t / s.life, now + s.x);
-    else if (s.k === 'napalm') { pxFlame(ctx, s.x, s.y, 20, 0.2, now + s.x); if (s.tx !== undefined && Math.floor(now / 90) % 2) { ctx.fillStyle = PAL.redAccent; ctx.fillRect(s.tx - 44, GY - 5, 88, 5); } }
+    else if (s.k === 'napalm') { if (s.tx !== undefined) landMark(ctx, s.tx, 100, s, now); pxFlame(ctx, s.x, s.y, 26, 0.2, now + s.x); }
     else if (s.k === 'patch') { const k = s.t / s.life; for (let i = -1; i <= 1; i++) pxFlame(ctx, s.x + i * 26, GY - 10, 26 * (1 - k * 0.5), 0.15 + k * 0.5, now + i * 97 + s.x); }
     else if (s.k === 'wave') { for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#fff3d0' : PAL.boom1; ctx.fillRect(s.x - 20 + i * 10, GY - 46 + i * 9 + Math.sin(now / 40 + i) * 6, 12, 46 - i * 9); } }
     else if (s.k === 'beam') { const k = s.t / s.life; ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(120,255,210,${0.5 * (1 - k)})`; ctx.fillRect(s.x - 34, 0, 68, GY); ctx.fillStyle = `rgba(240,255,250,${0.9 * (1 - k)})`; ctx.fillRect(s.x - 10, 0, 20, GY); ctx.restore(); }
@@ -1089,13 +1106,24 @@ export class Mission extends RailBase {
   drawTells(ctx, now) {
     const b = this.boss, on = Math.floor(now / 80) % 2;
     if ((b.st === 'bolts') && b.cols) for (const cx of b.cols) { ctx.fillStyle = on ? 'rgba(120,255,210,0.28)' : 'rgba(120,255,210,0.12)'; ctx.fillRect(cx - 34, 0, 68, GY); ctx.fillStyle = '#b6ffe9'; ctx.fillRect(cx - 34, GY - 6, 68, 6); }
-    if (b.st !== 'bolts') { ctx.fillStyle = PAL.redAccent; const y = (b.fly ? b.y - b.h / 2 : b.y - b.h) - 40; if (on) { ctx.fillRect(b.x - 5, y - 26, 10, 22); ctx.fillRect(b.x - 5, y, 10, 8); } }
   }
-  drawEater(ctx, x, now, flash, hpK) {
+  // how hot the boss glows right now: a fresh wind-up (a tell that jumps up) heats
+  // it from nothing to full just as it fires; the quick beats inside a volley stay dark
+  bossGlow(now) {
+    const b = this.boss; if (!b || b.st === 'idle' || b.hp <= 0) { if (b) b._lt = 0; return 0; }
+    const t = Math.max(0, b.tell || 0);
+    if (t > (b._lt || 0) + 1) b._t0 = t;
+    b._lt = t;
+    if (!(b._t0 >= 300) || t <= 0) return 0;
+    const k = 1 - t / b._t0;
+    return (0.25 + 0.6 * k) * (0.75 + 0.25 * Math.sin(now / 40));
+  }
+  drawEater(ctx, x, now, flash, hpK, glow) {
     const im = IMG.m_boss_eater; if (!im) return;
     const hh = 340, w = hh * (im.width / im.height), jit = Math.sin(now / 45) * 2;
     ctx.save(); ctx.translate(x + 190 - w, GY - hh + 30 + jit);
     drawImgHit(ctx, im, 0, 0, w, hh, flash, hpK);
+    drawImgGlow(ctx, im, 0, 0, w, hh, glow || 0);
     ctx.restore();
     // stack smoke and the spray where the teeth meet the deck
     for (let i = 0; i < 3; i++) { const ph = ((now / 600) + i * 0.33) % 1; ctx.globalAlpha = 0.5 * (1 - ph); ctx.fillStyle = '#3a3630'; pxBlob(ctx, x + 190 - w * 0.9 + i * 14 - ph * 60, GY - hh + 10 - ph * 120, 12 + ph * 22); }
@@ -1103,11 +1131,11 @@ export class Mission extends RailBase {
     for (let i = 0; i < 5; i++) { const ph = ((now / 180) + i * 0.2) % 1; ctx.fillStyle = i % 2 ? '#d9b98a' : '#8a6a3c'; ctx.fillRect(x + 150 + ph * 70, GY - 20 - Math.sin(ph * 3.14) * 60 - i * 6, 8, 8); }
   }
   drawBoss(ctx, now) {
-    const b = this.boss, fl = Math.max(0, b.flash) / 110, hk = Math.max(0, b.hp / b.hpMax);
-    const draw = (id, hgt, ox, oy, flip) => { const im = IMG[id]; if (!im) return; const w = hgt * (im.width / im.height); ctx.save(); ctx.translate(b.x + ox, (b.fly ? b.y + hgt / 2 : b.y) + oy); if (flip) ctx.scale(-1, 1); drawImgHit(ctx, im, -w / 2, -hgt, w, hgt, fl, hk); ctx.restore(); };
+    const b = this.boss, fl = Math.max(0, b.flash) / 110, hk = Math.max(0, b.hp / b.hpMax), gl = this.bossGlow(now);
+    const draw = (id, hgt, ox, oy, flip) => { const im = IMG[id]; if (!im) return; const w = hgt * (im.width / im.height); ctx.save(); ctx.translate(b.x + ox, (b.fly ? b.y + hgt / 2 : b.y) + oy); if (flip) ctx.scale(-1, 1); drawImgHit(ctx, im, -w / 2, -hgt, w, hgt, fl, hk); drawImgGlow(ctx, im, -w / 2, -hgt, w, hgt, gl); ctx.restore(); };
     const lean = b.st !== 'idle' ? Math.sin(now / 35) * 3 : 0;
     if (b.k === 'zero') draw('m_zombie_fat', 350, lean, 6, false);
-    if (b.k === 'eater') this.drawEater(ctx, b.x, now, fl, hk);
+    if (b.k === 'eater') this.drawEater(ctx, b.x, now, fl, hk, gl);
     if (b.k === 'jellyq') draw('m_boss_jelly', 340, 0, Math.sin(now / 300) * 6, false);
     if (b.k === 'barge') {
       draw('m_boss_barge', 380, 0, 30, true);
