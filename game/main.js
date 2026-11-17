@@ -25,7 +25,7 @@ import { DoorGun, Skyraider } from './rails.js';
 // boss2.js couldn't even be imported until rails.js exported RailBase).
 import { PTBoat, Surf } from './boat.js';
 import { ParleyBoss } from './boss2.js';
-import { Mission, Cine, ROUTE_START } from './missions.js';
+import { Mission, Cine, ROUTE_START, SLOT } from './missions.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('c'), ctx = canvas.getContext('2d');
@@ -148,7 +148,7 @@ function tstr() {
     'fk-title': 'forkAirTitle', 'fk-sub': 'forkAirSub',
     'fk-heli-name': 'forkHeliName', 'fk-heli-desc': 'forkHeliDesc',
     'fk-sky-name': 'forkSkyName', 'fk-sky-desc': 'forkSkyDesc',
-    'p-title': 'pausedTitle', 'p-music': 'musicVol', 'p-sfx': 'sfxVol', 'btn-resume': 'resume',
+    'p-title': 'pausedTitle', 'p-music': 'musicVol', 'p-sfx': 'sfxVol', 'btn-resume': 'resume', 'btn-endrun': 'endRun',
   };
   for (const [id, k] of Object.entries(map)) { const el = $(id); if (el) el.textContent = STR[k]; }
 }
@@ -261,8 +261,18 @@ function startCampaign() {
   runCine('aftermath', { then: () => startMission(ROUTE_START) });
 }
 
-function endGame(won) {
+// v14.4 (Dylan: "Instead of mission failed, it should respawn you automatically,
+// immediately from the last checkpoint. Only when you exit the game does it
+// show you your stats."). A loss is never a screen any more: it is a quick
+// fade and you are back at the last checkpoint with full lives. The tally is
+// only for winning, or for choosing END RUN from the pause menu.
+function endGame(won, quit) {
   if (mode === 'tally') return;
+  if (!won && !quit) {
+    if (ckptSnap) { FX.whiteT0 = 700; FX.whiteT = 700; continueFromCheckpoint(); }
+    else { startGame(); }
+    return;
+  }
   setPauseMenu(false);
   mode = 'tally';
   audio.stopMusic(); audio.hum(false); audio.eng(false);
@@ -270,10 +280,10 @@ function endGame(won) {
   // v13.3 QA: continues were unlimited and free from the same snapshot, so the
   // game literally could not be lost. Three per run: enough to rescue a player
   // stuck on one section, not enough to remove the ending.
-  const canContinue = !won && !!ckptSnap && continuesLeft > 0;
+  const canContinue = false;   // v14.4: losses auto-continue; the tally is only ever an ending
   $('btn-continue').style.display = canContinue ? '' : 'none';
   $('btn-continue').textContent = STR.continueRun + ' (' + continuesLeft + ')';
-  $('t-result').textContent = won ? STR.victory : STR.gameOver;
+  $('t-result').textContent = won ? STR.victory : STR.runOver;
   // the part-two tease rides under the END OF PART ONE card
   const sub = document.getElementById('t-sub2') || (() => {
     const el = document.createElement('div');
@@ -336,6 +346,7 @@ function touchPad(show) {
 }
 
 function playCutscene(which, then) {
+  if (!VIDEO_URLS[which] && which !== 'intro') { if (then) then(); return; }   // a film we do not have: carry on, never fall back to the intro
   const vid = $('cutvid');
   cutsceneActive = true;
   touchPad(false);
@@ -371,7 +382,7 @@ function playCutscene(which, then) {
   const meowTick = () => {
     const now2 = vid.currentTime;
     for (const m of meows) {
-      if (!m.done && now2 >= m.t && now2 < m.t + 1.2) { m.done = true; audio.sfx(m.n, 1.0, m.r); }
+      if (!m.done && now2 >= m.t && now2 < m.t + 1.2) { m.done = true; if (m.n === 'squeak') audio.squeak(m.r); else audio.sfx(m.n, 1.0, m.r); }
     }
   };
   vid.addEventListener('timeupdate', meowTick);
@@ -410,6 +421,7 @@ function handleEvents(evs) {
     fxEvent(ev);
     switch (ev.e) {
       case 'sfx': audio.sfx(ev.n); break;
+      case 'squeak': audio.squeak(ev.n || 3); break;   // the Chancellor talking
       case 'meow': audio.sfx(ev.n, 1.0, ev.r || 1); break;
       case 'meowLate': setTimeout(() => audio.sfx(ev.n, 1.0, ev.r || 1), 650); break;
       case 'music': if (cutsceneActive) filmMusic = ev.n; else audio.music(ev.n); break;   // never under a film's own soundtrack
@@ -542,9 +554,9 @@ $('btn-again').addEventListener('click', () => { ckptSnap = null; lastCkptX = -1
 // CONTINUE: same run, from the last checkpoint, with the life count restored.
 // Score is kept but the continue is recorded, so a continued run cannot quietly
 // pass itself off as a clean one on the best-score board.
-$('btn-continue').addEventListener('click', () => {
-  if (!ckptSnap || continuesLeft <= 0) { startGame(); return; }
-  continuesLeft--;
+$('btn-continue').addEventListener('click', () => continueFromCheckpoint());
+function continueFromCheckpoint() {
+  if (!ckptSnap) { startGame(); return; }
   g = restoreState(ckptSnap, seats());
   for (const p of g.players) { p.lives = CFG.lives; p.hp = CFG.hpMax; p.st = 'alive'; p.invulnT = 2200; }
   g.over = false; g.won = false;
@@ -552,7 +564,6 @@ $('btn-continue').addEventListener('click', () => {
   tunnel = null; rail = null; lastView = null;
   mode = 'game'; show(null);
   audio.ensure(); audio.music('music_rock', 800);
-  fxEvent({ e: 'banner', k: 'continued' });
   // section-tagged snapshot: relaunch the section itself (the rail or the
   // tunnel), not the stretch of jungle in front of it
   if (ckptSnap._section) {
@@ -560,7 +571,9 @@ $('btn-continue').addEventListener('click', () => {
     if (ckptSnap._camp) { camp = { done: ckptSnap._camp.slice(), kit: ckptSnap._kit || null, via: ckptSnap._via || null }; g.over = true; g.won = true; }
     handleEvents([sec.e === 'rail' ? { e: 'rail', k: sec.k, resumed: 1 } : { e: 'fps', map: sec.map }]);
   }
-});
+}
+// END RUN (pause menu): the only way to the stats short of winning
+$('btn-endrun').addEventListener('click', () => { setPauseMenu(false); endGame(false, true); });
 // no start screen: the film cuts straight to the chopper coming down in gameplay
 $('btn-skip').addEventListener('click', () => { $('intro').style.display = 'none'; touchPad(true); $('introvid').pause(); startGame(); });
 $('introvid').addEventListener('ended', () => { $('intro').style.display = 'none'; touchPad(true); startGame(); });
@@ -805,7 +818,10 @@ function frame(now) {
           camp.kit = { weap: wasM.h.weap, ammo: wasM.h.ammo, gren: wasM.h.gren };
           camp.via = wasM.route;
           const nx = wasM.next;
-          if (nx) runCine('map', { done: camp.done.slice(), from: wasM.id, to: nx, via: wasM.route, then: () => startMission(nx) });
+          const toMap = () => runCine('map', { done: camp.done.slice(), from: wasM.id, to: nx, via: wasM.route, then: () => startMission(nx) });
+          // v14.5: after the second mission the dead get up (the 'rising' cine shows why)
+          if (nx && SLOT[wasM.id] === 2) runCine('rising', { then: toMap });
+          else if (nx) toMap();
           else runCine('finale', { then: () => runCine('map', { done: camp.done.slice(), from: 'hive', to: null, epilogue: 1, then: () => playCutscene('victory', () => endGame(true)) }) });
         }
         else if (wasPTBoat) {
@@ -815,7 +831,8 @@ function frame(now) {
           // then you walk east to the LZ), or around it onto the surfboard.
           g.score += kills * 100 + timeBonus;
           if (BRANCHES && route === 'jungle') {
-            playCutscene('rampout', () => runCine('ramp', { then: () => {
+            // v14.4: up the wreck (POV) -> the boat in the air (film) -> the same flight in game
+            playCutscene('rampout', () => playCutscene('rampair', () => runCine('ramp', { then: () => {
               const p3 = g.players[0];
               // Do NOT move him: the boat section starts near the LZ, and a
               // fixed x sent him backward past cleared content (harness-caught).
@@ -825,7 +842,7 @@ function frame(now) {
               FX.whiteT0 = 1200; FX.whiteT = 1200;
               audio.music('music_invasion');
               handleEvents([{ e: 'evac' }]);
-            } }));
+            } })));
           } else {
             handleEvents([{ e: 'rail', k: 'surf' }]);
           }

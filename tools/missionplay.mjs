@@ -30,7 +30,7 @@ const argOf = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=
 const flag = (k) => process.argv.includes(`--${k}`);
 const DIR = argOf('dir', 'game');
 const ROOT = DIR.startsWith('/') ? 'file://' + DIR : `../${DIR}`;   // --dir=/abs/path tests a snapshot (before/after)
-const { Mission, MISSIONS, missionBot } = await import(`${ROOT}/missions.js`);
+const { Mission, MISSIONS, missionBot, ROUTE_START = 'graveyard' } = await import(`${ROOT}/missions.js`);
 const { CFG, C, W, H } = await import(`${ROOT}/config.js`);
 
 const GY = 620, GRAV = 2300, RUN = 310, JUMP = -830, DT = 1000 / 60;
@@ -235,7 +235,7 @@ function playMission(id, skillName, seed, p, route) {
   const S = SKILLS[skillName];
   Math.random = mulberry(seed * 7919 + 13);
   const rng = mulberry(seed * 104729 + 71);
-  const m = new Mission(id, { via: id === 'graveyard' ? null : (process.env.VIA === 'none' ? null : process.env.VIA || null) }); m.botRoute = route || 'low';
+  const m = new Mission(id, { via: id === ROUTE_START ? null : (process.env.VIA === 'none' ? null : process.env.VIA || null) }); m.botRoute = route || 'low';
   if (argOf('heat', '')) m.heat = +argOf('heat', 1);   // what-if knob for tuning
   const bot = makeBot(m, p, S, rng);
   const TR = +argOf('trace', 0);
@@ -338,7 +338,7 @@ function summarize(runs) {
 const SEEDS = +argOf('seeds', 12), seed0 = +argOf('seed', 1);
 const missions = argOf('mission', Object.keys(MISSIONS).join(',')).split(',');
 const skills = argOf('skill', Object.keys(SKILLS).join(',')).split(',');
-const SLOT = { graveyard: 1, caves: 2, bridge: 2, citadel: 3, coast: 3, hive: 4 };
+const SLOT = ROUTE_START === 'bridge' ? { bridge: 1, caves: 2, citadel: 2, graveyard: 3, coast: 3, hive: 4 } : { graveyard: 1, caves: 2, bridge: 2, citadel: 3, coast: 3, hive: 4 };
 const out = {};
 if (!flag('campaign-only')) {
   console.log(`PART TWO playtest  (${DIR}/missions.js, ${SEEDS} seeds, lives=${CFG.lives} hp=${CFG.hpMax})`);
@@ -361,11 +361,11 @@ if (!flag('campaign-only')) {
 }
 if (flag('campaign') || flag('campaign-only')) {
   console.log('\n== CAMPAIGN (4 missions, lives carried, both forks rotated)');
-  const ROUTES = [['caves', 'citadel'], ['caves', 'coast'], ['bridge', 'citadel'], ['bridge', 'coast']];
+  const ROUTES = ROUTE_START === 'bridge' ? [['caves', 'graveyard'], ['caves', 'coast'], ['citadel', 'graveyard'], ['citadel', 'coast']] : [['caves', 'citadel'], ['caves', 'coast'], ['bridge', 'citadel'], ['bridge', 'coast']];
   for (const sk of skills) {
     let wins = 0; const overAt = {}; const dts = [];
     for (let s = 0; s < SEEDS; s++) {
-      const rt = ROUTES[s % 4], order = ['graveyard', rt[0], rt[1], 'hive'];
+      const rt = ROUTES[s % 4], order = [ROUTE_START, rt[0], rt[1], 'hive'];
       const p = { hp: CFG.hpMax, lives: CFG.lives, deaths: 0, st: 'alive' }; let ok = true;
       for (const id of order) { const r = playMission(id, sk, seed0 + s, p, 'low'); if (!r.cleared) { ok = false; overAt[id] = (overAt[id] || 0) + 1; break; } }
       if (ok) wins++; dts.push(p.deaths);

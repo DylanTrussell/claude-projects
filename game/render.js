@@ -47,6 +47,19 @@ function part(kind, x, y, vx, vy, t, r, col) {
 
 export function fxEvent(ev) {
   switch (ev.e) {
+    // v14.4 pickup burst: a ring of pixel stars flies off the prize and a
+    // second ring follows, so a pickup lands like a prize (paired with the
+    // new pickup chime)
+    case 'pickfx': {
+      for (let ring = 0; ring < 2; ring++) for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + ring * 0.26, sp = 220 + ring * 140;
+        part(7, ev.x, ev.y, Math.cos(a) * sp, Math.sin(a) * sp, 520 + ring * 160, 5 - ring, ring ? '#fff6c8' : '#FFC93C');
+        const q = FX.parts.find(o => o.on && o.kind === 7 && o.t === 520 + ring * 160 && o.x === ev.x && o.g === undefined);
+        if (q) { q.g = 0; q.drag = 0.86; }
+      }
+      FX.flash = Math.max(FX.flash || 0, 60);
+      break;
+    }
     case 'score':
       FX.scores.push({ x: ev.x, y: ev.y, n: ev.n | 0, t: 0, T: 850 });
       break;
@@ -411,12 +424,12 @@ function drawAirFork(ctx, cam, t) {
   bush(FORK.sky.x + 10, 318, 250);   // the treeline swallows the tail; the nose and canopy stick out
 }
 // hard-edged pixel puffs and flames (Metal Slug fire never uses soft circles)
-function pixBlob(ctx, x, y, r) {
+export function pixBlob(ctx, x, y, r) {
   const q = 4, R = Math.max(q, Math.round(r / q) * q);
   x = Math.round(x / q) * q; y = Math.round(y / q) * q;
   ctx.fillRect(x - R, y - R / 2, R * 2, R); ctx.fillRect(x - R / 2, y - R, R, R * 2); ctx.fillRect(x - R * 0.75, y - R * 0.75, R * 1.5, R * 1.5);
 }
-function pixFlame(ctx, x, y, r, k, seed) {
+export function pixFlame(ctx, x, y, r, k, seed) {
   ctx.globalAlpha = k > 0.75 ? (1 - k) / 0.25 : 1;
   ctx.fillStyle = k < 0.55 ? '#d8401c' : '#7a2412'; pixBlob(ctx, x, y, r);
   for (let i = 0; i < 3; i++) { const lx = x + (i - 1) * r * 0.6 + Math.sin(seed * 0.02 + i * 2) * r * 0.2; ctx.fillRect(Math.round(lx / 4) * 4 - 4, Math.round((y - r - r * 0.5 * Math.abs(Math.sin(seed * 0.03 + i))) / 4) * 4, 8, r); }
@@ -660,6 +673,17 @@ function drawTraps(ctx, cam, traps) {
 function drawPickup(ctx, x, y, kind, t) {
   const bob = Math.sin(t / 260) * 4;
   ctx.save(); ctx.translate(x, y - 18 + bob);
+  // v14.4: every prize sits in a slow pulse of light with pixel glints, so it
+  // reads as treasure from across the screen
+  if (kind !== 'cheese') {
+    const pu = 0.5 + 0.5 * Math.sin(t / 220);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.18 + 0.18 * pu;
+    ctx.fillStyle = '#FFC93C'; pixBlob(ctx, 0, 0, 26 + pu * 6); ctx.restore();
+    ctx.fillStyle = '#fff6c8';
+    for (let i = 0; i < 3; i++) { const ph = ((t / 700) + i / 3) % 1, r = 2 + Math.round(Math.sin(ph * Math.PI) * 2); const gx = Math.cos(i * 2.1 + t / 900) * 26, gy = Math.sin(i * 2.1 + t / 900) * 18; ctx.fillRect(gx - r * 2, gy - r / 2, r * 4, r); ctx.fillRect(gx - r / 2, gy - r * 2, r, r * 4); }
+  }
+  const art = { grenades: ['pk_bomb', 46], life: ['pk_1up', 50], tuna: ['pk_med', 44], gatling: ['wep_gatling', 64] }[kind];
+  if (art && IMG[art[0]]) { const im = IMG[art[0]], h = art[1] * (kind === 'gatling' ? 0.45 : 1), w = h * (im.width / im.height); ctx.drawImage(im, -w / 2, -h / 2, w, h); ctx.restore(); return; }
   o(ctx);
   if (kind === 'cheese') {
     ctx.fillStyle = PAL.cheese;
@@ -1020,8 +1044,10 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
   // read as "shrunk" rather than "crouched" — pulled back to a much smaller
   // squash. A real crouch pose (own art, not a squashed idle sprite) is
   // still the correct long-term fix, tracked in the backlog.
-  const hgt = CFG.heroH * (crouch ? 0.94 : 1.12);
-  const w2 = CFG.heroH * 1.12 * 0.95 * (crouch ? 1.08 : 1);
+  // v14.4: real kneeling art (hero_*_crouch). The squash is only the fallback.
+  const crouchImg = crouch ? IMG[hero === 'us' ? 'hero_us_crouch' : 'hero_vc_crouch'] : null;
+  const hgt = CFG.heroH * (crouch && !crouchImg ? 0.94 : 1.12);
+  const w2 = CFG.heroH * 1.12 * 0.95 * (crouch && !crouchImg ? 1.08 : 1);
   const flip = face < 0; // hero sprites are generated facing right; mirror for left
   const sheetId = hero === 'us' ? 'sheet_hero_us_run' : 'sheet_hero_vc_run';
   const imgId = hero === 'us' ? 'hero_us' : 'hero_vc';
@@ -1068,6 +1094,9 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     const uh = hgt;
     const uw = uh * (upImg.width / upImg.height);
     drawImg(ctx, upId, sx - uw / 2, y - uh, uw, uh, flip);
+  } else if (crouchImg && st === 'alive') {   // down on one knee, gun level
+    const ch = hgt * 0.82, cw = ch * (crouchImg.width / crouchImg.height);
+    drawImg(ctx, hero === 'us' ? 'hero_us_crouch' : 'hero_vc_crouch', sx - cw / 2, y - ch, cw, ch, flip);
   } else if (runT > 0 && st === 'alive' && !crouch && !fireFlash && SHEET[sheetId] && !wepArt) {
     const s = SHEET[sheetId];
     const fr = Math.floor(runT / (1000 / s.fps)) % s.frames;
@@ -1097,7 +1126,7 @@ function drawPlayerEnt(ctx, p, cam, t, myPid) {
     // both guns showed at once. The overlay now sits ON the baked gun's own
     // line and is sized up a touch so it covers it: one gun, the upgrade.
     const ww = hgt * 1.04, wh2 = ww * (wi.height / wi.width);
-    const hx = sx + face * hgt * 0.22, hy2 = y - hgt * (aimUp ? 0.72 : 0.367) + runBob;
+    const hx = sx + face * hgt * 0.22, hy2 = y - hgt * (aimUp ? 0.72 : crouchImg ? 0.33 : 0.367) + runBob;
     ctx.save();
     ctx.translate(hx, hy2);
     if (aimUp) ctx.rotate(face * -1.15);       // swing the barrel skyward with the aim-up pose
@@ -1925,6 +1954,12 @@ export function render(ctx, view, t, myPid, dbg) {
       ctx.beginPath(); ctx.arc(p.x - cam, p.y, rr, 0, 7); ctx.fill();
       continue;
     }
+    if (p.kind === 7) {           // pickup star: a hard pixel plus that shrinks as it fades
+      const rr = Math.max(1, Math.round(p.r * (0.4 + a * 0.6))), x0 = Math.round(p.x - cam), y0 = Math.round(p.y);
+      ctx.globalAlpha = Math.min(1, a * 1.5); ctx.fillStyle = p.col;
+      ctx.fillRect(x0 - rr * 2, y0 - rr / 2, rr * 4, rr); ctx.fillRect(x0 - rr / 2, y0 - rr * 2, rr, rr * 4);
+      continue;
+    }
     ctx.globalAlpha = p.kind === 2 ? a * 0.6 : a;
     ctx.fillStyle = p.col;
     ctx.beginPath(); ctx.arc(p.x - cam, p.y, p.r * (p.kind === 2 ? 1.6 - a * 0.6 : a), 0, 7); ctx.fill();
@@ -2004,8 +2039,15 @@ export function render(ctx, view, t, myPid, dbg) {
       ctx.lineWidth = 2;
       ctx.strokeRect(13, hy + 5, (segW + 4) * CFG.hpMax + 6, segH + 8);
     }
-    const wLabel = weap === 'gatling' ? `  GATLING ${ammo}` : weap === 'raygun' ? `  RAY GUN ${ammo}` : weap === 'flame' ? `  FLAME ${ammo}` : '';
-    hudText(ctx, `x${lives}  ✚${gren}  🧀${cheese}` + wLabel, 16, hy + 34, 14, 'left', PAL.hudDim);
+    // v14.4 (Dylan): one gun icon and one bomb icon everywhere, the icons never
+    // change, only the numbers do. The rifle reads as infinity.
+    hudText(ctx, `x${lives}`, 16, hy + 34, 14, 'left', PAL.hudDim);
+    const ammoTxt = (!weap || weap === 'rifle' || weap === 'pistol' || weap === 'pointer') ? '∞' : String(ammo);
+    let ix = 52;
+    const icon = (id, w, txt) => { const im = IMG[id]; if (im) { const h = 18, ww = h * (im.width / im.height); ctx.drawImage(im, ix, hy + 20, Math.min(w, ww), h); ix += Math.min(w, ww) + 4; } hudText(ctx, txt, ix, hy + 34, 14, 'left', PAL.hud); ix += 12 + txt.length * 9; };
+    icon('hud_gun', 34, ammoTxt);
+    icon('hud_bomb', 14, String(gren));
+    if (cheese) hudText(ctx, `🧀${cheese}`, ix, hy + 34, 14, 'left', PAL.hudDim);
     hy += 62;
   }
   hudText(ctx, `${STR.score}: ${view.score}`, W / 2, 30, 18, 'center');

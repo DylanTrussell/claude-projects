@@ -7,7 +7,7 @@
 import { CFG, C, PAL, W, H, BRANCHES } from './config.js';
 import { IMG } from './assets.js';
 import { RailBase } from './rails.js';
-import { drawMuzzleBurst } from './render.js'; // v11.2: shared "real fire" burst, replaces the flat circle
+import { drawMuzzleBurst, pixBlob, pixFlame } from './render.js'; // v11.2 burst; v14.4 hard-edged pixel fire and smoke
 
 const GY = 640;
 
@@ -20,10 +20,14 @@ const GY = 640;
 const DIVE_IN   = 1400;   // the ship comes down
 const LANES_AT   = 2600;  // BRANCHES: the two lanes past it are readable from here
 const COMMIT     = 5200;  // the reactor lets go (BRANCHES: your lane locks in)
-const FORK_END   = 6600;  // cut to the film you earned
+const FORK_END   = 6600;  // ramp: cut to the film you earned
+const FORK_END_R = 8600;  // the channel: a quiet run past the wreck, then the mine
 const RAMP_Y     = 250;   // the wreck sits up-river; BRANCHES: steer above this line to take it
 const RAMP_BAND  = 130;   // BRANCHES: how close to RAMP_Y counts as hitting it
 
+// v14.4: the bow gun's muzzle in the boat art (ptboat_vehicle drawn 150 tall at x 220):
+// barrel tip at (632, 92) of 640x296. The flash and the rounds used to start mid-barrel.
+const BOW_TIP_X = 378, BOW_TIP_DY = -28;
 function aabb(ax, ay, bx, by, r) { return Math.abs(ax - bx) < r && Math.abs(ay - by) < r; }
 
 // v14.3 co-op: Charlie's rounds are hot orange, Whiskers' stay pale yellow,
@@ -220,7 +224,7 @@ export class PTBoat extends RailBase {
     if ((bits & C.FIRE) && this.gunCd <= 0) {
       this.gunCd = 105; this.fireT = 70;
       this.ev({ e: 'sfx', n: 'sfx_shot' });
-      this.shots.push({ x: 300, y: this.py - 8, vx: 900, vy: 0, t: 1000 });
+      this.shots.push({ x: BOW_TIP_X, y: this.py + BOW_TIP_DY, vx: 900, vy: 0, t: 1000 });   // out of the barrel, not the breech
     }
     if (gun2) {
       const c = this.c2 || (this.c2 = { aim: -0.25, gunCd: 0, fireT: 0 });
@@ -352,16 +356,23 @@ export class PTBoat extends RailBase {
         this.shake = 20;
         this.ev({ e: 'sfx', n: 'sfx_explosion' });
         this.ev({ e: 'shake' });
+        // v14.4 match cut: the pixel ship hits the water and the film takes the
+        // impact from a lower angle, then hands back a wreck already settled
+        this.ev({ e: 'cutscene', which: 'shipcrash' });
       }
       // lock the lane in once, at the commit point, so the outcome cannot
       // flicker on the last frame. Only the BRANCHES build has a ramp lane.
       if (k > COMMIT && this.fork.ramp === undefined) {
         this.fork.ramp = BRANCHES && Math.abs(this.py - RAMP_Y) < RAMP_BAND ? 1 : 0;
-        this.shake = 26;
-        this.ev({ e: 'sfx', n: 'sfx_explosion' });
-        this.ev({ e: 'shake' });
+        if (this.fork.ramp) { this.ev({ e: 'sfx', n: 'sfx_shrapnel' }); this.shake = 10; }
       }
-      if (k > FORK_END) {
+      // the channel: a few seconds of quiet water, then a mine comes up under the bow
+      if (this.fork.ramp === 0 && k > FORK_END_R - 1400 && !this.fork.mine) {
+        this.fork.mine = 1; this.shake = 30;
+        this.boom(330, this.py, 1); this.boom(260, this.py - 30, 1);
+        this.ev({ e: 'sfx', n: 'sfx_explosion' }); this.ev({ e: 'shake' });
+      }
+      if (k > (this.fork.ramp === 0 ? FORK_END_R : FORK_END)) {
         this.done = true;
         this.route = this.fork.ramp ? 'jungle' : 'surf';   // main.js reads this
       }
@@ -473,9 +484,14 @@ export class PTBoat extends RailBase {
     // the boat
     const bi = IMG.ptboat_vehicle;
     const bob = Math.sin(now / 260) * 6;
+    // v14.4: on the ramp the boat noses up and climbs the back of the wreck
+    const climb = this.fork && this.fork.ramp === 1 ? Math.min(1, (this.fork.t - COMMIT) / (FORK_END - COMMIT)) : 0;
     if (bi) {
       const bh = 150, bw = bh * (bi.width / bi.height);
+      ctx.save();
+      if (climb > 0) { ctx.translate(220 + climb * 260, this.py - climb * 170); ctx.rotate(-0.42 * Math.min(1, climb * 2)); ctx.translate(-220, -this.py); }
       ctx.drawImage(bi, 220 - bw / 2, this.py - bh / 2 + bob, bw, bh);
+      ctx.restore();
     } else {
       ctx.fillStyle = PAL.khaki; ctx.fillRect(150, this.py - 30 + bob, 160, 60);
       ctx.fillStyle = PAL.khakiDark; ctx.fillRect(150, this.py - 30 + bob, 160, 14);
@@ -486,7 +502,7 @@ export class PTBoat extends RailBase {
       ctx.beginPath(); ctx.moveTo(150 - i * 22, this.py + 24 + bob + Math.sin(this.wake * 4 + i) * 4);
       ctx.lineTo(120 - i * 22, this.py + 30 + bob); ctx.stroke();
     }
-    if (this.fireT > 0) drawMuzzleBurst(ctx, 300, this.py - 8 + bob, 0, this.fireT / 70); // v11.2: real fire burst
+    if (this.fireT > 0) drawMuzzleBurst(ctx, BOW_TIP_X, this.py + BOW_TIP_DY + bob, 0, this.fireT / 70); // at the muzzle
     this.drawBooms(ctx);
     // v13.9 -- scan, lock, burn. Drawn over the boat so the beam lands ON it.
     if (this.fork) this.drawFork(ctx, now);
@@ -498,131 +514,85 @@ export class PTBoat extends RailBase {
     ctx.fillText('CHARGES ' + '▮'.repeat(this.charges), 24, 86);
   }
 
-  // v13.13 -- THE WRECK, drawn. The ship comes down and settles across the
-  // channel, fin up out of the water, before the reactor takes your stern.
+  // v14.4 -- THE WRECK, drawn again from scratch (Dylan: "the ship crashing looks
+  // like shit"). The dive trails hard-edged pixel fire and smoke, not soft
+  // circles; at impact the film takes over; when it hands back, the hull is
+  // settled low in the river with water lapping over it, its ribbed back
+  // sloping up as the ramp. Two routes read with no words: gold chevrons climb
+  // the ramp, cyan chevrons run on down the open channel to the right.
   drawFork(ctx, now) {
     const k = this.fork.t;
-
-    // --- the ship coming down ---
-    // v13.12: it took your bow gun on the way in, so it arrives already hurt
-    // and settles as a burnt-out wreck. Standing rule: everything that takes
-    // damage visibly reacts, and this was the one thing in the scene that
-    // soaked fire without changing.
     const hull = IMG.alien_scanship_hurt || IMG.alien_scanship;
     const hh = 190, hw = hull ? hh * (hull.width / hull.height) : 380;
-    // v13.14: the descent used to run 1.2s PAST the impact, so the diving hull
-    // and the settled wreck were on screen together, two ships apart. The hull
-    // now flies until the moment the wreck appears, and not one frame after.
+    const WX = 640, wy = RAMP_Y;
     if (k < DIVE_IN) {
       const e = Math.min(1, k / DIVE_IN);
-      const sx2 = W + 260 + (620 - (W + 260)) * e;
-      const sy2 = 120 + Math.pow(e, 2.2) * (RAMP_Y - 120);
-      // fire streaming off it, laid along the path behind it
-      ctx.save(); ctx.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < 8; i++) {
-        const ph = ((now / 180) + i * 0.33) % 1;
-        ctx.globalAlpha = 0.5 * (1 - ph) * (0.3 + e);
-        ctx.fillStyle = i % 3 === 0 ? '#fff0b0' : i % 3 === 1 ? '#ff9a3c' : '#ff5a1e';
-        ctx.beginPath(); ctx.arc(sx2 + 40 + i * 26 + ph * 90, sy2 - 30 - i * 9 - ph * 40, 8 + ph * 16, 0, 7); ctx.fill();
+      const sx2 = W + 260 + (WX - (W + 260)) * e, sy2 = 110 + Math.pow(e, 2.2) * (wy - 110);
+      for (let i = 0; i < 10; i++) {                       // smoke laid along the path it came down
+        const ph = ((now / 420) + i / 10) % 1;
+        ctx.globalAlpha = 0.7 * (1 - ph) * (0.3 + e * 0.7);
+        ctx.fillStyle = ph < 0.3 ? '#1f1c1a' : '#3c3833';
+        pixBlob(ctx, sx2 + 70 + i * 30 + ph * 60, sy2 - 24 - i * 12 - ph * 30, 10 + ph * 20);
       }
-      ctx.restore();
-      ctx.save();
-      ctx.translate(sx2, sy2);
-      ctx.rotate(e * 0.55);                          // nose over as it augers in
+      ctx.globalAlpha = 1;
+      ctx.save(); ctx.translate(sx2, sy2); ctx.rotate(e * 0.5);
       if (hull) ctx.drawImage(hull, -hw / 2, -hh / 2, hw, hh);
       ctx.restore();
-      // the smoke it trails
-      for (let i = 0; i < 6; i++) {
-        const ph = ((now / 260) + i * 0.4) % 1;
-        ctx.globalAlpha = 0.45 * (1 - ph) * e;
-        ctx.fillStyle = '#2a2a2a';
-        ctx.beginPath(); ctx.arc(sx2 + 60 + i * 34 + ph * 120, sy2 - 10 - i * 14 - ph * 50, 10 + ph * 22, 0, 7); ctx.fill();
-      }
-      ctx.globalAlpha = 1;
+      for (let i = 0; i < 4; i++) pixFlame(ctx, sx2 + 30 + i * 26, sy2 - 26 - i * 10, 16 - i * 2, ((now / 260) + i * 0.27) % 0.7, now + i * 99);
+      return;
     }
-
-    // --- the wreck, once it is down: hull in the water, fin up as the ramp ---
-    if (k > DIVE_IN) {
-      const set = Math.min(1, (k - DIVE_IN) / 900);
-      const wy = RAMP_Y;
-      // spray on impact
-      if (set < 1) {
-        ctx.save(); ctx.globalAlpha = (1 - set) * 0.8;
-        ctx.fillStyle = 'rgba(220,240,235,0.9)';
-        for (let i = 0; i < 16; i++) {
-          const a2 = (i / 16) * Math.PI * 2;
-          const r2 = 40 + set * 260;
-          ctx.beginPath(); ctx.arc(620 + Math.cos(a2) * r2, wy + Math.sin(a2) * r2 * 0.4, 12 * (1 - set), 0, 7); ctx.fill();
-        }
-        ctx.restore();
-      }
-      // the half-sunk hull, burnt out now rather than merely damaged
-      const dead = IMG.alien_scanship_wreck || hull;
-      const dw = dead ? hh * (dead.width / dead.height) : hw;
-      ctx.save();
-      ctx.globalAlpha = set;
-      ctx.translate(620, wy + 28);
-      ctx.rotate(0.16);
-      if (dead) ctx.drawImage(dead, -dw / 2, -hh / 2, dw, hh * 0.72);
-      ctx.restore();
-      // (v13.14: the flat pale "fin" wedge that used to be drawn here was the
-      // ramp cue for the removed fork -- a beige triangle pasted on the wreck.
-      // Gone. The wreck art carries the shape.)
-      // fires on the wreck
-      for (let i = 0; i < 7; i++) {
-        const ph = ((now / 340) + i * 0.4) % 1;
-        ctx.globalAlpha = 0.55 * (1 - ph) * set;
-        ctx.fillStyle = i % 3 === 0 ? '#8CFF3B' : '#ff9a3c';
-        ctx.beginPath(); ctx.arc(600 + i * 34, wy + 30 - ph * 90, 8 + ph * 15, 0, 7); ctx.fill();
-      }
-      ctx.globalAlpha = 1;
+    // settled: sunk to the waterline, tilted with the back up as a ramp
+    const dead = IMG.alien_scanship_wreck || hull;
+    const dw = dead ? hh * (dead.width / dead.height) : hw;
+    const rise = Math.min(1, (k - DIVE_IN) / 600);        // after the film it is already down; this only eases the first frame
+    ctx.save();
+    ctx.translate(WX, wy + 40 - rise * 6); ctx.rotate(-0.14);
+    if (dead) ctx.drawImage(dead, -dw / 2, -hh / 2, dw, hh * 0.78);
+    ctx.restore();
+    // the river closes over the low side of the hull: a band of water, foam where it breaks
+    const wl = wy + 66;
+    ctx.fillStyle = 'rgba(30,96,94,0.92)';
+    for (let x = WX - dw * 0.42; x < WX + dw * 0.42; x += 16) ctx.fillRect(x, wl + Math.round(Math.sin(x / 40 + now / 380) * 3), 16, 34);
+    ctx.fillStyle = '#e6f6f0';
+    for (let i = 0; i < 14; i++) { const fx = WX - dw / 2 + i * (dw / 13) + Math.sin(now / 300 + i) * 6; ctx.fillRect(fx, wl - 2 + (i % 2) * 3, 18 + (i % 3) * 6, 4); }
+    // steam and smoke off the hot hull, fires along its back
+    for (let i = 0; i < 7; i++) {
+      const ph = ((now / 1600) + i / 7) % 1;
+      ctx.globalAlpha = 0.55 * (1 - ph);
+      ctx.fillStyle = i % 2 ? '#d9dcd2' : '#3c3833';
+      pixBlob(ctx, WX - 60 + i * 26 + ph * 50, wy - 20 - ph * 200, 10 + ph * 26);
     }
-
-    // --- BRANCHES: the two lanes, while the choice is still open ---
-    if (BRANCHES && k > LANES_AT && k < COMMIT) {
-      const pulse = 0.45 + 0.3 * Math.sin(now / 190);
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 4; i++) pixFlame(ctx, WX - 90 + i * 60, wy + 14 - i * 8, 13, ((now / 360) + i * 0.29) % 0.65, now + i * 131);
+    // --- the two routes, while the choice is open: chevrons, no words ---
+    if (BRANCHES && k < COMMIT) {
       const onRamp = Math.abs(this.py - RAMP_Y) < RAMP_BAND;
-      ctx.save();
-      ctx.globalAlpha = onRamp ? pulse + 0.25 : pulse * 0.5;
-      ctx.strokeStyle = '#FFC93C'; ctx.lineWidth = onRamp ? 5 : 3;
-      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
-      ctx.beginPath(); ctx.moveTo(260, RAMP_Y); ctx.lineTo(540, RAMP_Y); ctx.stroke();
-      ctx.restore();
-      ctx.save();
-      ctx.globalAlpha = onRamp ? pulse * 0.5 : pulse + 0.25;
-      ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = onRamp ? 3 : 5;
-      ctx.setLineDash([26, 18]); ctx.lineDashOffset = -(now / 22) % 44;
-      ctx.beginPath(); ctx.moveTo(260, 470); ctx.lineTo(760, 470); ctx.stroke();
-      ctx.restore();
-      ctx.setLineDash([]);
+      const chev = (x, y, a, col, lit, sc) => {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.scale(sc || 1, sc || 1);
+        ctx.globalAlpha = lit; ctx.fillStyle = '#10201e'; ctx.beginPath(); ctx.moveTo(-12, -16); ctx.lineTo(8, 0); ctx.lineTo(-12, 16); ctx.lineTo(-4, 0); ctx.closePath(); ctx.translate(3, 3); ctx.fill();
+        ctx.translate(-3, -3); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-12, -16); ctx.lineTo(8, 0); ctx.lineTo(-12, 16); ctx.lineTo(-4, 0); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      };
+      for (let i = 0; i < 4; i++) {
+        const ph = ((now / 520) - i * 0.25) % 1, lit = (0.45 + 0.55 * Math.max(0, Math.sin(ph * Math.PI))) * (onRamp ? 1 : 0.7);
+        chev(300 + i * 70, RAMP_Y + 40 - i * 22, -0.3, '#FFC93C', lit, 1.5);        // straight on: up the ramp
+      }
+      for (let i = 0; i < 5; i++) {
+        const ph = ((now / 520) - i * 0.2) % 1, lit = (0.35 + 0.65 * Math.max(0, Math.sin(ph * Math.PI))) * (onRamp ? 0.55 : 1);
+        chev(420 + i * 90, 480, 0, '#7fd8ff', lit, 1.5);                                // or right, down the channel
+      }
+      ctx.globalAlpha = 1;
     }
-    // --- BRANCHES, committed to the ramp: the boat pitches and climbs ---
+    // --- the ramp: up the back of the wreck, spray off the keel ---
     if (this.fork.ramp === 1) {
       const j = Math.min(1, (k - COMMIT) / (FORK_END - COMMIT));
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.35 * j;
-      ctx.fillStyle = 'rgba(255,230,180,0.9)';
-      ctx.beginPath(); ctx.ellipse(220 + j * 300, this.py - j * 210, 140, 46, -0.5, 0, 7); ctx.fill();
-      ctx.restore();
+      ctx.fillStyle = '#e6f6f0';
+      for (let i = 0; i < 8; i++) { const ph = ((now / 160) + i / 8) % 1; ctx.fillRect(240 - ph * 120 + j * 260, this.py + 30 - ph * 40 - j * 160, 6, 6); }
     }
-    // --- the reactor lets go as you draw level ---
-    if (k > COMMIT && this.fork.ramp !== 1) {
-      const j = Math.min(1, (k - COMMIT) / 500);
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      const g2 = ctx.createRadialGradient(600, RAMP_Y + 20, 0, 600, RAMP_Y + 20, 200 + j * 460);
-      g2.addColorStop(0, `rgba(230,255,220,${0.95 * (1 - j * 0.5)})`);
-      g2.addColorStop(0.4, `rgba(140,255,90,${0.6 * (1 - j * 0.5)})`);
-      g2.addColorStop(1, 'rgba(140,255,90,0)');
-      ctx.fillStyle = g2;
-      ctx.beginPath(); ctx.arc(600, RAMP_Y + 20, 200 + j * 460, 0, 7); ctx.fill();
-      ctx.restore();
-    }
-
     // white-out into whichever film you earned
-    if (k > FORK_END - 800) {
-      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (k - (FORK_END - 800)) / 800).toFixed(3)})`;
+    const end = this.fork.ramp === 0 ? FORK_END_R : FORK_END;
+    if (k > end - 800) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (k - (end - 800)) / 800).toFixed(3)})`;
       ctx.fillRect(0, 0, W, H);
     }
   }

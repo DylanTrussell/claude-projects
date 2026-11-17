@@ -32,6 +32,8 @@ const RAW = {
   victorySub: "EVERY ROAD GOES SOMEWHERE ELSE. TRY THE OTHER ONE.",
   playAgain: "START OVER",
   continueRun: "CONTINUE FROM CHECKPOINT",
+  runOver: "RUN OVER",
+  endRun: "END RUN",
   continued: "BACK IN THE FIGHT",
   backToLobby: "BACK TO SQUAD ROOM",
   score: "SCORE",
@@ -149,7 +151,7 @@ const RAW = {
   chancellorTaunt: "\"CHANCELLOR GRIMTAIL DOES NOT NEGOTIATE.\"",
   findWeakness: "HIT THE PYLONS WHEN THEY FLASH",
   parleyControls: "A/D DODGE · J FIRE",
-  shieldDown: "SHIELD DOWN — HE'S OPEN!",
+  shieldDown: "SHIELD DOWN. HE'S OPEN!",
   chancellorDown: "CHANCELLOR GRIMTAIL DOWN",
   tapToStart: "TAP OR PRESS ANY KEY",
   skip: "SKIP ▶",
@@ -217,6 +219,9 @@ export const CUT_MEOWS = {
   // v13.5: the truce film's meows are now BAKED INTO ITS AUDIO TRACK (see
   // chunks.js), RMS-matched to the film's own dialogue. Firing this layer on
   // top as well would double every line, so the film carries it alone.
+  // v14.4: the Chancellor squeaks his lines like the rat he is ([t, 'squeak', count])
+  parley: [[3.6, 'squeak', 4], [4.7, 'squeak', 3], [6.4, 'squeak', 4], [7.6, 'squeak', 2]],
+  grimdeath: [[0.6, 'squeak', 5], [2.2, 'squeak', 2]],
   truce: [],
 };
 

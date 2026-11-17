@@ -192,10 +192,10 @@ function stepBike(g, p, bits, dt, dts) {
     }
     if (g.players.some(q => q.mode === 'side' && q.st === 'alive')) dir = 1; // co-op: Charlie has the turret, Whiskers shoots ahead
     p.turret = dir;                                     // renderer flips the gun
-    fireBullet(g, p.x + (up ? 20 : dir * 40), p.y - (up ? 96 : 62),
-      up ? 140 : dir * 780, up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
+    const [ox, oy] = bikeMuzzle(p, dir, up);
+    fireBullet(g, ox, oy, up ? 140 : dir * 780, up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
     evPush(g, { e: 'sfx', n: 'sfx_shot' });
-    evPush(g, { e: 'muzzle', x: p.x + (up ? 30 : dir * 48), y: p.y - (up ? 104 : 62), up: up ? 1 : 0, f: dir });
+    evPush(g, { e: 'muzzle', x: ox, y: oy, up: up ? 1 : 0, f: dir });
   }
   if ((bits & C.GREN) && !(p.prevC & C.GREN) && p.grenCd <= 0 && p.gren > 0) {
     p.gren--; p.grenCd = CFG.grenadeCd;
@@ -204,6 +204,15 @@ function stepBike(g, p, bits, dt, dts) {
   p.prevC = bits;
 }
 
+// v14.4: where the bike's guns really are (bike.png, drawn 210 wide from its
+// bottom centre). The sidecar MG points back: its muzzle is 104px behind the
+// anchor. Aimed up, it fires from over Charlie's shoulder. Forward fire is
+// Whiskers' sidearm at the bars. Shots and flashes used to come from his head.
+function bikeMuzzle(p, dir, up) {
+  if (up) return [p.x - 78, p.y - 96];
+  if (dir < 0) return [p.x - 104, p.y - 80];
+  return [p.x + 58, p.y - 86];
+}
 // --- co-op: P2 in the sidecar works the turret by hand ---
 function stepSide(g, p, bits, dt) {
   const d = g.players.find(q => q !== p && q.mode === 'bike' && q.st !== 'out');
@@ -226,10 +235,10 @@ function stepSide(g, p, bits, dt) {
     }
     const up = p.aimUp, down = !!(bits & C.DOWN);
     d.turret = dir;
-    fireBullet(g, p.x + (up ? 20 : dir * 40), p.y - (up ? 96 : 62),
-      up ? 140 : dir * 780, up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
+    const [ox, oy] = bikeMuzzle(d, dir < 0 ? -1 : 0, up);   // Charlie's sidecar gun: rear, or tipped up
+    fireBullet(g, ox, oy, up ? 140 : dir * 780, up ? -720 : (down ? 520 : (g.rng() - 0.5) * 60), 2, 1);
     evPush(g, { e: 'sfx', n: 'sfx_shot' });
-    evPush(g, { e: 'muzzle', x: p.x + (up ? 30 : dir * 48), y: p.y - (up ? 104 : 62), up: up ? 1 : 0, f: dir });
+    evPush(g, { e: 'muzzle', x: ox, y: oy, up: up ? 1 : 0, f: dir });
   }
   if ((bits & C.GREN) && !(p.prevC & C.GREN) && p.grenCd <= 0 && p.gren > 0) {
     p.gren--; p.grenCd = CFG.grenadeCd;
@@ -1420,6 +1429,7 @@ function hostileTo(g, e2) {
 }
 
 function applyPickup(g, p, kind) {
+  evPush(g, { e: 'sfx', n: 'sfx_pickup' }); evPush(g, { e: 'pickfx', x: p.x, y: p.y - 50 });   // v14.4: every prize lands with a chime and a burst
   if (kind === 'gatling') { p.weap = 'gatling'; p.ammo = CFG.gatlingAmmo; evPush(g, { e: 'banner', k: 'gotGatling' }); }
   // Rayguns drop constantly (18% off aliens, 25% off UFOs) and used to
   // overwrite whatever you were holding unconditionally. The flame crate sits

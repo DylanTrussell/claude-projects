@@ -1,7 +1,7 @@
 // Headless co-op run of every Part Two mission: two cats, both bot-driven.
 // Cases per mission: co-op from the drop, P2 dropping in halfway, P2 running
 // out of lives and being revived, and P1 running out with Charlie finishing.
-import { Mission, MISSIONS, missionBot } from '../public/missions.js';
+import { Mission, MISSIONS, missionBot, ROUTE_START } from '../public/missions.js';
 import { CFG, C } from '../public/config.js';
 
 const DT = 1000 / 60;
@@ -23,7 +23,7 @@ let fail = 0;
 const check = (ok, msg) => { console.log(`${ok ? 'OK  ' : 'FAIL'} ${msg}`); if (!ok) fail++; };
 
 function run(id, route, mode) {
-  const m = new Mission(id, { via: id === 'graveyard' ? null : route }); m.botRoute = route;
+  const m = new Mission(id, { via: id === ROUTE_START ? null : route }); m.botRoute = route;
   const p1 = pl(99), p2 = pl(99);
   let ms = 0, fr = 0, joined = mode !== 'join', shots2 = 0, revived = false, p2wasOut = false, p1out = false;
   while (!m.done && ms < 480000) {

@@ -18,6 +18,16 @@ import { openAirFork, FORK, joinCharlie, addPlayer } from '../public/sim.js';
 const JOIN = process.argv.includes('--join');
 const P2 = () => g.players[1];
 const as2 = (m) => { const v = Object.create(m); Object.defineProperty(v, 'h', { value: m.h2 }); return v; };
+// P2 plays like a person: shares the push right but turns to clear anything behind the pair
+function bot2(m, fr) {
+  let b = missionBot(as2(m), fr);
+  const h = m.h2; if (!h || m.boss || m.phase !== 'play') return b;
+  let behind = null;
+  for (const e of m.en) if (e.st === 'live' && !e.rise && e.x < h.x - 40 && e.x > m.cam) { if (!behind || e.x > behind.x) behind = e; }
+  const ahead = m.en.some(e => e.st === 'live' && !e.rise && e.x >= h.x - 40 && e.x < m.cam + 1280);
+  if (behind && !ahead) { b = (b & ~C.R) | C.FIRE; if (h.face > 0 || fr % 30 < 4) b |= C.L; }
+  return b;
+}
 
 const RAIL_CTOR = { skyraider: Skyraider, doorgun: DoorGun, ptboat: PTBoat, surf: Surf, parley: ParleyBoss };
 const RAIL_BOT = { ptboat: boatBot, surf: boatBot, parley: parleyBot };
@@ -179,7 +189,7 @@ while (simMs < MAXMS && !victory && !gameover) {
         while (id) {
           const m = new Mission(id, { via: hop ? ROUTES[(hop - 1) % ROUTES.length] : null }); m.botRoute = ROUTES[hop % ROUTES.length];
           let ms = 0, fr = 0;
-          while (!m.done && ms < 420000) { const b2 = P2() && m.h2 ? missionBot(as2(m), fr + 7) : 0; m.step(missionBot(m, fr++), 1000 / 60, p, b2, P2()); m.events.length = 0; ms += 1000 / 60; }
+          while (!m.done && ms < 420000) { const b2 = P2() && m.h2 ? bot2(m, fr + 7) : 0; m.step(missionBot(m, fr++), 1000 / 60, p, b2, P2()); m.events.length = 0; ms += 1000 / 60; }
           if (P2()) console.log(`  co-op: h2=${m.h2 ? Math.round(m.h2.x) : '-'} p2deaths=${P2().deaths}`);
           console.log(`MISSION ${id}: done=${m.done} dead=${!!m.dead} route=${m.route} next=${m.next} kills=${m.kills} in ${(ms / 1000).toFixed(1)}s`);
           if (!m.done) { console.log('RESULT: FAIL — mission timeout ' + id); process.exit(1); }

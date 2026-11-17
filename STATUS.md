@@ -6,6 +6,17 @@
 
 Project lives ONLY on the SSD: `/Volumes/POSTCARD CITY SSD/Apocalypse Meow/apocalypse-meow`, branch `missions`.
 
+## v14.5 (IN PROGRESS, NOT LIVE, committed on missions, held for more notes) (2026-11-17)
+
+- Deaths auto-continue from the last checkpoint; stats only on END RUN (pause) or victory.
+- Grimtail: nodes seated in hull housings, halo artifact gone, 6-rocket shootable volleys, carpet bombs, rat squeaks.
+- Part Two route: bridge -> caves|citadel -> graveyard|coast (zombies, after the 'rising' cine) -> hive.
+- Fork rides: tank|buffalo, then gunship|crab walker; signs show the ride. Alien hover-craft replaces US choppers.
+- Zero boss animated, boss bar at top; all enemies breathe/flinch; bridge eater chews, fires, glows.
+- Graveyard: bomber once plus jet and tank wrecks. HUD: gun and bomb icons. New pickup art, chime, star burst.
+- Real crouch sprites. PT boat: muzzle at barrel tip; ship crash film (match cut) + rampair film; chevron fork.
+- Bike: shots and flashes from the real gun barrels.
+
 ## v14.4: the fork is a place, the crash is a fight (2026-11-17)
 
 - Huey or Skyraider is no longer a menu. After the truce both birds sit on the ravine screen,

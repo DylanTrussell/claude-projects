@@ -220,6 +220,12 @@ export const CHUNKS = {
       m_pk_med: './assets/m/m_pk_med.png',
       m_ride_buffalo: './assets/m/m_ride_buffalo.png',
       m_ride_tank: './assets/m/m_ride_tank.png',
+      // v14.4: fork 2's rides, the graveyard's other wrecks, Grimtail's downed flagship
+      m_ride_copter: './assets/m/m_ride_copter.png',
+      m_ride_crab: './assets/m/m_ride_crab.png',
+      m_wreck_jet: './assets/m/m_wreck_jet.png',
+      m_wreck_tank: './assets/m/m_wreck_tank.png',
+      m_grimtail_wreck: './assets/m/m_grimtail_wreck.png',
       ptboat_vehicle: CDN + '34eae323-916b-4a74-bf92-ae02216062dc.png',
     },
   },
@@ -353,6 +359,8 @@ export const VIDEO_URLS = {
   // meets the ramp at 2.4s, climbs, and ends at the crest. Compare the two side
   // by side before ever swapping this again.
   rampout: CDN + '26872fd9-a9eb-426a-af0f-a807d26ad327.mp4',
+  shipcrash: HF + 'hf_20261117_222552_c13c458b-33d0-4bca-a7a0-725cbb7c2ef5.mp4',   // v14.4: match cut from the in-game dive
+  rampair: HF + 'hf_20261117_221404_538f5dbc-cc9e-4340-91fa-92e036e32601.mp4',   // v14.4: the boat in the air off the wreck
   // v13.11 THE ENDING: Grimtail is down, the fleet pulls out, and both their
   // radios go off at once. The alien war is over. Theirs is not.
   ending: CDN + '79890436-5d17-45ac-9a12-e3744016dd9b.mp4',

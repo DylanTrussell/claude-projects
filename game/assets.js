@@ -76,7 +76,46 @@ export const audio = {
   },
   // rate: playback speed = pitch. Lets one meow sample voice several cats at
   // different pitches (see CUT_MEOWS in strings.js).
+  // v14.4 (Dylan: "add some rat squeaking noises when the chancellor speaks.
+  // Some cute mouse-rat squeaking"). Synthesised, no sample: each squeak is a
+  // tiny chirp that leaps up an octave and falls back, with a little vibrato,
+  // spaced like chatter. Runs through the SFX bus so the sliders apply.
+  squeak(n = 3) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    let t = this.ctx.currentTime + 0.01;
+    for (let i = 0; i < n; i++) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain(), lfo = this.ctx.createOscillator(), lg = this.ctx.createGain();
+      const f0 = 1500 + Math.random() * 700, d = 0.07 + Math.random() * 0.07;
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f0 * (1.7 + Math.random() * 0.5), t + d * 0.35);
+      o.frequency.exponentialRampToValueAtTime(f0 * 0.9, t + d);
+      lfo.frequency.value = 38; lg.gain.value = 90; lfo.connect(lg).connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(CFG.gainSfx * 0.55, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(g).connect(this.masterSfxGain);
+      o.start(t); lfo.start(t); o.stop(t + d + 0.02); lfo.stop(t + d + 0.02);
+      t += d + 0.04 + Math.random() * 0.09;
+    }
+  },
+  // v14.4 pickup: a bright rising three-note arpeggio with a shimmer on top,
+  // so grabbing a weapon feels like a prize, not a reload click
+  pickup() {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const t0 = this.ctx.currentTime + 0.005;
+    [659, 988, 1319, 1976].forEach((f, i) => {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain(), t = t0 + i * 0.055;
+      o.type = i === 3 ? 'triangle' : 'square'; o.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(CFG.gainSfx * (i === 3 ? 0.35 : 0.22), t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (i === 3 ? 0.28 : 0.09));
+      o.connect(g).connect(this.masterSfxGain); o.start(t); o.stop(t + 0.3);
+    });
+  },
   sfx(name, vol = 1, rate = 1) {
+    if (name === 'sfx_pickup') { this.pickup(); return; }
+    if (name === 'squeak') { this.squeak(3); return; }
     if (!this.ctx || !SND[name]) return;
     const thin = this._voiceGain(name);
     if (thin == null) return; // past the concurrency cap for this sound — drop it, don't stack
