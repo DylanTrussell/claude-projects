@@ -345,11 +345,67 @@ function groundAt(x) {
   for (const [x0, x1] of LEVEL.pits) if (x > x0 && x < x1) return H + 400; // pit
   return CFG.groundY;
 }
+// v14.4 THE AIR FORK, in the world instead of a menu. After the truce the
+// ravine screen holds both birds: the Huey parked DOWN in the ravine, its rotor
+// and tail poking out of the jungle, and the Skyraider UP on a raised strip past
+// the floating islands. Drop in and walk to the Huey, or hop the islands and
+// climb to the plane. Whichever you touch is the one you fly; it carries you
+// over the ravine, so you land on the far side either way.
+export const FORK = {
+  x0: 5725 - 1280, lock: 5725,
+  floor: [5100, 668, 500],          // ravine floor under the jungle (x, top y, w)
+  strip: [5545, 405, 520],          // raised airstrip (x, top y, w)
+  heli: { x: 5330, y: 668 },        // where the Huey sits, bottom centre
+  sky: { x: 5665, y: 405 },         // where the Skyraider sits, wheels on the strip
+  land: 5640,                       // where the Skyraider sets you down: feet on the ground, short of the next pit
+  landHeli: 6110, crashAt: 6380,    // the Huey goes down in the clearing between the vats; you come to just short of it
+};
+export function openAirFork(g) {
+  if (g.fork || g.airPick) return;
+  g.fork = { t: 0 };
+  g.cam = Math.max(g.cam, FORK.x0); g.camLock = FORK.lock;
+  // the ravine is quiet while you choose: no stragglers parked in front of a bird
+  for (const e2 of g.enemies) if (e2.st !== 'gone' && hostileTo(g, e2) && e2.k !== 'boss') e2.st = 'gone';
+  for (const w of g.waves) if (!w.done && w.x < FORK.lock + 200) w.done = true;
+}
+function forkPlats(g) { return g.fork ? [FORK.floor, FORK.strip] : null; }
+function stepFork(g, dt) {
+  const f = g.fork; f.t += dt;
+  let pick = null;
+  for (const p of g.players) {
+    if (p.st !== 'alive') continue;
+    if (Math.abs(p.x - FORK.heli.x) < 120 && p.y > 640) pick = 'heli';
+    else if (p.y <= FORK.sky.y + 4 && p.x > FORK.sky.x - 120) pick = 'sky';
+  }
+  if (!pick) return;
+  g.airPick = pick; g.fork = null; g.camLock = -1; g.rail1 = 'active'; g.forkLand = 1;
+  if (pick === 'heli') for (const e2 of g.enemies) if (e2.charlie) e2.st = 'gone';   // he climbs aboard with you
+  if (pick === 'sky') evPush(g, { e: 'sfx', n: 'sfx_plane' });
+  evPush(g, { e: 'rail', k: pick === 'heli' ? 'doorgun' : 'skyraider' });
+}
+// the bird sets you down past the ravine
+function forkLanding(g) {
+  g.forkLand = 0;
+  let i = 0;
+  const lx = g.airPick === 'heli' ? FORK.landHeli : FORK.land;
+  if (g.airPick === 'heli') g.crashAt = FORK.crashAt;
+  for (const p of g.players) { if (p.st === 'out') continue; p.x = lx + i * 50; p.y = CFG.groundY; p.vy = 0; p.vx = 0; p.onG = true; p.st = 'alive'; p.invulnT = 2600; p.mode = null; i++; }
+  for (const e2 of g.enemies) if (e2.charlie && e2.st !== 'gone') { e2.x = lx - 70; e2.y = CFG.groundY; }
+  g.cam = Math.max(g.cam, Math.min(lx - W * 0.38, CFG.worldLen - W));
+  g.checkpoint = Math.max(g.checkpoint, lx - 60);
+  for (const e2 of g.enemies) if (e2.st !== 'gone' && e2.x < lx - 80 && hostileTo(g, e2)) e2.st = 'gone';   // nothing left behind in the ravine
+}
 export function islandTop(t, isl) {
   return isl.y + Math.sin((t / isl.per) * Math.PI * 2 + isl.ph) * isl.amp;
 }
 function platformUnder(g, x, y, vy) {
   let best = null;
+  const fp = forkPlats(g);
+  if (fp) for (const [px, py, pw] of fp) {
+    if (x >= px - 6 && x <= px + pw + 6 && vy >= 0 && y <= py + 14 && y >= py - 40) {
+      if (best === null || py < best) best = py;
+    }
+  }
   for (const [px, py, pw] of LEVEL.platforms) {
     if (x >= px - 6 && x <= px + pw + 6 && vy >= 0 && y <= py + 14 && y >= py - 40) {
       if (best === null || py < best) best = py;
@@ -519,6 +575,8 @@ export function step(g, dt, inputs) {
   if (g.over) { g.t += dt; return; }
   g.t += dt;
   const dts = dt / 1000;
+  if (g.forkLand) forkLanding(g);
+  if (g.fork) stepFork(g, dt);
   if (g.crashPending) { g.crashPending = 0; startCrashSite(g); }
   if (g.crash && g.crash.phase !== 'done') stepCrashSite(g, dt);
   if (g.phase === 'insertion') {
@@ -551,7 +609,7 @@ export function step(g, dt, inputs) {
           // the whole descent while stepBike drove you straight back into the
           // pit you just died in. A bike respawn now starts ON the road.
           if (onBike) { p.y = groundAt(p.x); p.onG = true; p.vy = 0; p.vx = 0; p.bikeHold = 420; }
-          else { p.y = 100; p.vx = 0; p.vy = 0; }
+          else { p.y = 100; p.vx = 0; p.vy = 0; p.dropIn = 1; }   // falls straight down: no drifting into the pit you died in
           // Tell the player what killed them. deathKind has been set since v13
           // but ONLY ever picked a ragdoll animation -- the player was never
           // actually told, so repeated deaths taught nothing. Both playtesters
@@ -584,6 +642,7 @@ export function step(g, dt, inputs) {
     if (bits & C.L) mx -= 1;
     if (bits & C.R) mx += 1;
     if (p.crouch) mx = 0;                            // dug in
+    if (p.dropIn) { if (p.onG) p.dropIn = 0; else mx = 0; }
     if (mx) { p.face = mx; p.runT += dt; } else p.runT = 0;
     p.vx = mx * CFG.run;
 
@@ -637,7 +696,7 @@ export function step(g, dt, inputs) {
     }
     if (firePressed && g.noFire && !(p.prevC & C.FIRE)) { // the standoff: hammer falls on nothing
       evPush(g, { e: 'sfx', n: 'sfx_click' });
-      if (!g.banners.click) { g.banners.click = true; evPush(g, { e: 'banner', k: 'outOfAmmo' }); }
+      if (!g.banners.click) { g.banners.click = true; evPush(g, { e: 'banner', k: 'duelJam' }); }
     }
     // v13.9: during the standoff every round you fire is a round you no longer
     // have. Hit zero and the hammer falls on an empty chamber for real.
@@ -918,6 +977,7 @@ export function step(g, dt, inputs) {
   for (const w of g.waves) {
     if (g.phase !== 'play') break; // no waves during the opening cinematic
     if (g.crash && g.crash.phase !== 'done') break; // the crash site runs its own
+    if (g.fork) break;                                // the ravine is quiet while you choose
     if (!w.done && g.cam - 300 > w.x) { w.done = true; continue; } // stale wave: passed long ago, skip
     if (!w.done && w.alive.length === 0 && g.cam + W > w.x + 200) {
       // spawn
@@ -993,7 +1053,7 @@ export function step(g, dt, inputs) {
   }
 
   // ambient trickle spawns between waves (variance, capped)
-  if (g.phase === 'play' && g.enemies.filter(e2 => e2.st !== 'gone' && e2.k !== 'pow' && e2.k !== 'buddy').length < 6 && g.rng() < 0.004 && !g.boss) {
+  if (g.phase === 'play' && !g.fork && g.enemies.filter(e2 => e2.st !== 'gone' && e2.k !== 'pow' && e2.k !== 'buddy').length < 6 && g.rng() < 0.004 && !g.boss) {
     const kind = g.invasion ? 'alien' : (g.rng() < 0.5 ? 'gruntUS' : 'gruntVC');
     g.enemies.push(en(kind, g.cam + W + 80, CFG.groundY));
   }
@@ -1038,7 +1098,7 @@ export function step(g, dt, inputs) {
       if (!g.duelDry) g.duelJam = 1;
       for (const b of g.bullets) if (b.on) b.on = 0; // the air goes quiet
       evPush(g, { e: 'sfx', n: 'sfx_click' });
-      evPush(g, { e: 'banner', k: g.duelJam ? 'duelJam' : 'outOfAmmo' });
+      evPush(g, { e: 'banner', k: 'duelJam' });   // a jam, always: you may still be carrying a full gatling
       g.banners.click = true;
     }
   }
@@ -1075,8 +1135,7 @@ export function step(g, dt, inputs) {
       for (const p2 of g.players) { if (p2.st !== 'out') { p2.mode = drv ? 'side' : 'bike'; if (!drv) drv = p2; p2.st = 'alive'; p2.hp = CFG.hpMax; p2.invulnT = 2200; p2.y = CFG.groundY; if (p2.mode === 'side') p2.x = drv.x; } }
       evPush(g, { e: 'banner', k: 'actRide' });
       evPush(g, { e: 'hint', k: 'rideHint' });
-      evPush(g, { e: 'music', n: 'music_rock' });
-      evPush(g, { e: 'engine', on: 1 });
+      evPush(g, { e: 'music', n: 'music_nhaquan' });   // v14.4: the Vietnamese track for the ride (the engine loop read as white noise; cut)
     }
   }
   // act III chase spawner
@@ -1502,17 +1561,20 @@ function triggerInvasion(g) {
 // wreck from both sides. When the last one is down (or 34s, whichever first)
 // he climbs out and stays with you for the rest of the war as a squadmate --
 // same 'buddy' brain the US squad uses, his own sprite, and he does not die.
+// v14.4 (Dylan: "think Black Hawk Down... you should really have to defend
+// it"): they come from both sides and from the air, four waves of it.
 const CRASH_WAVES = [
-  [['alien', 3, 'right']],
-  [['alien', 2, 'left'], ['ratjet', 2, 'sky']],
-  [['alien', 3, 'right'], ['ufo', 1, 'sky'], ['alien', 1, 'left']],
+  [['alien', 3, 'right'], ['alien', 2, 'left']],
+  [['alien', 2, 'left'], ['ratjet', 2, 'sky'], ['alien', 2, 'right']],
+  [['ratbig', 1, 'right'], ['alien', 2, 'left'], ['ufo', 1, 'sky']],
+  [['alien', 3, 'right'], ['alien', 3, 'left'], ['ratjet', 1, 'sky']],
 ];
 export function startCrashSite(g) {
   const p = alivePlayers(g)[0] || g.players[0];
-  let wx = p.x + 320;
+  let wx = g.crashAt || p.x + 320;
   const bad = (x) => groundAt(x) !== CFG.groundY || LEVEL.pits.some(([a, b]) => x > a - 260 && x < b + 260);
   while (bad(wx)) wx += 40;
-  g.crash = { x: wx, t: 0, phase: 'defend', wave: 0, waveT: 0, alive: [], trapped: 1 };
+  g.crash = { x: wx, t: 0, phase: 'defend', wave: 0, waveT: 0, alive: [], trapped: 1, gun: 'slump', gunT: 3200, upT: 0, burst: 0, bCd: 0, flash: 0 };
   g.cam = Math.max(g.cam, Math.min(wx - W * 0.62, CFG.worldLen - W));
   g.camLock = g.cam + W;
   p.x = Math.max(p.x, g.cam + 120);
@@ -1535,6 +1597,24 @@ export function joinCharlie(g) {
 function stepCrashSite(g, dt) {
   const c = g.crash;
   c.t += dt; c.waveT -= dt;
+  // the wounded gunner in the door: slumped, then he snaps to, hoses a couple of
+  // bursts at whatever is closest, and slumps again
+  if (c.trapped && c.phase === 'defend') {
+    c.flash = Math.max(0, (c.flash || 0) - dt);
+    if (c.gun === 'slump') { c.gunT -= dt; if (c.gunT <= 0) { c.gun = 'up'; c.upT = 0; c.burst = 0; c.bCd = 380; } }
+    else {
+      c.upT += dt; c.bCd -= dt;
+      const foe = g.enemies.filter(e2 => e2.st !== 'gone' && e2.side === 'alien' && Math.abs(e2.x - c.x) < 700)
+        .sort((a, b) => Math.abs(a.x - c.x) - Math.abs(b.x - c.x))[0];
+      if (foe && c.bCd <= 0 && c.burst < 8) {
+        c.burst++; c.bCd = c.burst === 4 ? 420 : 100; c.flash = 70;
+        const ox = c.x - 26, oy = CFG.groundY - 96, dx = foe.x - ox, dy = (foe.y - 40) - oy, d = Math.hypot(dx, dy) || 1;
+        fireBullet(g, ox, oy, dx / d * CFG.gruntBulletSpd, dy / d * CFG.gruntBulletSpd, 1, 8);
+        evPush(g, { e: 'sfx', n: 'sfx_shot' });
+      }
+      if (c.upT > 1900 || c.burst >= 8) { c.gun = 'slump'; c.gunT = 3800 + g.rng() * 2600; }
+    }
+  }
   c.alive = c.alive.filter(id => { const e2 = g.enemies.find(q => q.id === id); return e2 && e2.st !== 'gone'; });
   if (c.wave < CRASH_WAVES.length && (c.waveT <= 0 || (c.wave > 0 && !c.alive.length))) {
     const spec = CRASH_WAVES[c.wave++];
@@ -1555,7 +1635,7 @@ function stepCrashSite(g, dt) {
     if (c.wave === 3) evPush(g, { e: 'hint', k: 'ufoHint' });
   }
   const cleared = c.wave >= CRASH_WAVES.length && !c.alive.length;
-  if (c.phase === 'defend' && (cleared || c.t > 34000)) {
+  if (c.phase === 'defend' && (cleared || c.t > 42000)) {
     c.phase = 'out'; c.trapped = 0;
     const ch = g.enemies.find(e2 => e2.id === g.charlie);
     if (ch) { ch.st = 'emerge'; ch.emT = 1500; ch.ph = 0; }
@@ -1592,6 +1672,10 @@ function winBoss(g, b) {
   g.rideT = 2600; // the road home: mount up
 }
 
+// v14.4: an enemy you cannot see does not get to start shooting at you. The
+// aliens were tuned to open up from 900px out, past the edge of the screen, so
+// rays arrived from nowhere. The wind-up now only starts on screen.
+const onScreen = (g, e2) => e2.x > g.cam + 40 && e2.x < g.cam + W - 40;
 function stepEnemy(g, e2, dt, dts) {
   // v13.3 CAMERA SOFTLOCK. The out-of-world cull lived inside ONE enemy case,
   // so a GROUND enemy that walked into the 500px chasm at 5100-5600 fell
@@ -1639,7 +1723,7 @@ function stepEnemy(g, e2, dt, dts) {
         const p0 = near(e2.x);
         if (p0) e2.face = p0.x > e2.x ? 1 : -1;
         if (g.duelClick || g.invasion) { e2.tell = 0; return; } // out of ammo / now an ally
-        if (e2.fireCd <= 0 && !e2.tell) e2.tell = CFG.aimTellMs;
+        if (e2.fireCd <= 0 && !e2.tell && onScreen(g, e2)) e2.tell = CFG.aimTellMs;
         if (e2.tell > 0) {
           e2.tell -= dt;
           if (e2.tell <= 0) {
@@ -1666,7 +1750,7 @@ function stepEnemy(g, e2, dt, dts) {
       e2.face = tx > e2.x ? 1 : -1;
       const dist = Math.abs(tx - e2.x);
       if (dist > 240 && !e2.tell) e2.x += e2.face * CFG.gruntSpd * dts;
-      else if (e2.fireCd <= 0 && !e2.tell) e2.tell = CFG.aimTellMs; // visible aim-up before the shot
+      else if (e2.fireCd <= 0 && !e2.tell && onScreen(g, e2)) e2.tell = CFG.aimTellMs; // visible aim-up before the shot
       // BURST FIRE (Dylan: "they should be shooting automatic fire... there
       // should be more bullets flying your way"). One round per 2.1s became a
       // 4-round burst at 90ms. It stays fair because the aim vector is LOCKED
@@ -1759,7 +1843,7 @@ function stepEnemy(g, e2, dt, dts) {
       if (d5 > 300) e2.x += e2.face * (e2.spd || 46) * dts;
       e2.atkT -= dt;
       if (e2.atkT <= 0) {
-        if (!e2.tell) { e2.tell = 800; e2.open = 0; evPush(g, { e: 'sfx', n: 'sfx_ufo' }); }
+        if (!e2.tell) { if (!onScreen(g, e2)) { e2.atkT = 400; } else { e2.tell = 800; e2.open = 0; evPush(g, { e: 'sfx', n: 'sfx_ufo' }); } }
         e2.tell -= dt;
         if (e2.tell <= 0) {
           e2.tell = 0; e2.atkT = 3200; e2.open = 1400;    // cockpit opens after firing
@@ -1808,7 +1892,7 @@ function stepEnemy(g, e2, dt, dts) {
       const FIRE_RANGE = e2.flyer ? 900 : 620;
       if (dist > (lure ? 20 : FIRE_RANGE)) e2.x += e2.face * speed * dts;
       else if (lure) { /* nibbling — helpless */ }
-      else if (e2.fireCd <= 0 && !e2.tell) e2.tell = CFG.aimTellMs; // charging coils glow first
+      else if (e2.fireCd <= 0 && !e2.tell && onScreen(g, e2)) e2.tell = CFG.aimTellMs; // charging coils glow first
       if (e2.tell > 0 && !lure) {
         e2.tell -= dt;
         if (e2.tell <= 0) {
@@ -1916,7 +2000,7 @@ function stepEnemy(g, e2, dt, dts) {
           // fire 3-round bursts, so the body reads as recoiling rather than a
           // static sprite with a flash pinned to it. e2.kick drives a sprite
           // offset in render.js.
-          e2.fireCd = 1100 + g.rng() * 400;
+          e2.fireCd = 850 + g.rng() * 300;   // v14.4: solo helpers take ~10-15% of the kills
           e2.bBurst = 3; e2.bCd = 0;
         }
         if (e2.bBurst > 0) {
@@ -2005,7 +2089,8 @@ export function serialize(g) {
       // v13.14 index 14: Charlie flag -- same 'buddy' brain, his own sprite
       .map(e2 => [e2.id, e2.k, R(e2.x), R(e2.y), e2.face, e2.st, e2.hp, (e2.beam || e2.tell > 0) ? 1 : 0, e2.open > 0 ? 1 : 0, e2.ph || 0, e2.flyer ? 1 : 0, R(Math.max(0, e2.kick || 0)), e2.burn > 0 ? 1 : 0, R(Math.max(0, e2.hitT || 0)), e2.charlie ? 1 : 0]),
     // v13.14: the downed Huey [x, done, charlie still inside]
-    crash: g.crash ? [R(g.crash.x), g.crash.phase === 'done' ? 1 : 0, g.crash.trapped ? 1 : 0] : null,
+    crash: g.crash ? [R(g.crash.x), g.crash.phase === 'done' ? 1 : 0, g.crash.trapped ? 1 : 0, g.crash.gun === 'up' ? 1 : 0, R(g.crash.upT || 0), (g.crash.flash || 0) > 0 ? 1 : 0] : null,
+    fork: g.fork ? 1 : 0,
     // v13: index 4 is the bullet's travel angle. Every projectile used to be
     // drawn as an axis-aligned horizontal dash regardless of where it was
     // actually going, so firing up (hold W) sent horizontal tracers climbing
@@ -2063,6 +2148,7 @@ export function checkpointState(g) {
     riverStarted: g.riverStarted, parleyStarted: g.parleyStarted,
     standoff: g.standoff, duelClick: g.duelClick,
     crash: g.crash ? clone(g.crash) : null, charlie: g.charlie,
+    fork: g.fork ? { t: 0 } : null, forkLand: g.forkLand || 0,
   };
 }
 export function restoreState(snap, seats) {
@@ -2080,6 +2166,7 @@ export function restoreState(snap, seats) {
     standoff: snap.standoff, duelClick: snap.duelClick,
     // a continue never replays the defence -- the wreck stays, Charlie is out
     crash: snap.crash ? { ...snap.crash, phase: 'done', trapped: 0 } : null, charlie: snap.charlie,
+    fork: snap.fork || null, forkLand: snap.forkLand || 0,
   });
   if (g.lift) { g.lift.st = 'gone'; g.lift = null; }   // no insertion helicopter on a continue
   g.enemies = (snap.enemies || []).map(e2 => ({ ...e2 }));

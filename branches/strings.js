@@ -23,7 +23,7 @@ const RAW = {
   reconnecting: "Reconnecting...",
   youDied: "K.I.A.",
   tunnelDown: "DOWN IN THE DARK",
-  pressToRise: "PRESS J — GET UP AND FIGHT",
+  pressToRise: "PRESS J TO GET UP AND FIGHT",
   livesLeft: "LIVES",
   gameOver: "MISSION FAILED",
   // v13.4 (Dylan: "I think the Chancellor Grimtail thing is the end of part
@@ -76,8 +76,8 @@ const RAW = {
   outOfAmmo: "*CLICK* — OUT OF AMMO",
   // v13.9: you can reach the end of the duel without firing a shot. Then the
   // gun did not run dry, it jammed, and the banner should not lie about it.
-  duelJam: "*CLICK* — THE GUN'S JAMMED",
-  theyreOutToo: "...HE'S OUT TOO",
+  duelJam: "*CLICK* YOUR GUN JAMMED",
+  theyreOutToo: "...SO DID HIS",
   // v13.15 BRANCHES build -- the aircraft choice after the truce
   forkAirTitle: "TWO BIRDS ON THE PAD",
   forkAirSub: "Pick one. The other flies without you.",

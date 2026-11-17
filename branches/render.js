@@ -3,7 +3,7 @@
 // signals, acid-green alien glow, orange explosion light). Side-view, chunky shapes.
 import { C, CFG, PAL, W, H } from './config.js';
 import { IMG, SHEET, drawSheet, drawImg } from './assets.js';
-import { LEVEL, islandTop } from './sim.js';
+import { LEVEL, islandTop, FORK } from './sim.js';
 import { STR } from './strings.js';
 
 // v13.5: floor-pickup banners, muted -- the HUD and the pickup sound already
@@ -377,48 +377,114 @@ const SCENERY = [
 // v13.14 -- the Huey, where it came down. Drawn on the ground plane like the
 // scenery, burning for the rest of the level. While Charlie is still inside,
 // his hat shows in the door.
+// v14.4: the air fork. Both birds sit in the world, half under the jungle, and
+// pulse so the eye finds them. Nothing on screen says choose; the paths do.
+function birdPulse(ctx, img, x, y, w, h, flip, t, ph) {
+  ctx.save();
+  if (flip) { ctx.translate(x + w, y); ctx.scale(-1, 1); x = 0; y = 0; }
+  ctx.drawImage(img, x, y, w, h);
+  const k = Math.max(0, Math.sin(t / 240 + ph));
+  if (k > 0.02) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.7 * k; ctx.drawImage(img, x, y, w, h); }
+  ctx.restore();
+}
+function drawAirFork(ctx, cam, t) {
+  const gy = CFG.groundY, cover = IMG.jungle_cover;
+  const bush = (x, top, w) => { if (!cover) return; const h = w * (cover.height / cover.width); ctx.drawImage(cover, x - cam, top, w, h); };
+  // the ravine floor: jungle growing out of the bottom of the gap
+  const [fx, fy, fw] = FORK.floor;
+  ctx.fillStyle = '#1d2a14'; ctx.fillRect(fx - cam, fy - 6, fw, H - fy + 6);
+  ctx.fillStyle = '#2f4520'; ctx.fillRect(fx - cam, fy - 6, fw, 6);
+  // the Huey, parked low, rotor and cabin roof above the leaves
+  const hi = IMG.heli_us;
+  if (hi) { const hh = 236, hw = hh * (hi.width / hi.height); birdPulse(ctx, hi, FORK.heli.x - cam - hw / 2, FORK.heli.y - hh + 6, hw, hh, true, t, 0); }
+  bush(fx - 40, 616, 290); bush(fx + 230, 622, 300);
+  // the airstrip: a pierced-steel deck on bamboo stilts above the far lip
+  const [sx, sy, sw] = FORK.strip;
+  ctx.fillStyle = '#5b4a2c';
+  for (let x = sx + 18; x < sx + sw; x += 96) { const foot = x < 5600 ? fy : gy; ctx.fillRect(x - cam, sy + 14, 9, foot - sy - 14); }
+  ctx.fillStyle = '#4b5a3a'; ctx.fillRect(sx - cam, sy, sw, 16);
+  ctx.fillStyle = '#6f8156'; ctx.fillRect(sx - cam, sy, sw, 4);
+  ctx.fillStyle = '#2c3524'; for (let x = sx + 10; x < sx + sw - 8; x += 22) ctx.fillRect(x - cam, sy + 7, 10, 5);
+  // the Skyraider on the strip, nose out of the treeline at you
+  const pi = IMG.skyraider;
+  if (pi) { const ph2 = 128, pw = ph2 * (pi.width / pi.height); birdPulse(ctx, pi, FORK.sky.x - cam - pw * 0.38, FORK.sky.y - ph2 + 8, pw, ph2, true, t, Math.PI); }
+  bush(FORK.sky.x + 10, 318, 250);   // the treeline swallows the tail; the nose and canopy stick out
+}
+// hard-edged pixel puffs and flames (Metal Slug fire never uses soft circles)
+function pixBlob(ctx, x, y, r) {
+  const q = 4, R = Math.max(q, Math.round(r / q) * q);
+  x = Math.round(x / q) * q; y = Math.round(y / q) * q;
+  ctx.fillRect(x - R, y - R / 2, R * 2, R); ctx.fillRect(x - R / 2, y - R, R, R * 2); ctx.fillRect(x - R * 0.75, y - R * 0.75, R * 1.5, R * 1.5);
+}
+function pixFlame(ctx, x, y, r, k, seed) {
+  ctx.globalAlpha = k > 0.75 ? (1 - k) / 0.25 : 1;
+  ctx.fillStyle = k < 0.55 ? '#d8401c' : '#7a2412'; pixBlob(ctx, x, y, r);
+  for (let i = 0; i < 3; i++) { const lx = x + (i - 1) * r * 0.6 + Math.sin(seed * 0.02 + i * 2) * r * 0.2; ctx.fillRect(Math.round(lx / 4) * 4 - 4, Math.round((y - r - r * 0.5 * Math.abs(Math.sin(seed * 0.03 + i))) / 4) * 4, 8, r); }
+  if (k < 0.8) { ctx.fillStyle = '#ff8a1e'; pixBlob(ctx, x, y + r * 0.1, r * 0.72); }
+  if (k < 0.55) { ctx.fillStyle = '#ffd23c'; pixBlob(ctx, x, y + r * 0.2, r * 0.46); }
+  ctx.globalAlpha = 1;
+}
+// v14.4 the downed Huey (Dylan: "think Black Hawk Down"). Nose dug in and
+// rolled, burning, a black column going up. The pilot is slumped over the stick
+// (in the art). Charlie is wedged in the door, hurt and bleeding: he hangs
+// there, then snaps to and hoses a burst at whatever is closest, then sags back.
+// cr = [x, done, trapped, up, upT, flash]
 function drawWreck(ctx, cr, cam, t) {
-  const [wx, , trapped] = cr;
+  const [wx, , trapped, up, upT, flash] = cr;
   const sx = wx - cam;
-  if (sx < -500 || sx > W + 500) return;
-  const img = IMG.huey_doorgun || IMG.heli_us;
-  const hh = 190, hw = img ? hh * (img.width / img.height) : hh * 1.7;
-  const gy = CFG.groundY;
-  // the furrow it ploughed coming in
-  ctx.fillStyle = 'rgba(40,28,14,0.55)';
-  ctx.beginPath(); ctx.ellipse(sx - 40, gy + 6, hw * 0.75, 12, 0, 0, 7); ctx.fill();
-  ctx.save();
-  ctx.translate(sx, gy - hh * 0.36);
-  ctx.rotate(0.3);
-  if (img) ctx.drawImage(img, -hw / 2, -hh / 2, hw, hh);
-  else { ctx.fillStyle = '#2e3324'; ctx.fillRect(-hw / 2, -hh * 0.2, hw, hh * 0.4); }
-  ctx.globalCompositeOperation = 'source-atop';      // scorched
-  ctx.fillStyle = 'rgba(20,14,10,0.42)';
-  ctx.fillRect(-hw / 2, -hh / 2, hw, hh);
-  ctx.globalCompositeOperation = 'source-over';
-  if (trapped) { // his hat, in the door
-    ctx.fillStyle = '#c9a86a';
-    ctx.beginPath(); ctx.moveTo(hw * 0.02, -hh * 0.02); ctx.lineTo(hw * 0.14, hh * 0.09); ctx.lineTo(-hw * 0.10, hh * 0.09); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 2; ctx.stroke();
-  }
-  ctx.restore();
-  // fire and smoke
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 6; i++) {
-    const ph = ((t / (320 + i * 45)) + i * 0.37) % 1;
-    ctx.globalAlpha = 0.55 * (1 - ph);
-    ctx.fillStyle = i % 3 === 0 ? '#fff0b0' : i % 3 === 1 ? '#ff9a3c' : '#ff5a1e';
-    ctx.beginPath(); ctx.arc(sx - hw * 0.3 + i * hw * 0.11, gy - hh * 0.45 - ph * 60, 8 + ph * 14, 0, 7); ctx.fill();
-  }
-  ctx.restore();
-  for (let i = 0; i < 4; i++) {
-    const ph = ((t / (1500 + i * 210)) + i * 0.25) % 1;
-    ctx.globalAlpha = 0.35 * (1 - ph);
-    ctx.fillStyle = '#3a342c';
-    ctx.beginPath(); ctx.arc(sx - hw * 0.1 + i * 18 + Math.sin(t / 900 + i) * 14, gy - hh * 0.6 - ph * 170, 14 + ph * 30, 0, 7); ctx.fill();
+  if (sx < -600 || sx > W + 600) return;
+  const img = IMG.huey_crashed || IMG.huey_doorgun || IMG.heli_us;
+  const hh = 214, k = img ? hh / img.height : 1, hw = img ? img.width * k : hh * 1.4;
+  const gy = CFG.groundY, rot = -0.36, cx = sx, cy = gy - hh * 0.36;
+  // the furrow it ploughed and the dirt thrown up
+  ctx.fillStyle = 'rgba(40,28,14,0.6)';
+  ctx.beginPath(); ctx.ellipse(sx + 30, gy + 6, hw * 0.7, 11, 0, 0, 7); ctx.fill();
+  // smoke column (behind the hull), pixel puffs climbing and leaning downwind
+  for (let i = 0; i < 9; i++) {
+    const ph = ((t / 2300) + i / 9) % 1;
+    ctx.globalAlpha = 0.62 * (1 - ph);
+    ctx.fillStyle = ph < 0.25 ? '#2b2620' : '#4a443c';
+    pixBlob(ctx, sx + 40 + ph * 70 + Math.sin(t / 700 + i * 1.7) * 10, gy - hh * 0.62 - ph * 300, 12 + ph * 34);
   }
   ctx.globalAlpha = 1;
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(rot);
+  const L = (px, py) => [(px - (img ? img.width : 520) / 2) * k, (py - (img ? img.height : 390) / 2) * k];   // sprite px -> local
+  if (img) ctx.drawImage(img, -hw / 2, -hh / 2, hw, hh);
+  const [d0x, d0y] = L(196, 186), [d1x, d1y] = L(290, 300);
+  if (trapped) {
+    // Charlie in the door, clipped to the doorway so he is IN the cabin
+    const hv = IMG.hero_vc;
+    const snap = up ? Math.min(1, upT / 140) : 0;
+    const sag = 1 - snap, breath = Math.sin(t / 520) * 0.04 * sag;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(d0x - 30, d0y - 4, d1x - d0x + 60, d1y - d0y + 4); ctx.clip();
+    const fx = (d0x + d1x) / 2 - 4, fy = d1y + 24, ch = 84;   // sitting on the cabin floor, legs below the sill
+    ctx.translate(fx, fy);
+    ctx.rotate(-(0.78 * sag + breath));            // slumped forward over the sill; snaps upright to fire
+    ctx.translate(0, sag * 12);
+    ctx.scale(-1, 1);
+    if (hv) ctx.drawImage(hv, -ch * (hv.width / hv.height) / 2, -ch, ch * (hv.width / hv.height), ch);
+    ctx.restore();
+    if (up && flash) {                              // muzzle flash at his rifle, out of the door
+      const mx = fx - ch * 0.5, my = fy - ch * 0.52;
+      ctx.fillStyle = '#fff3c0'; pixBlob(ctx, mx, my, 9); ctx.fillStyle = '#ffb02e'; pixBlob(ctx, mx - 10, my, 6);
+    }
+    // blood running off the sill
+    ctx.fillStyle = '#8f1d14';
+    ctx.fillRect(d0x + 10, d1y - 2, 26, 4);
+    for (let i = 0; i < 3; i++) { const ph = ((t / 900) + i / 3) % 1; ctx.fillRect(d0x + 14 + i * 9, d1y + ph * 34, 3, 5); }
+  }
+  // fire on the engine deck and at the snapped tail
+  const fire = [[300, 120], [340, 150], [430, 200]];
+  for (let i = 0; i < fire.length; i++) { const [lx, ly] = L(fire[i][0], fire[i][1]); pixFlame(ctx, lx, ly, 13 + (i === 0 ? 4 : 0), ((t / 420) + i * 0.31) % 0.6, t + i * 300); }
+  ctx.restore();
+  // sparks spitting off the wreck
+  for (let i = 0; i < 4; i++) {
+    const ph = ((t / 650) + i * 0.27) % 1;
+    ctx.fillStyle = ph < 0.5 ? '#ffe08a' : '#ff8a1e';
+    ctx.fillRect(sx + 20 + i * 14 + ph * 40 * (i % 2 ? 1 : -1), gy - hh * 0.7 - Math.sin(ph * 3.14) * 50, 3, 3);
+  }
 }
 
 function drawScenery(ctx, cam, t) {
@@ -1602,6 +1668,7 @@ export function render(ctx, view, t, myPid, dbg) {
   drawGround(ctx, cam, inv);
   drawScenery(ctx, cam, view.t || t);   // v13.9: the cheese vats, before the payoff
   if (view.crash) drawWreck(ctx, view.crash, cam, view.t || t);   // v13.14: the downed Huey
+  if (view.fork) drawAirFork(ctx, cam, view.t || t);                 // v14.4: two birds, two paths
   drawIslands(ctx, cam, view.t || t);
   // blood splats stay on the ground where cats fell
   for (const s of FX.splats) {

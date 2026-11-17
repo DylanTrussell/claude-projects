@@ -15,7 +15,7 @@ function attachSubs(vid, subEl, cues) {
   update();
 }
 import { loadAll, audio, IMG, ensureChunk, prefetchChunk } from './assets.js';
-import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState, joinCharlie, addPlayer, revivePlayer } from './sim.js';
+import { makeGame, step, serialize, LEVEL, spawnTunnelSkirmish, checkpointState, restoreState, joinCharlie, addPlayer, revivePlayer, openAirFork } from './sim.js';
 import { render, fxEvent, fxUpdate, FX, drawRotor, TUNNEL_TRANS_MS, __devReplayValkyries } from './render.js';
 import { Tunnel } from './fps.js';
 import { VIDEO_URLS } from './chunks.js';
@@ -115,6 +115,7 @@ let mode = 'boot'; // boot|title|brief|game|tally
 let g = null;
 let lastView = null;
 let cutsceneActive = false;
+let filmMusic = null;   // a track asked for while a film was playing: starts when the film ends
 let tunnel = null; // active first-person tunnel section
 let rail = null;   // active vehicle rail section (door gun / skyraider)
 let loadingChunk = false; // v10: freezes the sim while a lazy CDN chunk fetches
@@ -236,17 +237,9 @@ function resolveTruce() {
     handleEvents([{ e: 'rail', k: 'doorgun' }]);
     return;
   }
-  const pick = (k) => {
-    if (g) { g.airPick = k; cleanup(); if (k === 'sky') joinCharlie(g); }
-    show(null);
-    handleEvents([{ e: 'rail', k: k === 'sky' ? 'skyraider' : 'doorgun' }]);
-  };
-  if (IMG.heli_us) $('fk-heli-img').src = IMG.heli_us.src;
-  if (IMG.skyraider) $('fk-sky-img').src = IMG.skyraider.src;
-  $('fk-heli').onclick = () => pick('heli');
-  $('fk-sky').onclick = () => pick('sky');
-  show('screen-fork');
-  $('fk-heli').focus();
+  // v14.4: no menu. Both birds wait across the ravine (sim.js FORK); the one
+  // you walk into is the one you fly. Charlie walks out of the truce with you.
+  if (g) { cleanup(); joinCharlie(g); openAirFork(g); }
 }
 
 // ---------- PART TWO: the campaign after Grimtail (game/missions.js) ----------
@@ -404,6 +397,7 @@ function playCutscene(which, then) {
       cs2.style.display = 'none';
       touchPad(true);
       if (then) then();
+      if (filmMusic && !cutsceneActive) { audio.music(filmMusic, 900); filmMusic = null; }
     }, 260);
   };
   vid.onended = done;
@@ -418,7 +412,7 @@ function handleEvents(evs) {
       case 'sfx': audio.sfx(ev.n); break;
       case 'meow': audio.sfx(ev.n, 1.0, ev.r || 1); break;
       case 'meowLate': setTimeout(() => audio.sfx(ev.n, 1.0, ev.r || 1), 650); break;
-      case 'music': audio.music(ev.n); break;
+      case 'music': if (cutsceneActive) filmMusic = ev.n; else audio.music(ev.n); break;   // never under a film's own soundtrack
       case 'hum': audio.hum(!!ev.on); break;
       case 'engine':
         audio.eng(!!ev.on, ev.name || 'sfx_bike');
@@ -428,6 +422,7 @@ function handleEvents(evs) {
         if (ev.on) { prefetchChunk('ptboat'); prefetchChunk('boss2'); }
         break;
       case 'cutscene':
+        if (ev.which === 'mecha') { prefetchChunk('ptboat'); prefetchChunk('boss2'); }   // the ride is the last quiet stretch before the river
         playCutscene(ev.which, ev.which === 'truce' ? resolveTruce : undefined);
         break;
       case 'rail':
@@ -1096,6 +1091,8 @@ if (dev) {
   window.__AMvalk = () => { __devReplayValkyries(); return 'replaying'; }; // dev-only: re-run the opening Huey squadron
   window.__AMtier = (n) => { if (rail) { rail.tier = n; return rail.tier; } return null; }; // dev-only: force a vehicle upgrade tier for verification
   window.__AMtp = (x, y, ang) => { if (tunnel) { tunnel.px = x; tunnel.py = y; if (ang !== undefined) tunnel.ang = ang; } }; // dev-only teleport for verification
+  window.__AMfork = () => { if (!g) return null; g.invasion = true; g.sec = 'B'; g.standoff = 1; joinCharlie(g); openAirFork(g); return { cam: g.cam, lock: g.camLock }; };
+  window.__AMtunObj = () => tunnel;   // dev: the live Tunnel, for driving its states in checks
   window.__AMtun = () => tunnel && { items: tunnel.items.map(i => ({ kind: i.kind, x: i.x, y: i.y, got: !!i.got })), enemies: tunnel.enemies.map(e => ({ x: e.x, y: e.y, st: e.st, dead: !!e.dead })), mittens: tunnel.mittens, exit: tunnel.exit };
   window.__AMlook = (tx, ty) => { if (tunnel) tunnel.ang = Math.atan2(ty - tunnel.py, tx - tunnel.px); };
   window.__AMburst = (i) => { if (tunnel && tunnel.enemies[i]) tunnel.burst(tunnel.enemies[i]); }; // dev-only: force an enemy out of hiding for verification

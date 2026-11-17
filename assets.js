@@ -93,7 +93,7 @@ export const audio = {
   // tracks were mastered at different levels, so a single global music gain
   // makes some scenes sit noticeably quieter than others. Only deviations from
   // 1.0 need an entry here.
-  trim: { music_ratpatrol: 1.45 },
+  trim: { music_ratpatrol: 1.45, music_nhaquan: 1.6 },
   // v13 (Dylan: "after the film ends, and the level begins, the music is not
   // playing... music_rock plays when you SKIP the intro film"). That asymmetry
   // was the whole diagnosis. Skipping means clicking SKIP — a user gesture, so

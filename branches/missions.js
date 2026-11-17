@@ -429,11 +429,11 @@ export class Mission extends RailBase {
     for (const e of this.en) if (e.st === 'live' && !e.rise) { const d = Math.abs(e.x - c.x); if (d < fd && e.x > this.cam - 20 && e.x < this.cam + W + 20) { fd = d; foe = e; } }
     const bt = this.boss && this.boss.hp > 0 && this.boss.live ? this.bossAim() : null;
     if (c.cd <= 0 && (foe || bt)) {
-      c.cd = 330; c.fire = 70;
+      c.cd = 900; c.fire = 70;   // v14.4: solo Charlie takes ~13% of the kills (was ~28%); a second player is the real help
       const tx = foe ? foe.x : bt.x, ty = foe ? foe.y - KIND[foe.k].h * 0.5 : bt.y;
       if (Math.abs(tx - c.x) > 30) c.face = tx > c.x ? 1 : -1;
       const a = Math.atan2(ty - (c.y - 56), tx - c.x);
-      this.shots.push({ k: 'B', x: c.x + Math.cos(a) * 40, y: c.y - 56 + Math.sin(a) * 40, vx: Math.cos(a) * 1100, vy: Math.sin(a) * 1100, t: 0, T: 900, dmg: 1 });
+      this.shots.push({ k: 'B', x: c.x + Math.cos(a) * 40, y: c.y - 56 + Math.sin(a) * 40, vx: Math.cos(a) * 1100, vy: Math.sin(a) * 1100, t: 0, T: 900, dmg: 1, ai: 1 });
     }
     } else { c.x = h2.x; c.y = h2.y; }   // the AI Charlie stands down while a person has him
 
@@ -675,7 +675,7 @@ export class Mission extends RailBase {
         if (Math.abs(s.x - e.x) < K.bw / 2 + hitR && Math.abs(s.y - (e.y - K.bh / 2 - (K.fly ? -K.bh / 2 : 0))) < K.bh / 2 + hitR) {
           if (s.k === 'R') { this.blast(s.x, s.y, 95, s.dmg, p); s.dead = 1; }
           else if (s.k === 'F') { if (!s.hit || !s.hit.has(e.id)) { (s.hit = s.hit || new Set()).add(e.id); this.dmg(e, s.dmg, 'fire'); } }
-          else { this.dmg(e, s.dmg, 'shot'); s.dead = 1; this.fx('spark', s.x, s.y, { T: 120, r: 8 }); }
+          else { const was = e.st; this.dmg(e, s.dmg, 'shot'); if (s.ai && was === 'live' && e.st !== 'live') this.aiKills = (this.aiKills || 0) + 1; s.dead = 1; this.fx('spark', s.x, s.y, { T: 120, r: 8 }); }
           if (s.dead) break;
         }
       }

@@ -903,7 +903,6 @@ export class Tunnel {
         this.pistolLost = false;
         this.ammoInMag = PISTOL_MAG; this.reloadT = 0;
         if (this.weap === 'claws') this.weap = 'pistol';
-        this.ev({ e: 'banner', k: 'gotPistolBack' });
         this.ev({ e: 'sfx', n: 'sfx_reload' });
       }
     }
@@ -1302,15 +1301,12 @@ export class Tunnel {
     if (!this.sctx) return;
     if (!this._flat) this.buildFlats();
     const sc = this.sctx;
-    // Doom death cam: the whole frame rolls and sinks as you hit the floor
+    // Going down: the view drops toward the floor and closes in, level. It used
+    // to ROLL the whole frame, which tipped the picture and dragged black
+    // corners into view. The zoom always out-covers the drop, so the frame
+    // stays full edge to edge.
     const downK = this.downT ? Math.min(1, this.downT / 700) : 0;
-    if (downK > 0) {
-      ctx.save();
-      ctx.translate(W / 2, H);
-      ctx.rotate(downK * 0.34);
-      ctx.scale(1 + downK * 0.08, 1 + downK * 0.08);
-      ctx.translate(-W / 2, -(H - downK * 64));
-    }
+    const downE = 1 - (1 - downK) * (1 - downK);
 
     // ---- floor + ceiling casting into a 320x180 ImageData ----
     // v13.1 perf rewrite (playtest: "tons of lag"): this loop used to call
@@ -1884,7 +1880,12 @@ export class Tunnel {
 
     // ---- upscale the retro scene ----
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.sc, 0, 0, RW, RH, 0, 0, W, H);
+    if (downK > 0) {   // only the world drops and closes in; the HUD stays put
+      const z = 1 + downE * 0.14;
+      ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2 - downE * 40);
+      ctx.drawImage(this.sc, 0, 0, RW, RH, 0, 0, W, H);
+      ctx.restore();
+    } else ctx.drawImage(this.sc, 0, 0, RW, RH, 0, 0, W, H);
 
     // ---- tunnel exit: straight fade to white ----
     // v12 (Dylan: "inside the tunnel when you leave, get rid of the animation
@@ -2006,8 +2007,10 @@ export class Tunnel {
     ctx.fillStyle = rg;
     ctx.fillRect(0, 0, W, H);
 
-    // ---- weapon viewmodel with real animation ----
+    // ---- weapon viewmodel with real animation (it falls out of view when you go down) ----
+    if (downK > 0) { ctx.save(); ctx.translate(0, downE * H * 0.75); }
     this.drawViewmodel(ctx, now);
+    if (downK > 0) ctx.restore();
 
     // shell casings (screen space)
     for (const cs of this.casings) {
@@ -2087,9 +2090,8 @@ export class Tunnel {
       popY += 30;
     }
     ctx.textAlign = 'left';
-    // close the death-cam transform, then the down overlay on top, unrotated
+    // the down overlay on top
     if (downK > 0) {
-      ctx.restore();
       ctx.fillStyle = `rgba(110,10,8,${(0.38 * downK).toFixed(2)})`;
       ctx.fillRect(0, 0, W, H);
       ctx.textAlign = 'center';
