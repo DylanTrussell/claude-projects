@@ -1,0 +1,12 @@
+// apocalypsemeow.app: static Worker serving the built game (public/).
+// Deploy: bash tools/assemble.sh && cd tools/cloudflare && CI=1 npx wrangler deploy
+{
+  "name": "apocalypse-meow",
+  "account_id": "ec9ba22736789d042a07334d86e3c209",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "../../public", "not_found_handling": "single-page-application" },
+  "routes": [
+    { "pattern": "apocalypsemeow.app", "custom_domain": true },
+    { "pattern": "www.apocalypsemeow.app", "custom_domain": true }
+  ]
+}

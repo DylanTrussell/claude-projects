@@ -1,9 +1,26 @@
 # IS IT LIVE? **YES** (on GitHub Pages, not Higgsfield)
 
-- **Full game, v14.3, forks on:** https://dylantrussell.github.io/claude-projects/
-- `/branches/` is the same v14.3 build. Add `?linear` to any URL for the one-road Part One.
+- **Full game, v14.4, forks on:** https://dylantrussell.github.io/claude-projects/
+- **Also live at https://apocalypsemeow.app** (and www): Cloudflare Worker `apocalypse-meow`, config in `tools/cloudflare/wrangler.jsonc`.
+- `/branches/` is the same v14.4 build. Add `?linear` to any URL for the one-road Part One.
 
 Project lives ONLY on the SSD: `/Volumes/POSTCARD CITY SSD/Apocalypse Meow/apocalypse-meow`, branch `missions`.
+
+## v14.4: the fork is a place, the crash is a fight (2026-11-17)
+
+- Huey or Skyraider is no longer a menu. After the truce both birds sit on the ravine screen,
+  half in the jungle and pulsing: the Huey down in the ravine, the Skyraider up on a raised
+  strip past the islands. Walk into one to take it; it sets you down past the ravine.
+- Crash site rebuilt: new wrecked-Huey art (nose dug in, pilot slumped and bleeding),
+  pixel smoke and fire, Charlie wounded in the door who rallies, fires real bursts, and sags.
+  Four waves from both sides and the air. Moved to the clearing between the cheese vats.
+- Enemies only start an attack on screen (no more rays from off-screen).
+- Solo helpers take ~13% of kills (Part Two Charlie was ~28%). Co-op P2 is the real help.
+- Ride music is the Vietnamese track (con nha quan), louder; the engine hiss is gone, and music
+  asked for during a film now waits for the film to end.
+- Tunnel knock-down no longer rolls the screen; the view drops level and the gun falls away.
+- Standoff now reads "YOUR GUN JAMMED / ...SO DID HIS". Pistol-back line removed.
+- Respawn drop no longer drifts you into the pit you died in.
 
 ## v14.3: two-player couch co-op (2026-11-13)
 

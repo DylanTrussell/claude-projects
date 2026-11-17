@@ -12,7 +12,7 @@ import { PTBoat, Surf, boatBot } from '../public/boat.js';
 import { ParleyBoss, parleyBot } from '../public/boss2.js';
 import { BRANCHES } from '../public/config.js';
 import { Mission, MISSIONS, missionBot, ROUTE_START } from '../public/missions.js';
-import { joinCharlie } from '../public/sim.js';
+import { openAirFork, FORK, joinCharlie } from '../public/sim.js';
 
 const RAIL_CTOR = { skyraider: Skyraider, doorgun: DoorGun, ptboat: PTBoat, surf: Surf, parley: ParleyBoss };
 const RAIL_BOT = { ptboat: boatBot, surf: boatBot, parley: parleyBot };
@@ -45,8 +45,9 @@ const g = makeGame(1337, seats);
 // route the same way a player would: --branch=heli|sky, --boat=ramp|around.
 const BRANCH = (process.argv.find(a => a.startsWith('--branch=')) || '--branch=heli').split('=')[1];
 const BOAT = (process.argv.find(a => a.startsWith('--boat=')) || '--boat=around').split('=')[1];
-g.airPick = BRANCHES && BRANCH === 'sky' ? 'sky' : 'heli';
-console.log('branches:', BRANCHES, '/ air:', g.airPick, '/ boat:', BRANCHES ? BOAT : 'around');
+const AIR = BRANCHES && BRANCH === 'sky' ? 'sky' : 'heli';   // which bird the bot walks to at the fork
+if (!BRANCHES) g.airPick = 'heli';
+console.log('branches:', BRANCHES, '/ air:', AIR, '/ boat:', BRANCHES ? BOAT : 'around');
 for (const p of g.players) p.lives = 99; // test-only endurance so we exercise ALL content
 
 const seen = new Set();
@@ -92,6 +93,10 @@ while (simMs < MAXMS && !victory && !gameover) {
     if (wantJump) { bits |= C.JUMP; if (jumpT < -2400) jumpT = 0; }
     // grenades at the boss / heli
     if ((g.boss || flyer) && (simMs % 900) < 20) bits |= C.GREN;
+    if (g.fork) {   // v14.4 the air fork: walk down to the Huey, or hop the islands up to the strip
+      if (AIR === 'heli') { bits = C.R; if (p.x > FORK.heli.x) bits = C.L; }
+      else { bits = C.R | (p.onG && tap ? C.JUMP : 0); if (p.y > 640 && p.x > 5080) bits = C.L | (p.onG && tap ? C.JUMP : 0); }
+    }
     inputs[p.pid] = bits;
   }
   step(g, 1000 / 60, inputs);
@@ -119,14 +124,23 @@ while (simMs < MAXMS && !victory && !gameover) {
       // the truce cleanup belongs to the truce, not the door gun
       for (const e of g.enemies) if (e.duel) e.st = 'gone';
       { const p0 = g.players[0]; p0.invulnT = 2600; if (p0.st !== 'out') p0.st = 'alive'; }
-      if (g.airPick === 'sky') { joinCharlie(g); continue; }   // BRANCHES: flies the plane later instead
+      if (BRANCHES) { joinCharlie(g); openAirFork(g); continue; }   // v14.4: the birds wait in the world
       const p = g.players[0];
       const r = runRail('doorgun', p);
       g.crashPending = 1; // v13.14: the sim picks up at the wreck, Charlie inside
       p.invulnT = 2200; if (p.st !== 'out') p.st = 'alive';
       simMs += 52000;
     }
+    if (ev.e === 'rail' && ev.k === 'doorgun') {   // v14.4: picked at the fork by walking into the Huey
+      const p = g.players[0];
+      runRail('doorgun', p);
+      g.crashPending = 1;
+      p.invulnT = 2200; if (p.st !== 'out') p.st = 'alive';
+      simMs += 52000;
+      console.log('  fork pick: heli');
+    }
     if (ev.e === 'rail' && ev.k === 'skyraider') {
+      if (g.airPick) console.log('  fork pick: ' + g.airPick);
       const p = g.players[0];
       runRail('skyraider', p);
       p.invulnT = 2200; if (p.st !== 'out') p.st = 'alive';
