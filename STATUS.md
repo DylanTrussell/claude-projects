@@ -6,6 +6,16 @@
 
 Project lives ONLY on the SSD: `/Volumes/POSTCARD CITY SSD/Apocalypse Meow/apocalypse-meow`, branch `missions`.
 
+## v14.6 (IN PROGRESS, NOT LIVE, committed on missions as cbf7e55, held with v14.5) (2026-11-18)
+
+- Bridge eater is now an alien hover tank (m_boss_hovertank). Mouth centred on the deck, nose-down tilt, four green jets over the river.
+- Boss phase adds a molten cheese flamethrower; globs land as burning cheese puddles.
+- Intro gag: three cheering rats get cheesed into statues by the tank's first blast, then crumble.
+- AI Charlie clamped out of the jaws. Copter chin gun: DOWN fires straight down (fixes a graveyard stall).
+
+## Next session start here
+- Dylan has MORE NOTES coming. Do not deploy until he says ship. Then deploy v14.5+v14.6 to GitHub Pages AND Cloudflare (see v14.4 section for steps), verify both by curl, run tools/pv.sh clean, remove /tmp/ghp-am.
+
 ## v14.5 (IN PROGRESS, NOT LIVE, committed on missions, held for more notes) (2026-11-17)
 
 - Deaths auto-continue from the last checkpoint; stats only on END RUN (pause) or victory.
