@@ -203,6 +203,7 @@ export const CHUNKS = {
       m_bg_hive: './assets/m/m_bg_hive.png',
       m_bg_map: './assets/m/m_bg_map.png',
       m_boss_eater: './assets/m/m_boss_eater.png',
+      m_boss_hovertank: './assets/m/m_boss_hovertank.png',   // v14.6: the eater is an alien hover tank
       m_boss_gunship: './assets/m/m_boss_gunship.png',
       m_boss_barge: './assets/m/m_boss_barge.png',
       m_boss_core: './assets/m/m_boss_core.png',

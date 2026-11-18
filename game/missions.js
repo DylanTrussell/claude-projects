@@ -234,8 +234,12 @@ export const ROUTE_START = 'bridge';
 // which slot each mission sits in (the heat ramp, the tests and the map read it)
 export const SLOT = { bridge: 1, caves: 2, citadel: 2, graveyard: 3, coast: 3, hive: 4 };
 
+// v14.6 (Dylan: "it needs to be chewing the bridge... what is the tank driving on... make it a cool futuristic
+// alien hover tank"). The eater is an alien hover tank on four green jets. Its MOUTH CENTRE sits on the chew line
+// at deck height, so the saws bite the planks; the hull floats over the river behind the bite.
+const HT = { tilt: 0.22, k: 0.5, mouth: [840, 330], gun: [865, 95], jets: [150, 300, 520, 705], jetY: 505, saws: [[795, 245, 52], [940, 250, 50], [795, 405, 52], [940, 410, 50]] };
 const HUD_GUN = [335, 53], HUD_BOMB = [458, 53], HUD_LIFE = [40, 40];   // where pickups fly to (screen)
-const BOSS_FACE = { zero: 'm_zombie_fat', eater: 'm_boss_eater', jellyq: 'm_boss_jelly', barge: 'm_boss_barge', gunship: 'm_boss_gunship', core: 'm_boss_core' };
+const BOSS_FACE = { zero: 'm_zombie_fat', eater: 'm_boss_hovertank', jellyq: 'm_boss_jelly', barge: 'm_boss_barge', gunship: 'm_boss_gunship', core: 'm_boss_core' };
 const THEME = {
   mud:    { a: '#5d6b3a', b: '#3b3a2c', c: '#23221b', d: '#74824a' },
   planks: { a: '#d9b98a', b: '#a57f52', c: '#5e4228', d: '#f0d9ae' },
@@ -318,7 +322,7 @@ export class Mission extends RailBase {
   }
   surfaceAt(x) { for (const [px, py, pw] of this.m.plats) if (x >= px && x <= px + pw) return py; return GY; }
   plats() { return this.phase === 'fork' || this.phase === 'out' ? this.m.plats.concat(this.exitPlats) : this.m.plats; }
-  eaterW() { const im = IMG.m_boss_eater; return im ? 340 * (im.width / im.height) : 600; }
+  eaterW() { const ht = IMG.m_boss_hovertank; if (ht) return ht.width * HT.k; const im = IMG.m_boss_eater; return im ? 340 * (im.width / im.height) : 600; }
   // land an actor: returns the y it rests on, or null if falling
   land(a, prevY) {
     if (a.vy < 0) return null;
@@ -482,7 +486,8 @@ export class Mission extends RailBase {
 
     // ---- Charlie: at your shoulder, shooting what you are shooting
     const c = this.c; if (!h2) { c.cd -= dt; c.fire -= dt;
-    const cx = h.x - 74 * h.face;
+    let cx = h.x - 74 * h.face;
+    if (this.eater && !this.eater.stop) cx = Math.max(cx, this.eater.x + this.eaterW() + 40);   // never inside the jaws
     if (Math.abs(cx - c.x) > 500) { c.x = cx; c.y = h.y; }
     c.mov = Math.abs(cx - c.x) > 14;
     if (c.mov) { c.face = cx > c.x ? 1 : -1; c.x += c.face * Math.min((R ? Math.max(R.run, RUN) : RUN) * 1.05 * dts, Math.abs(cx - c.x)); c.run += dt; }
@@ -611,7 +616,9 @@ export class Mission extends RailBase {
         h.cd = R.cd; h.fire = 70;
         const up = h.up, ox = up ? h.x + h.face * R.seat[0] : h.x + h.face * R.gun[0], oy = up ? h.y - R.seat[1] - 110 : h.y - R.gun[1];
         const sp = rnd(-0.03, 0.03);
-        this.shots.push({ k: 'H', x: ox, y: oy, vx: up ? sp * 1250 : h.face * 1250, vy: up ? -1250 : sp * 1250, t: 0, T: 900, dmg: 1 });
+        // v14.6: the gunship's chin gun tips down with DOWN, so hovering never leaves a ground target unreachable
+        if (R.fly && (bits & C.DOWN) && !up) this.shots.push({ k: 'H', x: h.x + h.face * 14, y: h.y - 20, vx: h.face * 90 + sp * 1400, vy: 1150, t: 0, T: 900, dmg: 1 });
+        else this.shots.push({ k: 'H', x: ox, y: oy, vx: up ? sp * 1250 : h.face * 1250, vy: up ? -1250 : sp * 1250, t: 0, T: 900, dmg: 1 });
         this.say({ e: 'sfx', n: 'sfx_shot' });
       }
       if (ride.k === 'copter' && edge(C.GREN) && ride.shell <= 0) {
@@ -666,6 +673,17 @@ export class Mission extends RailBase {
       const K = KIND[e.k];
       const vis = e.x > this.cam + 26 && e.x < this.cam + W - 26;   // nobody starts an attack from off screen
       if (e.flash > 0) e.flash -= dt;
+      if (e.st === 'cheesed') {         // a molten cheese statue: it sets, cracks and falls apart
+        e.t -= dt;
+        if (Math.random() < 0.15) this.fx('gib', e.x + rnd(-14, 14), e.y - rnd(20, 70), { vx: rnd(-20, 20), vy: rnd(0, 40), T: 600, r: 3, col: PAL.cheese });
+        if (e.t <= 0) { e.st = 'gone'; for (let i = 0; i < 12; i++) this.fx('debris', e.x, e.y - rnd(10, 70), { vx: rnd(-240, 240), vy: rnd(-420, -120), T: 800, r: rnd(5, 10), col: i % 2 ? PAL.cheese : PAL.cheeseDark }); this.say({ e: 'sfx', n: 'sfx_shrapnel' }); }
+        continue;
+      }
+      if (e.fan && e.st === 'live') {   // its own rats, cheering it in: they hop and wave at the tank
+        e.t += dt; e.face = -1; e.y = GY - Math.abs(Math.sin(e.t / 160 + e.ph)) * 26;
+        if (Math.random() < dt / 900) this.say({ e: 'squeak', n: 1 });
+        continue;
+      }
       if (e.st === 'burn') {            // on fire: runs, flails, and is gone
         e.t -= dt; e.x += e.vx * dts; if (Math.random() < 0.04) e.vx = -e.vx;
         if (Math.random() < 0.6) this.fx('fire', e.x + rnd(-20, 20), e.y - rnd(10, K.h), { vy: rnd(-220, -80), T: rnd(280, 520), r: rnd(12, 24) });
@@ -808,10 +826,16 @@ export class Mission extends RailBase {
       if (s.k === 'flame' && s.t > s.life) s.dead = 1;
       if (s.k === 'flame' && Math.random() < 0.5) this.fx('fire', s.x, s.y, { vy: rnd(-90, -20), T: 260, r: rnd(10, 18) });
       for (const h of cats) { const hh = h.crouch ? 44 : 84; if (Math.abs(s.x - h.x) < 20 + s.r && s.y > h.y - hh - s.r && s.y < h.y + s.r) { this.hurtHero(p, 1, h); if (s.k !== 'beam') { s.dead = 1; break; } } }
+      if (s.k === 'mcheese') {
+        for (const e of this.en) if (e.fan && e.st === 'live' && Math.abs(s.x - e.x) < 34 && s.y > e.y - 90) { e.st = 'cheesed'; e.t = 1700; e.y = GY; s.dead = 1; this.say({ e: 'squeak', n: 2 }); break; }
+        if (s.dead) continue;
+        if (Math.random() < 0.5) this.fx('fire', s.x, s.y, { vy: rnd(-60, -10), T: 200, r: rnd(6, 10) });
+      }
       if (s.k === 'patch') { if (s.t > s.life) s.dead = 1; else { for (const h of cats) if (Math.abs(s.x - h.x) < 44 && h.y > GY - 40) this.hurtHero(p, 1, h); if (Math.random() < 0.3) this.fx('fire', s.x + rnd(-36, 36), GY - rnd(4, 20), { vy: rnd(-120, -40), T: 300, r: rnd(10, 18) }); } continue; }
       if (s.y >= GY && this.solid(s.x) && s.k !== 'wave') {
         s.dead = 1;
         if (s.k === 'napalm') this.eshots.push({ k: 'patch', x: s.x, y: GY, vx: 0, vy: 0, r: 0, life: 1300, t: 0 });
+        if (s.k === 'mcheese') this.eshots.push({ k: 'patch', cheese: 1, x: s.x, y: GY, vx: 0, vy: 0, r: 0, life: 1700, t: 0 });
         if (s.hot) for (let i = 0; i < 12; i++) { const a = -Math.PI * (0.1 + 0.8 * i / 11); this.fx('shard', s.x, GY - 16, { vx: Math.cos(a) * rnd(300, 620), vy: Math.sin(a) * rnd(300, 620), T: rnd(380, 620), r: 5 }); }
         if (s.plasma) { this.plasmaPop(s.x, GY - 10); for (const h of cats) if (Math.abs(s.x - h.x) < 60 && h.y > GY - 70) this.hurtHero(p, 1, h); }
         else if (s.k === 'bomb' || s.k === 'shell') { this.boomW(s.x, GY - 20, s.k === 'shell' ? 1 : 0); for (const h of cats) if (Math.abs(s.x - h.x) < (s.k === 'shell' ? 80 : 60) && h.y > GY - 70) this.hurtHero(p, 1, h); }
@@ -884,7 +908,7 @@ export class Mission extends RailBase {
     const B = { k, t: 0, cd: 1800, live: true, st: 'idle', n: 0, flash: 0 };
     // v14.5: boss hp cut ~25% when solo Charlie's share of the shooting was cut to ~13%
     if (k === 'zero')    Object.assign(B, { hp: 840, x: ax + 1010, y: GY, w: 240, h: 330 });
-    if (k === 'eater')   Object.assign(B, { hp: 270, x: this.eater.x + this.eaterW() - 190, y: GY, w: 380, h: 330, lunge: 0 });
+    if (k === 'eater')   { Object.assign(B, { hp: 270, x: this.eater.x + this.eaterW() - 190, y: GY, w: 380, h: 330, lunge: 0, intro: 0, cd: 99999 }); for (let i = 0; i < 3; i++) this.spawn('rat', B.x + 330 + i * 64, GY, { fan: 1, face: -1, hp: 3 }); }
     if (k === 'jellyq')  Object.assign(B, { hp: 300, x: ax + 800, y: 210, w: 300, h: 220, fly: 1 });
     if (k === 'barge')   Object.assign(B, { hp: 280, x: ax + 980, y: GY + 40, w: 520, h: 300 });
     if (k === 'gunship') Object.assign(B, { hp: 240, x: ax + 800, y: 190, w: 330, h: 230, fly: 1 });
@@ -898,7 +922,18 @@ export class Mission extends RailBase {
     for (let i = 0; i < 12; i++) { const a = -Math.PI * i / 11; this.fx('star', x, y, { vx: Math.cos(a) * rnd(160, 320), vy: Math.sin(a) * rnd(160, 320), T: 420, r: 7, col: PAL.acid }); }
     for (let i = 0; i < 5; i++) this.fx('goo', x + rnd(-30, 30), y - rnd(0, 30), { vy: rnd(-80, -20), T: 500, r: rnd(8, 14) });
   }
-  eaterMuzzle(x) { const w = this.eaterW(); return { x: x + 190 - w * 0.15 - (this.eater.recoil || 0) * 10, y: GY - 270 }; }
+  eaterMouth(x) { return x + 160 - ((this.eater && this.eater.recoil) || 0) * 10; }   // x = E.x + ew - 190; the chew line is E.x + ew - 30
+  eaterMuzzle(x) {
+    const mx = this.eaterMouth(x);
+    if (!IMG.m_boss_hovertank) { const w = this.eaterW(); return { x: x + 190 - w * 0.15 - (this.eater.recoil || 0) * 10, y: GY - 270 }; }
+    const dx = (HT.gun[0] - HT.mouth[0]) * HT.k, dy = (HT.gun[1] - HT.mouth[1]) * HT.k, c = Math.cos(HT.tilt), sn = Math.sin(HT.tilt);
+    return { x: mx + dx * c - dy * sn, y: GY - 2 + dx * sn + dy * c };
+  }
+  // molten cheese out of the maw: a hot arcing glob that lands as a burning puddle
+  cheeseGlob(x) {
+    const mx = this.eaterMouth(x);
+    this.eshots.push({ k: 'mcheese', x: mx + 40, y: GY - 24 + rnd(-10, 10), vx: rnd(380, 640), vy: rnd(-330, -90), g: 1100, r: 13, t: 0 });
+  }
   eaterFire(x, tx, T) {
     const E = this.eater, mz = this.eaterMuzzle(x);
     this.lob(mz.x, mz.y, tx, T, 'shell', 15); this.eshots[this.eshots.length - 1].hot = 1;
@@ -909,7 +944,8 @@ export class Mission extends RailBase {
   eaterHit(x, y) {
     const E = this.eater; if (!E || E.stop || (this.boss && this.boss.k === 'eater')) return false;
     const ew = this.eaterW(), fx0 = E.x + ew;
-    if (x > fx0 + 4 || x < fx0 - 380 || y < GY - 320 || y > GY + 20) return false;
+    if (IMG.m_boss_hovertank) { const mx = fx0 - 30; if (x > mx + 100 || x < mx - HT.mouth[0] * HT.k || y < GY - HT.mouth[1] * HT.k - 10 || y > GY + 60) return false; }
+    else if (x > fx0 + 4 || x < fx0 - 380 || y < GY - 320 || y > GY + 20) return false;
     E.flash = 110; E.hot = Math.min(1, (E.hot || 0) + 0.06); this.fx('spark', x, y, { T: 140, r: 10 });
     if (Math.random() < 0.3) this.fx('debris', x, y, { vx: rnd(-200, 60), vy: rnd(-300, -80), T: 500, r: 3, col: '#6e6a50' });
     return true;
@@ -983,8 +1019,20 @@ export class Mission extends RailBase {
       }
       case 'eater': {
         const home = this.eater.x + this.eaterW() - 190;
-        if (b.lunge > 0) { b.lunge -= dt; const k = 1 - Math.abs(b.lunge - 450) / 450; b.x = home + k * 330; for (const q of cats) if (q.x < b.x + 200 && q.y > GY - 200) this.hurtHero(p, 1, q); if (b.lunge <= 0) { b.x = home; b.cd = 1500 * rage; } }
-        else if (b.st === 'idle' && b.cd <= 0) { b.st = ['shell', 'lunge', 'rats'][mode()]; if (b.st === 'rats' && this.en.filter(e => e.st === 'live').length >= 3) b.st = 'shell'; b.tell = 700; if (b.st === 'lunge') this.say({ e: 'sfx', n: 'sfx_bike' }); }
+        // the intro gag: its own rats come out to cheer it on, and its first blast of cheese takes them
+        if (b.intro !== undefined) {
+          b.intro += dt;
+          if (b.intro > 1500 && b.st === 'idle' && !b.spew && !b.spewed) { b.st = 'cheese'; b.tell = 700; }
+          if (b.intro > 1500 && b.st === 'idle' && b.spewed) { delete b.intro; b.cd = 1400; }
+        }
+        if (b.spew > 0) {
+          b.spew -= dt; b.sp = (b.sp || 0) - dt;
+          if (b.sp <= 0) { b.sp = 75; this.cheeseGlob(b.x); }
+          if (Math.random() < 0.4) this.fx('fire', this.eaterMouth(b.x) + rnd(10, 60), GY - rnd(10, 40), { vx: rnd(60, 200), vy: rnd(-120, -30), T: 300, r: rnd(10, 16) });
+          if (b.spew <= 0) { b.spew = 0; b.spewed = 1; b.st = 'idle'; b.cd = 1700 * rage; }
+        }
+        else if (b.lunge > 0) { b.lunge -= dt; const k = 1 - Math.abs(b.lunge - 450) / 450; b.x = home + k * 330; for (const q of cats) if (q.x < b.x + 200 && q.y > GY - 200) this.hurtHero(p, 1, q); if (b.lunge <= 0) { b.x = home; b.cd = 1500 * rage; } }
+        else if (b.intro === undefined && b.st === 'idle' && b.cd <= 0) { b.st = ['shell', 'cheese', 'lunge'][mode()]; if (b.st === 'cheese' && rage < 1 && Math.random() < 0.3 && this.en.filter(e => e.st === 'live').length < 3) b.st = 'rats'; b.tell = b.st === 'cheese' ? 800 : 700; if (b.st === 'lunge') this.say({ e: 'sfx', n: 'sfx_bike' }); }
         else if (b.st !== 'idle') {
           b.tell -= dt;
           if (b.tell <= 0) {
@@ -992,6 +1040,7 @@ export class Mission extends RailBase {
             if (b.st === 'shell') for (let i = 0; i < 3; i++) this.eaterFire(b.x, h.x + (i - 1) * 230, 1.15 + i * 0.2);
             if (b.st === 'lunge') { b.lunge = 900; this.shake = 14; }
             if (b.st === 'rats') for (let i = 0; i < 2; i++) this.spawn(rage < 1 && i === 1 ? 'flamer' : 'rat', this.cam + W + 60 + i * 90, GY);
+            if (b.st === 'cheese') { b.spew = 1300; b.sp = 0; this.say({ e: 'sfx', n: 'sfx_flame' }); this.shake = Math.max(this.shake, 6); break; }
             b.st = 'idle'; if (!b.lunge) b.cd = 1700 * rage;
           }
         }
@@ -1429,7 +1478,7 @@ export class Mission extends RailBase {
     if (e.tell > 0) { const q = 1 + Math.sin(now / 30) * 0.03; sy *= q; }
     ctx.translate(0, bob); ctx.rotate(rot); ctx.scale(sx, sy);
     const hk = e.st === 'burn' ? 0 : e.hp / e.hpMax, fa = e.st === 'burn' ? 0.75 : fl;
-    const gl = e.tell > 0 && e.st === 'live' ? 0.3 + 0.35 * (0.5 + 0.5 * Math.sin(now / 45)) : 0;
+    const gl = e.st === 'cheesed' ? 0.92 : e.tell > 0 && e.st === 'live' ? 0.3 + 0.35 * (0.5 + 0.5 * Math.sin(now / 45)) : 0;   // cheesed: a molten cheese statue
     if (L.head && live) {
       // the head has a mind of its own: it lolls, tips back in a wind-up, snaps on a hit
       const hr = Math.sin(tt / 760) * L.loll + (e.tell > 0 ? -nf * 0.12 : 0) + -nf * fl * 0.22 + (moving ? Math.sin(ph + 1.2) * L.loll * 0.5 : 0);
@@ -1474,6 +1523,15 @@ export class Mission extends RailBase {
     else if (s.k === 'zap') { ctx.strokeStyle = '#b6ffe9'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.x, s.y - 26); for (let i = 1; i <= 4; i++) ctx.lineTo(s.x + (i % 2 ? 9 : -9), s.y - 26 + i * 13); ctx.stroke(); }
     else if (s.k === 'flame') pxFlame(ctx, s.x, s.y, 16 + s.t * 0.05, s.t / s.life, now + s.x);
     else if (s.k === 'napalm') { if (s.tx !== undefined) landMark(ctx, s.tx, 100, s, now); pxFlame(ctx, s.x, s.y, 26, 0.2, now + s.x); }
+    else if (s.k === 'patch' && s.cheese) {   // a spreading pool of molten cheese, bubbling and smoking
+      const k = s.t / s.life, a = k > 0.8 ? (1 - k) / 0.2 : 1, r = 30 + Math.min(1, s.t / 300) * 26;
+      ctx.globalAlpha = a; ctx.fillStyle = PAL.cheeseDark; ctx.fillRect(s.x - r - 6, GY - 8, (r + 6) * 2, 10);
+      ctx.fillStyle = '#ffb21f'; ctx.fillRect(s.x - r, GY - 12, r * 2, 8); ctx.fillStyle = PAL.cheese; ctx.fillRect(s.x - r + 8, GY - 14, r * 2 - 16, 5);
+      for (let i = 0; i < 3; i++) { const ph = ((now / 400) + i / 3 + s.x * 0.01) % 1; ctx.fillStyle = '#fff2a8'; pxBlob(ctx, s.x - r + 12 + i * (r * 0.8), GY - 14 - ph * 10, 4 * (1 - ph) + 2); }
+      if (Math.random() < 0.1) this.fx('smoke', s.x + rnd(-r, r), GY - 16, { vy: rnd(-70, -30), T: 600, r: rnd(6, 10), col: '#c9b48a' });
+      ctx.globalAlpha = 1;
+    }
+    else if (s.k === 'mcheese') { const a = Math.atan2(s.vy, s.vx); ctx.fillStyle = PAL.cheeseDark; pxBlob(ctx, s.x - Math.cos(a) * 10, s.y - Math.sin(a) * 10, s.r * 0.8); ctx.fillStyle = '#ffb21f'; pxBlob(ctx, s.x, s.y, s.r); ctx.fillStyle = '#fff2a8'; pxBlob(ctx, s.x + 2, s.y - 2, s.r * 0.45); }
     else if (s.k === 'patch') { const k = s.t / s.life; for (let i = -1; i <= 1; i++) pxFlame(ctx, s.x + i * 26, GY - 10, 26 * (1 - k * 0.5), 0.15 + k * 0.5, now + i * 97 + s.x); }
     else if (s.k === 'wave') { for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#fff3d0' : PAL.boom1; ctx.fillRect(s.x - 20 + i * 10, GY - 46 + i * 9 + Math.sin(now / 40 + i) * 6, 12, 46 - i * 9); } }
     else if (s.k === 'beam') { const k = s.t / s.life; ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(120,255,210,${0.5 * (1 - k)})`; ctx.fillRect(s.x - 34, 0, 68, GY); ctx.fillStyle = `rgba(240,255,250,${0.9 * (1 - k)})`; ctx.fillRect(s.x - 10, 0, 20, GY); ctx.restore(); }
@@ -1495,6 +1553,7 @@ export class Mission extends RailBase {
     return (0.25 + 0.6 * k) * (0.75 + 0.25 * Math.sin(now / 40));
   }
   drawEater(ctx, x, now, flash, hpK, glow) {
+    if (IMG.m_boss_hovertank) return this.drawHoverTank(ctx, x, now, flash, hpK, glow);
     const im = IMG.m_boss_eater; if (!im) return;
     const E = this.eater, hh = 340, w = hh * (im.width / im.height), grinding = E && !E.stop;
     // it rocks on its treads and shudders as the teeth bite; it kicks back when the cannon goes
@@ -1518,6 +1577,48 @@ export class Mission extends RailBase {
     }
     // muzzle flash at the barrel tip
     if (E.mf > 0) { const mz = this.eaterMuzzle(x); ctx.save(); ctx.translate(mz.x + 4, mz.y + jit); ctx.scale(2.2, 2.2); drawMuzzleBurst(ctx, 0, 0, 0, Math.min(1, E.mf / 140)); ctx.restore(); }
+  }
+  // the alien hover tank: mouth centre ON the deck at the chew line, hull floating over the river on
+  // four green jets, saws spinning, cannon kicking, molten cheese welling in the maw before it spews
+  drawHoverTank(ctx, x, now, flash, hpK, glow) {
+    const im = IMG.m_boss_hovertank, E = this.eater, k = HT.k, w = im.width * k, h = im.height * k;
+    const grinding = E && !E.stop, b = this.boss && this.boss.k === 'eater' ? this.boss : null;
+    const hover = Math.sin(now / 320) * 4 + (grinding ? Math.sin(now / 41) * 1.2 : 0);
+    const mx = this.eaterMouth(x), my = GY - 2 + hover, left = mx - HT.mouth[0] * k, top = my - HT.mouth[1] * k;
+    const rock = HT.tilt + Math.sin(now / 520) * 0.012 - ((E && E.recoil) || 0) * 0.02;   // nose down into the bite, stern up on its jets
+    const rp = (px, py) => { const dx = (px - HT.mouth[0]) * k, dy = (py - HT.mouth[1]) * k, c = Math.cos(rock), sn = Math.sin(rock); return [mx + dx * c - dy * sn, my + dx * sn + dy * c]; };
+    // jet wash: green thrust roaring down into the river, spray kicked up where it lands
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const jx of HT.jets) {
+      const [x0, y0] = rp(jx, HT.jetY), f = 0.6 + 0.4 * Math.sin(now / 30 + jx);
+      ctx.fillStyle = `rgba(120,255,90,${0.35 * f})`; ctx.fillRect(x0 - 24, y0, 48, H - y0);
+      ctx.fillStyle = `rgba(230,255,200,${0.5 * f})`; ctx.fillRect(x0 - 9, y0, 18, (H - y0) * (0.6 + 0.3 * f));
+    }
+    ctx.restore();
+    for (const jx of HT.jets) { const x0 = rp(jx, HT.jetY)[0]; for (let i = 0; i < 2; i++) { const ph = ((now / 260) + i * 0.5 + jx * 0.01) % 1; ctx.globalAlpha = 0.6 * (1 - ph); ctx.fillStyle = '#d8f4ee'; pxBlob(ctx, x0 + (i ? 1 : -1) * ph * 40, H - 6 - ph * 30, 8 + ph * 10); } }
+    ctx.globalAlpha = 1;
+    ctx.save(); ctx.translate(mx, my); ctx.rotate(rock); ctx.translate(-mx, -my);
+    drawImgHit(ctx, im, left, top, w, h, flash, hpK);
+    drawImgGlow(ctx, im, left, top, w, h, glow || 0);
+    if (E && E.hot > 0) drawImgGlow(ctx, im, left, top, w, h, E.hot * (0.35 + 0.15 * Math.sin(now / 60)), '#ff4a1c');
+    // the saws turn: bright teeth chasing round each blade
+    for (const [sx, sy, sr] of HT.saws) {
+      const cx = left + sx * k, cy = top + sy * k, r = sr * k, sp = now / (grinding ? 40 : 90);
+      for (let i = 0; i < 6; i++) { const a = sp + i * Math.PI / 3; ctx.fillStyle = i % 2 ? '#fff6dc' : '#c9c2ad'; ctx.fillRect(Math.round(cx + Math.cos(a) * r) - 3, Math.round(cy + Math.sin(a) * r) - 3, 6, 6); }
+    }
+    // molten cheese welling up in the maw while it winds up, pouring out while it spews
+    if (b && (b.st === 'cheese' || b.spew > 0)) {
+      const f = b.spew > 0 ? 1 : Math.min(1, 1 - (b.tell || 0) / 800);
+      ctx.fillStyle = '#ffb21f'; pxBlob(ctx, mx + 8, my + 6, 14 + f * 10); ctx.fillStyle = '#fff2a8'; pxBlob(ctx, mx + 12, my + 2, 6 + f * 6);
+      for (let i = 0; i < 3; i++) { const ph = ((now / 300) + i / 3) % 1; ctx.fillStyle = PAL.cheese; ctx.fillRect(mx - 10 + i * 12, my + 12 + ph * 30, 5, 8); }
+    }
+    ctx.restore();
+    // where the saws meet the deck: sparks and splinters spraying forward
+    if (grinding) for (let i = 0; i < 9; i++) { const ph = ((now / 160) + i * 0.111) % 1; ctx.fillStyle = i % 3 === 0 ? '#ffd23c' : i % 2 ? '#d9b98a' : '#8a6a3c'; const sz = i % 3 === 0 ? 5 : 8; ctx.fillRect(mx + 20 + ph * (60 + i * 8), GY - 12 - Math.sin(ph * 3.14) * (50 + i * 7), sz, sz); }
+    // exhaust off the stern
+    for (let i = 0; i < 3; i++) { const ph = ((now / 700) + i / 3) % 1; ctx.globalAlpha = 0.5 * (1 - ph); ctx.fillStyle = '#3a3630'; pxBlob(ctx, left + 90 * k - ph * 80, top + 260 * k - ph * 90, 10 + ph * 22); }
+    ctx.globalAlpha = 1;
+    if (E && E.mf > 0) { const mz = this.eaterMuzzle(x); ctx.save(); ctx.translate(mz.x + 6, mz.y + hover); ctx.scale(2.2, 2.2); drawMuzzleBurst(ctx, 0, 0, 0, Math.min(1, E.mf / 140)); ctx.restore(); }
   }
   drawBoss(ctx, now) {
     const b = this.boss, fl = Math.max(0, b.flash) / 110, hk = Math.max(0, b.hp / b.hpMax), gl = this.bossGlow(now);
@@ -1956,6 +2057,8 @@ export function missionBot(m, frame) {
   if (!m.solid(h.x + 46) && h.onG && frame % 2 === 0) b |= C.JUMP;
   // on the copter: keep the rotor up over anything that is not solid ground
   if (m.ride && RIDE[m.ride.k].fly && h === m.h1 && (!m.solid(h.x + 140) || !m.solid(h.x) || h.y > GY - 30 && !m.solid(h.x + 60))) b |= C.JUMP;
+  // on the copter: anything on the ground below and ahead gets the chin gun tipped down at it
+  if (m.ride && RIDE[m.ride.k].fly && m.en.some(e => e.st === 'live' && !KIND[e.k].fly && Math.abs(e.x - h.x) < 320 && e.y > h.y + 60)) b |= C.DOWN;
   if (frame % 200 === 0) b |= C.GREN;
   return b;
 }
